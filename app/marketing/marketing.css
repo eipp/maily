@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-inter: var(--font-inter);
+  --font-playfair: var(--font-playfair);
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply antialiased bg-white;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-heading;
+  }
+}
+
+@layer components {
+  .container {
+    @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center px-6 py-3 border border-transparent rounded-full text-base font-medium shadow-sm transition-colors duration-200;
+  }
+
+  .btn-primary {
+    @apply bg-primary text-white hover:bg-primary/90;
+  }
+
+  .btn-secondary {
+    @apply bg-white text-primary hover:bg-gray-50;
+  }
+
+  .btn-outline {
+    @apply border-white text-white hover:bg-white/10;
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent;
+  }
+
+  .bg-gradient {
+    @apply bg-gradient-to-r from-primary to-accent;
+  }
+} 

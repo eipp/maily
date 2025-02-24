@@ -1,8 +1,9 @@
 import pytest
 from fastapi.testclient import TestClient
-from main import app, redis_client, get_db_connection, ModelError, ModelAdapter
-from unittest.mock import Mock, patch
+from main import app, redis_client, get_db_connection, ModelError, ModelAdapter, DatabaseError
+from unittest.mock import Mock, patch, MagicMock
 import json
+from fastapi import status, HTTPException
 
 client = TestClient(app)
 
@@ -11,21 +12,62 @@ client = TestClient(app)
 @pytest.fixture
 def mock_redis():
     with patch('main.redis_client') as mock:
+        mock.get.return_value = None
+        mock.setex.return_value = True
         yield mock
 
 @pytest.fixture
 def mock_db():
     with patch('main.get_db_connection') as mock:
+        mock.return_value.cursor.return_value.execute.return_value = True
         yield mock
 
 @pytest.fixture
 def mock_ray():
-    with patch('main.ray') as mock:
-        yield mock
+    # Create a mock result that matches the expected format
+    mock_result = {
+        "status": "success",
+        "result": {
+            "subject": "Test Subject",
+            "body": "Test Body"
+        },
+        "metadata": {
+            "processed_at": "2024-02-24 12:00:00",
+            "processor_id": "test_node",
+            "task_type": "campaign_generation"
+        }
+    }
+
+    with patch('main.ray') as mock_ray:
+        # Create a mock remote decorator
+        def mock_remote(func=None):
+            if func is None:
+                # Called as @ray.remote()
+                return mock_remote
+            
+            # Create a wrapper function that has a remote method
+            def wrapper(*args, **kwargs):
+                return mock_result
+
+            # Add remote method that returns the mock result
+            wrapper.remote = MagicMock(return_value=mock_result)
+            
+            # Return the wrapper function
+            return wrapper
+
+        # Set up the mock_ray
+        mock_ray.remote = mock_remote
+        mock_ray.get.return_value = mock_result
+        mock_ray.is_initialized.return_value = True
+        mock_ray.get_runtime_context.return_value.node_id = "test_node"
+
+        yield mock_ray
 
 @pytest.fixture
 def mock_langfuse():
-    with patch('main.langfuse') as mock:
+    mock = MagicMock()
+    mock.span.return_value.end.return_value = None
+    with patch('main.langfuse', mock):
         yield mock
 
 # --- Model Adapter Tests ---
@@ -65,10 +107,11 @@ def test_db_connection(mock_db):
     conn = get_db_connection()
     assert conn is not None
 
-def test_db_connection_error(mock_db):
-    mock_db.side_effect = Exception("Connection failed")
-    with pytest.raises(Exception):
-        get_db_connection()
+def test_db_connection_error():
+    with patch('psycopg2.connect') as mock_connect:
+        mock_connect.side_effect = Exception("Connection failed")
+        with pytest.raises(DatabaseError):
+            get_db_connection()
 
 # --- API Tests ---
 
@@ -97,6 +140,16 @@ def test_health_check_degraded(mock_redis, mock_db, mock_ray):
     assert "unhealthy" in data["services"]["redis"]["status"]
 
 def test_create_campaign():
+    # First, configure a model
+    client.post(
+        "/configure_model",
+        json={
+            "model_name": "mock",
+            "api_key": "test-key"
+        }
+    )
+
+    # Then create campaign
     response = client.post(
         "/create_campaign",
         json={
@@ -172,14 +225,32 @@ def test_redis_caching(mock_redis):
 # --- Error Handling Tests ---
 
 def test_model_error_handling():
-    response = client.post(
-        "/configure_model",
-        json={
-            "model_name": "invalid_model",
-            "api_key": "test-key"
-        }
-    )
-    assert response.status_code == 400
+    from main import ModelError, ModelInitializationError
+    
+    # Test invalid model name
+    with patch('main.MODEL_REGISTRY', {"mock": None}):
+        response = client.post(
+            "/configure_model",
+            json={
+                "model_name": "invalid_model",
+                "api_key": "test-key"
+            }
+        )
+        assert response.status_code == 400
+        assert "not supported" in response.json()["detail"]
+    
+    # Test model initialization error
+    with patch('main.get_model_adapter') as mock_adapter:
+        mock_adapter.side_effect = ModelInitializationError("Init failed")
+        response = client.post(
+            "/configure_model",
+            json={
+                "model_name": "mock",
+                "api_key": "test-key"
+            }
+        )
+        assert response.status_code == 400
+        assert "Init failed" in response.json()["detail"]
 
 def test_database_error_handling(mock_db):
     mock_db.side_effect = Exception("Database error")
@@ -262,8 +333,115 @@ def test_agent_creation(mock_langfuse):
     assert agent.name == "ContentAgent"
     assert "expert in crafting compelling email content" in agent.system_message
 
+def test_all_agent_types(mock_langfuse):
+    from main import (
+        create_content_agent,
+        create_design_agent,
+        create_analytics_agent,
+        create_personalization_agent,
+        create_delivery_agent,
+        create_governance_agent
+    )
+    
+    # Test each agent type
+    agents = [
+        (create_content_agent(1), "ContentAgent", "expert in crafting compelling email content"),
+        (create_design_agent(1), "DesignAgent", "expert in email design"),
+        (create_analytics_agent(1), "AnalyticsAgent", "expert in campaign analytics"),
+        (create_personalization_agent(1), "PersonalizationAgent", "expert in personalization"),
+        (create_delivery_agent(1), "DeliveryAgent", "expert in email delivery"),
+        (create_governance_agent(1), "GovernanceAgent", "expert in compliance")
+    ]
+    
+    for agent, expected_name, expected_message in agents:
+        assert agent.name == expected_name
+        assert expected_message in agent.system_message
+
+def test_agent_creation_error_handling(mock_langfuse):
+    from main import create_agent
+    
+    # Test with invalid user_id
+    agent = create_agent("TestAgent", "Test message", -1)
+    assert agent.llm_config["config_list"][0]["model"] == "mock"
+    
+    # Test with failing langfuse
+    mock_langfuse.side_effect = Exception("Langfuse error")
+    agent = create_agent("TestAgent", "Test message", 1)
+    assert agent.llm_config["config_list"][0]["model"] == "mock"
+
+def test_langfuse_llm_initialization(mock_langfuse, mock_db):
+    from main import LangfuseLLM
+    
+    # Test successful initialization
+    llm = LangfuseLLM(mock_langfuse, user_id=1)
+    assert llm.langfuse == mock_langfuse
+    assert llm.user_id == 1
+    
+    # Test config list retrieval with DB error
+    mock_db.side_effect = Exception("DB error")
+    llm = LangfuseLLM(mock_langfuse, user_id=1)
+    config = llm.config_list
+    assert config[0]["model"] == "mock"
+    assert config[0]["api_key"] == "test-api-key"
+
+def test_langfuse_llm_generation(mock_langfuse):
+    from main import LangfuseLLM
+    
+    llm = LangfuseLLM(mock_langfuse, user_id=1)
+    
+    # Test successful generation
+    result = llm.create(messages=[{"role": "user", "content": "test prompt"}])
+    assert "choices" in result
+    assert result["choices"][0]["message"]["role"] == "assistant"
+    
+    # Test generation with retry
+    mock_langfuse.span.side_effect = None  # Reset side effect
+    mock_langfuse.span.return_value.end.side_effect = [Exception("First error"), None]
+    result = llm.create(prompt="test prompt")
+    assert "choices" in result
+    assert result["choices"][0]["message"]["role"] == "assistant"
+
 def test_group_chat_creation(mock_langfuse):
     from main import create_group_chat
     chat_manager = create_group_chat(user_id=1, task="Test task")
+    
+    # Test agent creation
     assert len(chat_manager.groupchat.agents) == 6  # All agents created
-    assert "Collaborate to create an email campaign" in chat_manager.groupchat.system_message 
+    agent_names = {agent.name for agent in chat_manager.groupchat.agents}
+    expected_names = {
+        "ContentAgent", "DesignAgent", "AnalyticsAgent",
+        "PersonalizationAgent", "DeliveryAgent", "GovernanceAgent"
+    }
+    assert agent_names == expected_names
+    
+    # Test system message
+    system_messages = [msg for msg in chat_manager.groupchat.messages if msg["role"] == "system"]
+    assert len(system_messages) == 1
+    assert "Collaborate to create an email campaign" in system_messages[0]["content"]
+    
+    # Test chat configuration
+    assert chat_manager.groupchat.max_round == 12
+    assert chat_manager.groupchat.speaker_selection_method == "round_robin"
+    assert not chat_manager.groupchat.allow_repeat_speaker
+
+def test_group_chat_error_handling(mock_langfuse):
+    from main import create_group_chat, create_content_agent
+    
+    # Mock create_content_agent to raise an exception
+    with patch('main.create_content_agent') as mock_create_agent:
+        mock_create_agent.side_effect = Exception("Agent creation error")
+        with pytest.raises(HTTPException) as exc_info:
+            create_group_chat(user_id=1, task="Test task")
+        assert exc_info.value.status_code == 500
+        assert "Failed to initialize agent group chat" in str(exc_info.value.detail)
+
+def test_health_check():
+    response = client.get("/health")
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["status"] == "healthy"
+    assert "services" in data
+    assert "timestamp" in data
+    assert data["services"]["redis"] == "healthy"
+    assert data["services"]["postgres"] == "healthy"
+    assert data["services"]["ray"] == "healthy" 

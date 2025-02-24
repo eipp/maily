@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-primary: #4f46e5;
+  --color-primary-dark: #4338ca;
+  --color-primary-100: #e0e7ff;
+  --color-accent: #10b981;
+  --color-accent-dark: #059669;
+  --color-background: #f9fafb;
+}
+
+@layer base {
+  body {
+    @apply bg-background text-gray-900 antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-heading;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2;
+  }
+
+  .btn-primary {
+    @apply btn text-white bg-primary hover:bg-primary-dark focus:ring-primary;
+  }
+
+  .btn-secondary {
+    @apply btn text-primary bg-primary-100 hover:bg-primary-200 focus:ring-primary;
+  }
+
+  .btn-accent {
+    @apply btn text-white bg-accent hover:bg-accent-dark focus:ring-accent;
+  }
+
+  .input {
+    @apply block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm;
+  }
+
+  .label {
+    @apply block text-sm font-medium text-gray-700;
+  }
+
+  .card {
+    @apply bg-white overflow-hidden shadow rounded-lg;
+  }
+
+  .card-header {
+    @apply px-4 py-5 sm:px-6;
+  }
+
+  .card-body {
+    @apply px-4 py-5 sm:p-6;
+  }
+
+  .card-footer {
+    @apply px-4 py-4 sm:px-6 bg-gray-50;
+  }
+}

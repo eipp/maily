@@ -1,0 +1,131 @@
+version: '3.8'
+
+x-common-frontend: &common-frontend
+  build:
+    context: ./maily-frontend
+  volumes:
+    - /app/node_modules
+    - /app/.next
+  depends_on:
+    - backend
+
+x-common-backend: &common-backend
+  build:
+    context: ./backend
+  volumes:
+    - ./backend:/app
+  depends_on:
+    - db
+    - redis
+
+x-common-db: &common-db
+  image: postgres:13
+  volumes:
+    - postgres_data:/var/lib/postgresql/data
+
+x-common-redis: &common-redis
+  image: redis:6
+  volumes:
+    - redis_data:/data
+
+services:
+  # Development Environment
+  frontend:
+    <<: *common-frontend
+    target: builder  # Use builder stage for development
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./maily-frontend:/app
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    command: npm run dev
+
+  backend:
+    <<: *common-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - POSTGRES_USER=maily
+      - POSTGRES_PASSWORD=maily
+      - POSTGRES_DB=maily
+      - POSTGRES_HOST=db
+      - REDIS_HOST=redis
+      - DEBUG=1
+
+  db:
+    <<: *common-db
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=maily
+      - POSTGRES_PASSWORD=maily
+      - POSTGRES_DB=maily
+
+  redis:
+    <<: *common-redis
+    ports:
+      - "6379:6379"
+
+  # Staging Environment
+  frontend-staging:
+    <<: *common-frontend
+    target: production
+    ports:
+      - "3010:3000"
+    environment:
+      - NODE_ENV=staging
+      - NEXT_PUBLIC_API_URL=http://localhost:8010
+    command: npm run start
+
+  backend-staging:
+    <<: *common-backend
+    ports:
+      - "8010:8000"
+    environment:
+      - POSTGRES_USER=maily_staging
+      - POSTGRES_PASSWORD=maily_staging
+      - POSTGRES_DB=maily_staging
+      - POSTGRES_HOST=db-staging
+      - REDIS_HOST=redis-staging
+      - DEBUG=0
+
+  db-staging:
+    <<: *common-db
+    ports:
+      - "5433:5432"
+    environment:
+      - POSTGRES_USER=maily_staging
+      - POSTGRES_PASSWORD=maily_staging
+      - POSTGRES_DB=maily_staging
+
+  redis-staging:
+    <<: *common-redis
+    ports:
+      - "6380:6379"
+
+  prometheus:
+    image: prom/prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data: 

@@ -1,0 +1,128 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  AWS_REGION: us-east-1
+  TF_VERSION: 1.0.0
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          
+      - name: Install frontend dependencies
+        run: |
+          cd maily-frontend
+          npm ci
+          
+      - name: Run frontend tests
+        run: |
+          cd maily-frontend
+          npm run test
+          
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+          
+      - name: Install backend dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt
+          
+      - name: Run backend tests
+        run: |
+          cd backend
+          pytest
+
+  infrastructure:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          
+      - name: Terraform Format
+        run: |
+          cd terraform
+          terraform fmt -check
+          
+      - name: Terraform Init
+        run: |
+          cd terraform
+          terraform init
+          
+      - name: Terraform Plan
+        run: |
+          cd terraform
+          terraform plan -out=tfplan
+          
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          cd terraform
+          terraform apply -auto-approve tfplan
+
+  deploy:
+    needs: [test, infrastructure]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+        
+      - name: Build and push frontend
+        uses: docker/build-push-action@v4
+        with:
+          context: ./maily-frontend
+          push: true
+          tags: ${{ steps.login-ecr.outputs.registry }}/maily/frontend:latest
+          
+      - name: Build and push backend
+        uses: docker/build-push-action@v4
+        with:
+          context: ./backend
+          push: true
+          tags: ${{ steps.login-ecr.outputs.registry }}/maily/backend:latest
+          
+      - name: Deploy to ECS
+        run: |
+          aws ecs update-service --cluster maily-cluster --service maily-frontend --force-new-deployment
+          aws ecs update-service --cluster maily-cluster --service maily-backend --force-new-deployment
+          
+      - name: Wait for services to stabilize
+        run: |
+          aws ecs wait services-stable --cluster maily-cluster --services maily-frontend maily-backend 
