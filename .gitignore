@@ -1,5 +1,9 @@
 # Dependencies
 node_modules/
+.venv/
+venv/
+env/
+ENV/
 maily-env-py310/
 
 # Python
@@ -9,17 +13,26 @@ __pycache__/
 *.pyd
 .Python
 .pytest_cache/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.coverage
+htmlcov/
 
 # Environment variables
 .env
 .env.local
 .env.*.local
+env.local
 
 # Build and cache
 .cache/
 .next/
+out/
 build/
 dist/
+coverage/
 
 # IDE
 .vscode/
@@ -37,47 +50,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Coverage
-coverage/
-.coverage
-htmlcov/
-
-# Node
+# Next.js
 .next/
-out/
-.DS_Store
-*.pem
-.vercel
 *.tsbuildinfo
 next-env.d.ts
-
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-.env
-.venv
-env/
-venv/
-ENV/
-.cache/
-
-# Node
-.next/
-out/
-.DS_Store
-*.pem
 .vercel
-*.tsbuildinfo
-next-env.d.ts
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-.DS_Store 
+*.pem 
