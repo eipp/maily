@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.3.xsd">
+    <!-- Example suppression -->
+    <suppress>
+        <notes>Suppressing false positive for CVE in older cryptography package that doesn't affect us</notes>
+        <packageUrl regex="true">pkg:pypi/cryptography@.*</packageUrl>
+        <cve>CVE-2020-36242</cve>
+    </suppress>
+    <!-- Add more suppressions as needed -->
+</suppressions>
