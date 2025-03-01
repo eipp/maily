@@ -1,0 +1,230 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: compliance-config
+  labels:
+    app: maily
+    component: compliance
+data:
+  gdpr-settings.json: |
+    {
+      "retention": {
+        "user_data": 730,
+        "tracking_data": 90,
+        "consent_records": 1825,
+        "email_activity": 365
+      },
+      "consent": {
+        "required_for": [
+          "marketing",
+          "tracking",
+          "profiling",
+          "third_party_sharing"
+        ],
+        "default_opt_in": false,
+        "explicit_opt_in_required": true,
+        "double_opt_in": true,
+        "allow_granular_choices": true
+      },
+      "data_subject_rights": {
+        "access": true,
+        "erasure": true,
+        "portability": true,
+        "rectification": true,
+        "restriction": true,
+        "object": true
+      },
+      "cookie_settings": {
+        "strictly_necessary": {
+          "name": "Strictly Necessary",
+          "description": "These cookies are essential for the website to function properly.",
+          "mandatory": true
+        },
+        "preferences": {
+          "name": "Preferences",
+          "description": "These cookies allow the website to remember choices you make and provide enhanced features.",
+          "mandatory": false
+        },
+        "analytics": {
+          "name": "Analytics",
+          "description": "These cookies help us understand how visitors interact with our website.",
+          "mandatory": false
+        },
+        "marketing": {
+          "name": "Marketing",
+          "description": "These cookies are used to track visitors across websites to display relevant advertisements.",
+          "mandatory": false
+        }
+      },
+      "dpa_list": [
+        {
+          "name": "Amazon Web Services",
+          "purpose": "Cloud Infrastructure",
+          "location": "EU (Frankfurt)",
+          "data_types": ["Email", "System logs"],
+          "security_measures": "ISO 27001, SOC 2, GDPR compliant",
+          "transfer_mechanism": "SCCs"
+        },
+        {
+          "name": "SendGrid",
+          "purpose": "Email Delivery",
+          "location": "US",
+          "data_types": ["Email", "Name"],
+          "security_measures": "SOC 2, GDPR compliant",
+          "transfer_mechanism": "SCCs"
+        }
+      ]
+    }
+
+  can-spam-settings.json: |
+    {
+      "requirements": {
+        "physical_address_required": true,
+        "unsubscribe_mechanism": {
+          "required": true,
+          "max_processing_days": 10,
+          "methods": ["link", "reply"]
+        },
+        "subject_line": {
+          "prohibit_deceptive": true,
+          "prohibited_patterns": [
+            "^\\s*RE:",
+            "^\\s*FWD:",
+            "\\bFREE\\b",
+            "\\bUrgent\\b",
+            "\\bImportant\\b"
+          ]
+        },
+        "sender_info": {
+          "valid_from_address": true,
+          "valid_return_path": true,
+          "matching_domain": true
+        },
+        "opt_out": {
+          "honor_within_days": 10,
+          "no_transfer_prohibition": true,
+          "suppress_permanently": true
+        }
+      },
+      "email_template_requirements": {
+        "unsubscribe_link_required": true,
+        "physical_address_required": true,
+        "sender_info_required": true
+      },
+      "prohibited_practices": [
+        "harvesting_emails",
+        "dictionary_attacks",
+        "misleading_transmission_info",
+        "deceptive_subject_lines",
+        "no_opt_out_mechanism",
+        "ignoring_opt_out_requests",
+        "selling_harvested_emails"
+      ]
+    }
+
+  ip-warming-strategy.json: |
+    {
+      "stages": [
+        {
+          "day": 1,
+          "volume": 50,
+          "frequency": 1,
+          "monitoring": {
+            "bounce_threshold": 5,
+            "complaint_threshold": 0.1,
+            "spam_threshold": 0.1
+          }
+        },
+        {
+          "day": 2,
+          "volume": 100,
+          "frequency": 1,
+          "monitoring": {
+            "bounce_threshold": 5,
+            "complaint_threshold": 0.1,
+            "spam_threshold": 0.1
+          }
+        },
+        {
+          "day": 3,
+          "volume": 500,
+          "frequency": 2,
+          "monitoring": {
+            "bounce_threshold": 5,
+            "complaint_threshold": 0.1,
+            "spam_threshold": 0.1
+          }
+        },
+        {
+          "day": 7,
+          "volume": 1000,
+          "frequency": 2,
+          "monitoring": {
+            "bounce_threshold": 4,
+            "complaint_threshold": 0.1,
+            "spam_threshold": 0.1
+          }
+        },
+        {
+          "day": 14,
+          "volume": 5000,
+          "frequency": 2,
+          "monitoring": {
+            "bounce_threshold": 3,
+            "complaint_threshold": 0.1,
+            "spam_threshold": 0.1
+          }
+        },
+        {
+          "day": 21,
+          "volume": 10000,
+          "frequency": 2,
+          "monitoring": {
+            "bounce_threshold": 2,
+            "complaint_threshold": 0.1,
+            "spam_threshold": 0.1
+          }
+        },
+        {
+          "day": 30,
+          "volume": 50000,
+          "frequency": 2,
+          "monitoring": {
+            "bounce_threshold": 2,
+            "complaint_threshold": 0.1,
+            "spam_threshold": 0.1
+          }
+        }
+      ],
+      "audience_segmentation": {
+        "most_engaged": {
+          "description": "Users who have opened or clicked in the last 30 days",
+          "priority": 1
+        },
+        "recently_engaged": {
+          "description": "Users who have opened or clicked in the last 90 days",
+          "priority": 2
+        },
+        "previously_engaged": {
+          "description": "Users who have opened or clicked in the last 180 days",
+          "priority": 3
+        }
+      },
+      "monitoring": {
+        "metrics": [
+          "bounce_rate",
+          "complaint_rate",
+          "open_rate",
+          "click_rate",
+          "spam_reports",
+          "delivery_rate"
+        ],
+        "alert_thresholds": {
+          "bounce_rate": 5,
+          "complaint_rate": 0.1,
+          "delivery_rate": 95
+        },
+        "validation_period_days": 45,
+        "cooling_off_period_hours": 24
+      }
+    }

@@ -1,0 +1,25 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+
+rule_files:
+  - "vault-alerts.yml"
+
+scrape_configs:
+  - job_name: vault
+    metrics_path: /v1/sys/metrics
+    params:
+      format: ['prometheus']
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true  # For testing only, use CA cert in production
+    honor_labels: true
+    static_configs:
+      - targets: ['vault:8200']
+    bearer_token_string: "vault-monitoring-token"  # Replace with actual token
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']

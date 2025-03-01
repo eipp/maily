@@ -1,0 +1,37 @@
+{
+  "openai": {
+    "api_key": "YOUR_OPENAI_API_KEY",
+    "models": {
+      "default": "gpt-4o",
+      "fast": "gpt-3.5-turbo",
+      "embedding": "text-embedding-3-large"
+    },
+    "options": {
+      "max_tokens": 4000,
+      "temperature": 0.7
+    }
+  },
+  "anthropic": {
+    "api_key": "YOUR_ANTHROPIC_API_KEY",
+    "models": {
+      "default": "claude-3-sonnet-20240229",
+      "fast": "claude-instant-1.2",
+      "premium": "claude-3-opus-20240229"
+    },
+    "options": {
+      "max_tokens": 4000,
+      "temperature": 0.7
+    }
+  },
+  "google": {
+    "api_key": "YOUR_GOOGLE_API_KEY",
+    "models": {
+      "default": "gemini-pro",
+      "vision": "gemini-pro-vision"
+    },
+    "options": {
+      "max_tokens": 2048,
+      "temperature": 0.7
+    }
+  }
+}

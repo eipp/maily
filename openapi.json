@@ -1,0 +1,351 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Maily API",
+    "description": "AI-Powered Email Marketing Platform API",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Maily Support",
+      "email": "support@maily.app",
+      "url": "https://docs.maily.app"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://api.maily.app/v1",
+      "description": "Production server"
+    },
+    {
+      "url": "https://staging-api.maily.app/v1",
+      "description": "Staging server"
+    },
+    {
+      "url": "http://localhost:8000/v1",
+      "description": "Local development"
+    }
+  ],
+  "security": [
+    {
+      "ApiKeyAuth": []
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Check System Health",
+        "description": "Returns the health status of all system components",
+        "operationId": "checkHealth",
+        "tags": ["System"],
+        "responses": {
+          "200": {
+            "description": "System health status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                },
+                "example": {
+                  "status": "healthy",
+                  "components": {
+                    "database": "connected",
+                    "redis": "connected",
+                    "ai_service": "operational"
+                  },
+                  "uptime": "2d 3h 45m"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/configure_model": {
+      "post": {
+        "summary": "Configure AI Model",
+        "description": "Configure an AI model with API key and settings",
+        "operationId": "configureModel",
+        "tags": ["AI Models"],
+        "x-rateLimit": {
+          "limit": 10,
+          "period": "1 minute"
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelConfig"
+              },
+              "example": {
+                "model_name": "gpt-4",
+                "api_key": "your-api-key",
+                "temperature": 0.7,
+                "max_tokens": 2000
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Model configured successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelConfigResponse"
+                },
+                "example": {
+                  "status": "configured",
+                  "model_name": "gpt-4",
+                  "config_id": "conf_123abc"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid configuration",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "invalid_config",
+                  "message": "Invalid API key provided"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/create_campaign": {
+      "post": {
+        "summary": "Create Campaign",
+        "description": "Create a new email marketing campaign",
+        "operationId": "createCampaign",
+        "tags": ["Campaigns"],
+        "x-rateLimit": {
+          "limit": 50,
+          "period": "1 hour"
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CampaignRequest"
+              },
+              "example": {
+                "name": "Black Friday Sale",
+                "subject": "Don't Miss Our Biggest Sale!",
+                "task": "Create an email campaign for Black Friday sale",
+                "model_name": "gpt-4",
+                "audience": {
+                  "segments": ["active_customers", "high_value"],
+                  "exclusions": ["recent_purchasers"]
+                },
+                "schedule": {
+                  "send_time": "2024-11-24T00:00:00Z",
+                  "timezone": "America/New_York"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Campaign created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CampaignResponse"
+                },
+                "example": {
+                  "campaign_id": "camp_xyz789",
+                  "status": "draft",
+                  "preview_url": "https://preview.maily.app/camp_xyz789",
+                  "estimated_audience": 15000
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "rate_limit_exceeded",
+                  "message": "Rate limit of 50 campaigns per hour exceeded",
+                  "retry_after": 1800
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["healthy", "degraded", "unhealthy"]
+          },
+          "components": {
+            "type": "object",
+            "properties": {
+              "database": {
+                "type": "string",
+                "enum": ["connected", "disconnected", "degraded"]
+              },
+              "redis": {
+                "type": "string",
+                "enum": ["connected", "disconnected", "degraded"]
+              },
+              "ai_service": {
+                "type": "string",
+                "enum": ["operational", "limited", "unavailable"]
+              }
+            }
+          },
+          "uptime": {
+            "type": "string"
+          }
+        }
+      },
+      "ModelConfig": {
+        "type": "object",
+        "required": ["model_name", "api_key"],
+        "properties": {
+          "model_name": {
+            "type": "string",
+            "description": "Name of the AI model to use"
+          },
+          "api_key": {
+            "type": "string",
+            "description": "API key for the AI service"
+          },
+          "temperature": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "default": 0.7,
+            "description": "Controls randomness in the output"
+          },
+          "max_tokens": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4000,
+            "default": 2000,
+            "description": "Maximum number of tokens in the response"
+          }
+        }
+      },
+      "ModelConfigResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "model_name": {
+            "type": "string"
+          },
+          "config_id": {
+            "type": "string"
+          }
+        }
+      },
+      "CampaignRequest": {
+        "type": "object",
+        "required": ["name", "subject", "task"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Internal name for the campaign"
+          },
+          "subject": {
+            "type": "string",
+            "description": "Email subject line"
+          },
+          "task": {
+            "type": "string",
+            "description": "Description of what the AI should create"
+          },
+          "model_name": {
+            "type": "string",
+            "description": "AI model to use for content generation"
+          },
+          "audience": {
+            "type": "object",
+            "properties": {
+              "segments": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "exclusions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "schedule": {
+            "type": "object",
+            "properties": {
+              "send_time": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "timezone": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "CampaignResponse": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["draft", "scheduled", "sending", "completed"]
+          },
+          "preview_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "estimated_audience": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "System",
+      "description": "System-related operations"
+    },
+    {
+      "name": "AI Models",
+      "description": "AI model configuration and management"
+    },
+    {
+      "name": "Campaigns",
+      "description": "Email campaign operations"
+    }
+  ]
+}

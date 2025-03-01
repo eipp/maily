@@ -1,0 +1,221 @@
+name: Security Scanning
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    - cron: '0 0 * * 0'  # Weekly scan on Sundays
+
+jobs:
+  security-scan:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Full clone for better analysis
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+          cache: 'npm'
+
+      # Python dependency scanning
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install safety bandit
+
+      - name: Run Python Safety Check
+        run: safety check
+
+      - name: Run Bandit SAST for Python
+        run: bandit -r apps/api -f json -o bandit-results.json
+
+      # JavaScript dependency scanning
+      - name: Install Node.js dependencies
+        run: npm ci
+
+      - name: Run NPM Audit
+        run: npm audit --json > npm-audit-results.json || true
+
+      # OWASP Dependency Check for both Python and JavaScript
+      - name: OWASP Dependency Check
+        uses: dependency-check/Dependency-Check_Action@main
+        with:
+          project: 'maily'
+          path: '.'
+          format: 'HTML'
+          out: 'reports'
+          args: >
+            --scan apps/api
+            --scan apps/web
+            --enableExperimental
+            --suppression ./.dependency-check-suppression.xml
+
+      # CodeQL Analysis
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v2
+        with:
+          languages: javascript, python
+          queries: security-extended
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v2
+
+      # OWASP ZAP API Scan
+      - name: ZAP API Scan
+        uses: zaproxy/action-api-scan@v0.5.0
+        with:
+          target: 'https://dev-api.maily.com/openapi.json'
+          fail_action: false
+          token: ${{ secrets.GITHUB_TOKEN }}
+          docker_name: 'owasp/zap2docker-stable'
+          format: openapi
+          allow_issue_writing: true
+
+      # Upload results as artifacts
+      - name: Upload security scan results
+        uses: actions/upload-artifact@v3
+        with:
+          name: security-scan-results
+          path: |
+            bandit-results.json
+            npm-audit-results.json
+            reports/
+            zap-api-report.html
+
+      # Post results to Security Dashboard
+      - name: Post results to Security Dashboard
+        if: always()
+        run: |
+          curl -X POST ${{ secrets.SECURITY_DASHBOARD_URL }} \
+            -H "Authorization: Bearer ${{ secrets.SECURITY_DASHBOARD_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "repository": "${{ github.repository }}",
+              "branch": "${{ github.ref_name }}",
+              "commit": "${{ github.sha }}",
+              "timestamp": "'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'",
+              "workflow_run_id": "${{ github.run_id }}"
+            }'
+
+  secret-scanning:
+    name: Secret Scanning
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      # Detect secrets in code
+      - name: TruffleHog Secret Scanning
+        uses: trufflesecurity/trufflehog@main
+        with:
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --debug --only-verified
+
+  container-scanning:
+    name: Container Scanning
+    runs-on: ubuntu-latest
+    needs: security-scan
+    if: github.event_name == 'push' || github.event_name == 'schedule'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Build API Docker image
+        run: docker build -t maily/api:${{ github.sha }} -f docker/api.dockerfile .
+
+      - name: Trivy Container Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'maily/api:${{ github.sha }}'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  compliance-check:
+    name: Compliance Check
+    runs-on: ubuntu-latest
+    needs: security-scan
+    if: github.event_name == 'push' || github.event_name == 'schedule'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install compliance tools
+        run: |
+          pip install checkov
+          pip install cfn-lint
+
+      - name: Run Checkov
+        run: checkov -d infrastructure/ --output json > checkov-results.json
+
+      - name: Upload compliance results
+        uses: actions/upload-artifact@v3
+        with:
+          name: compliance-results
+          path: checkov-results.json
+
+  security-report:
+    name: Generate Security Report
+    runs-on: ubuntu-latest
+    needs: [security-scan, secret-scanning, container-scanning, compliance-check]
+    if: always()
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: all-artifacts
+
+      - name: Generate consolidated report
+        run: |
+          echo "# Security Scan Report" > security-report.md
+          echo "Generated at $(date)" >> security-report.md
+          echo "## Summary" >> security-report.md
+
+          # Add more report generation logic here
+
+      - name: Upload consolidated report
+        uses: actions/upload-artifact@v3
+        with:
+          name: security-report
+          path: security-report.md
+
+      - name: Post summary to PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('security-report.md', 'utf8');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: report
+            });

@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+  vault:
+    image: hashicorp/vault:1.15.2
+    container_name: maily-vault-prod
+    restart: unless-stopped
+    cap_add:
+      - IPC_LOCK
+    command: server
+    volumes:
+      - ./vault/config:/vault/config
+      - ./vault/data:/vault/data
+      - ./vault/logs:/vault/logs
+      - ./vault/tls:/vault/tls
+      - ./vault/policies:/vault/policies
+    ports:
+      - "8200:8200"
+      - "8201:8201"
+    environment:
+      - VAULT_ADDR=https://127.0.0.1:8200
+      - VAULT_SKIP_VERIFY=true  # Only for initial setup, remove in actual production
+      - VAULT_API_ADDR=https://vault.maily.internal:8200
+      - VAULT_CLUSTER_ADDR=https://vault.maily.internal:8201
+    healthcheck:
+      test: ["CMD", "wget", "--no-check-certificate", "-q", "-O", "-", "https://127.0.0.1:8200/v1/sys/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - maily-network
+
+  vault-agent:
+    image: hashicorp/vault:1.15.2
+    container_name: maily-vault-agent
+    restart: unless-stopped
+    depends_on:
+      - vault
+    volumes:
+      - ./vault/agent-config:/vault/agent-config
+      - ./vault/agent-data:/vault/agent-data
+    command: agent -config=/vault/agent-config/agent.hcl
+    environment:
+      - VAULT_ADDR=https://vault:8200
+    networks:
+      - maily-network
+
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    container_name: maily-prometheus
+    restart: unless-stopped
+    depends_on:
+      - vault
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    ports:
+      - "9090:9090"
+    networks:
+      - maily-network
+
+  grafana:
+    image: grafana/grafana:10.0.3
+    container_name: maily-grafana
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=secure_password  # Change this in production
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "3000:3000"
+    networks:
+      - maily-network
+
+volumes:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  maily-network:
+    driver: bridge

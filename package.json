@@ -1,0 +1,77 @@
+{
+  "name": "maily",
+  "version": "1.0.0",
+  "description": "AI-driven email marketing platform",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "turbo run build"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx}": [
+      "prettier --write",
+      "eslint --fix",
+      "npm run docs:api"
+    ],
+    "*.{json,md}": [
+      "prettier --write"
+    ]
+  },
+  "commitlint": {
+    "extends": [
+      "@commitlint/config-conventional"
+    ]
+  },
+  "dependencies": {
+    "@amplitude/analytics-browser": "2.11.12",
+    "@apidevtools/swagger-parser": "^10.1.0",
+    "@internationalized/date": "3.7.0",
+    "@prisma/client": "6.4.1",
+    "@radix-ui/react-popover": "1.1.6",
+    "@react-aria/calendar": "3.7.0",
+    "@react-aria/combobox": "3.11.1",
+    "@react-aria/datepicker": "3.13.0",
+    "@react-aria/dialog": "3.5.21",
+    "@react-aria/focus": "3.19.1",
+    "@react-aria/i18n": "3.12.5",
+    "@react-aria/overlays": "3.25.0",
+    "@react-aria/tabs": "3.9.9",
+    "@react-stately/calendar": "3.7.0",
+    "@react-stately/collections": "3.12.1",
+    "@react-stately/combobox": "3.10.2",
+    "@react-stately/datepicker": "3.12.0",
+    "@react-stately/tabs": "3.7.1",
+    "@react-types/calendar": "3.6.0",
+    "@upstash/ratelimit": "2.0.5",
+    "@upstash/redis": "1.34.4",
+    "chart.js": "4.4.8",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "framer-motion": "12.4.7",
+    "konva": "9.3.18",
+    "lucide-react": "0.475.0",
+    "js-yaml": "^4.1.0",
+    "jsdoc-to-markdown": "^8.0.0",
+    "next-auth": "4.24.11",
+    "react-chartjs-2": "5.3.0",
+    "react-konva": "19.0.3",
+    "tailwind-merge": "3.0.2",
+    "zod": "3.24.2"
+  },
+  "author": "Maily Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/maily/maily.git"
+  },
+  "optionalDependencies": {
+    "openapi-snippet": "^0.14.0"
+  }
+}

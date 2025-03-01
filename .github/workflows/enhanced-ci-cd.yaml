@@ -1,0 +1,702 @@
+name: Enhanced CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  # Allow manual triggering
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      canary:
+        description: 'Deploy as canary release'
+        required: false
+        default: false
+        type: boolean
+      percentage:
+        description: 'Canary traffic percentage'
+        required: false
+        default: '10'
+        type: string
+
+# Global environment variables for the workflow
+env:
+  NODE_VERSION: '18'
+  CACHE_NPM_DEPS: 'true'
+  CACHE_NEXT_BUILD: 'true'
+  CACHE_PLAYWRIGHT_BROWSERS: 'true'
+  # Turborepo Remote Caching
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+  TURBO_REMOTE_ONLY: 'true'
+
+# Concurrency group to avoid concurrent deployments
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-typecheck:
+    name: Lint and Type Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        if: ${{ env.CACHE_NPM_DEPS == 'true' }}
+        id: npm-cache
+        with:
+          path: |
+            **/node_modules
+            ~/.npm
+            ${{ github.workspace }}/.next/cache
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
+
+      - name: Install dependencies
+        if: steps.npm-cache.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run type-check
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: lint-and-typecheck
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        if: ${{ env.CACHE_NPM_DEPS == 'true' }}
+        id: npm-cache
+        with:
+          path: |
+            **/node_modules
+            ~/.npm
+            ${{ github.workspace }}/.next/cache
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
+
+      - name: Install dependencies
+        if: steps.npm-cache.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Run unit tests with coverage
+        run: npm run test:coverage
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        if: ${{ env.CACHE_PLAYWRIGHT_BROWSERS == 'true' }}
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('**/package-lock.json') }}
+
+      - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps
+
+      - name: Run E2E tests
+        run: npm run test:e2e
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            apps/web/playwright-report/
+            apps/web/coverage/
+            coverage_html/
+            test_report_*.json
+          retention-days: 30
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: true
+
+      - name: Check coverage thresholds
+        run: npx istanbul check-coverage --statements 80 --branches 70 --functions 80 --lines 80
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        if: ${{ env.CACHE_NPM_DEPS == 'true' }}
+        id: npm-cache
+        with:
+          path: |
+            **/node_modules
+            ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
+
+      - name: Install dependencies
+        if: steps.npm-cache.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Cache build outputs
+        uses: actions/cache@v4
+        if: ${{ env.CACHE_NEXT_BUILD == 'true' }}
+        id: next-build-cache
+        with:
+          path: |
+            ${{ github.workspace }}/apps/web/.next/cache
+            ${{ github.workspace }}/.turbo
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('apps/web/pages/**', 'apps/web/components/**', 'apps/web/styles/**', 'packages/**') }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-
+
+      - name: Build
+        run: npm run build
+
+      - name: Generate build metadata
+        run: |
+          echo "{\"version\": \"1.0.0\", \"buildId\": \"${GITHUB_SHA}\", \"buildTime\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\", \"buildUrl\": \"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" > build-metadata.json
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            apps/web/.next
+            build-metadata.json
+          retention-days: 7
+
+  canary-deployment:
+    name: Canary Deployment
+    runs-on: ubuntu-latest
+    needs: build
+    if: |
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.canary == 'true') ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/develop' && github.event.inputs.environment == 'staging')
+    environment: canary-${{ github.event.inputs.environment || 'staging' }}
+
+    outputs:
+      deployment_id: ${{ steps.deploy.outputs.deployment_id }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+          path: artifacts
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Setup ArgoCD CLI
+        run: |
+          curl -sSL -o argocd-linux-amd64 https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+          sudo install -m 555 argocd-linux-amd64 /usr/local/bin/argocd
+          rm argocd-linux-amd64
+
+      - name: Login to ArgoCD
+        run: |
+          argocd login ${{ secrets.ARGOCD_SERVER }} --username ${{ secrets.ARGOCD_USERNAME }} --password ${{ secrets.ARGOCD_PASSWORD }} --insecure
+        env:
+          ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+
+      - name: Deploy canary version
+        id: deploy
+        run: |
+          # Determine target environment
+          ENVIRONMENT="${{ github.event.inputs.environment || 'staging' }}"
+          CANARY_PERCENTAGE="${{ github.event.inputs.percentage || '10' }}"
+
+          # Create a canary-specific overlay with traffic splitting
+          echo "Deploying canary to ${ENVIRONMENT} with ${CANARY_PERCENTAGE}% traffic"
+
+          # Create a unique deployment ID for tracking
+          DEPLOYMENT_ID="canary-$(date +%Y%m%d%H%M%S)-${GITHUB_SHA:0:7}"
+          echo "deployment_id=${DEPLOYMENT_ID}" >> $GITHUB_OUTPUT
+
+          # Apply canary configuration
+          argocd app patch maily-${ENVIRONMENT} --patch "{\"spec\":{\"source\":{\"targetRevision\":\"${GITHUB_SHA}\", \"helm\":{\"parameters\":[{\"name\":\"canary.enabled\",\"value\":\"true\"}, {\"name\":\"canary.percentage\",\"value\":\"${CANARY_PERCENTAGE}\"}, {\"name\":\"canary.deploymentId\",\"value\":\"${DEPLOYMENT_ID}\"}]}}}}" --type merge
+
+          # Sync the application to apply changes
+          argocd app sync maily-${ENVIRONMENT}
+
+          echo "Canary deployment ${DEPLOYMENT_ID} initiated"
+
+          # Store the deployment ID in a file for the verification step
+          echo "${DEPLOYMENT_ID}" > canary-deployment-id.txt
+
+          # Upload deployment ID as an artifact
+          mkdir -p canary-deployment
+          cp canary-deployment-id.txt canary-deployment/
+
+      - name: Upload canary deployment info
+        uses: actions/upload-artifact@v4
+        with:
+          name: canary-deployment-info
+          path: canary-deployment
+          retention-days: 1
+
+      - name: Wait for deployment to stabilize
+        run: |
+          echo "Waiting for canary deployment to stabilize..."
+          argocd app wait maily-${{ github.event.inputs.environment || 'staging' }} --health --timeout 300
+
+  verify-canary:
+    name: Verify Canary Deployment
+    runs-on: ubuntu-latest
+    needs: canary-deployment
+    if: |
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.canary == 'true') ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/develop' && github.event.inputs.environment == 'staging')
+    environment: canary-${{ github.event.inputs.environment || 'staging' }}
+
+    outputs:
+      canary_status: ${{ steps.verify.outputs.status }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download canary deployment info
+        uses: actions/download-artifact@v4
+        with:
+          name: canary-deployment-info
+          path: canary-deployment
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Setup monitoring tools
+        run: |
+          # Install necessary tools for monitoring
+          sudo apt-get update
+          sudo apt-get install -y jq bc curl
+
+      - name: Run deployment verification
+        id: verify
+        run: |
+          # Load deployment ID
+          DEPLOYMENT_ID=$(cat canary-deployment/canary-deployment-id.txt)
+          ENVIRONMENT="${{ github.event.inputs.environment || 'staging' }}"
+
+          echo "Verifying canary deployment ${DEPLOYMENT_ID} in ${ENVIRONMENT}..."
+
+          # Run the verification script
+          chmod +x ./scripts/automated-deployment-verification.sh
+
+          # Set environment variables for the script
+          export NAMESPACE="maily-${ENVIRONMENT}"
+          export CANARY_DEPLOYMENT_ID="${DEPLOYMENT_ID}"
+          export VERIFICATION_TIMEOUT=600
+          export SLACK_WEBHOOK_URL="${{ secrets.SLACK_WEBHOOK_URL }}"
+
+          # Run verification with additional canary-specific checks
+          if ./scripts/automated-deployment-verification.sh --canary; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "Canary deployment verification successful!"
+          else
+            echo "status=failure" >> $GITHUB_OUTPUT
+            echo "Canary deployment verification failed!"
+          fi
+
+      - name: Upload verification report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: canary-verification-report
+          path: ./deployment-reports/
+          retention-days: 30
+
+      - name: Promote or Rollback based on verification
+        run: |
+          ENVIRONMENT="${{ github.event.inputs.environment || 'staging' }}"
+
+          if [ "${{ steps.verify.outputs.status }}" == "success" ]; then
+            echo "Canary verification successful. Promoting to full deployment..."
+            # The promote-canary job will handle this
+          else
+            echo "Canary verification failed. Rolling back..."
+
+            # Rollback canary deployment
+            argocd login ${{ secrets.ARGOCD_SERVER }} --username ${{ secrets.ARGOCD_USERNAME }} --password ${{ secrets.ARGOCD_PASSWORD }} --insecure
+
+            # Disable canary and revert to previous version
+            argocd app patch maily-${ENVIRONMENT} --patch "{\"spec\":{\"source\":{\"helm\":{\"parameters\":[{\"name\":\"canary.enabled\",\"value\":\"false\"}]}}}}" --type merge
+
+            # Sync to apply rollback
+            argocd app sync maily-${ENVIRONMENT}
+            argocd app wait maily-${ENVIRONMENT} --health --timeout 300
+
+            echo "Canary rollback completed"
+            exit 1
+          fi
+        env:
+          ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+
+  promote-canary:
+    name: Promote Canary to Full Deployment
+    runs-on: ubuntu-latest
+    needs: verify-canary
+    if: needs.verify-canary.outputs.canary_status == 'success'
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup ArgoCD CLI
+        run: |
+          curl -sSL -o argocd-linux-amd64 https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+          sudo install -m 555 argocd-linux-amd64 /usr/local/bin/argocd
+          rm argocd-linux-amd64
+
+      - name: Promote canary to full deployment
+        run: |
+          # Determine target environment
+          ENVIRONMENT="${{ github.event.inputs.environment || 'staging' }}"
+
+          echo "Promoting canary to full deployment in ${ENVIRONMENT}..."
+
+          # Login to ArgoCD
+          argocd login ${{ secrets.ARGOCD_SERVER }} --username ${{ secrets.ARGOCD_USERNAME }} --password ${{ secrets.ARGOCD_PASSWORD }} --insecure
+
+          # Update application to disable canary and deploy full version
+          argocd app patch maily-${ENVIRONMENT} --patch "{\"spec\":{\"source\":{\"targetRevision\":\"${GITHUB_SHA}\", \"helm\":{\"parameters\":[{\"name\":\"canary.enabled\",\"value\":\"false\"}]}}}}" --type merge
+
+          # Sync the application to apply changes
+          argocd app sync maily-${ENVIRONMENT}
+
+          # Wait for full deployment to stabilize
+          argocd app wait maily-${ENVIRONMENT} --health --timeout 300
+
+          echo "Full deployment completed successfully"
+        env:
+          ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: build
+    if: |
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/develop' &&
+      !(github.event_name == 'workflow_dispatch' && github.event.inputs.canary == 'true')
+    environment: staging
+
+    outputs:
+      deployment_id: ${{ steps.deploy.outputs.deployment_id }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+          path: artifacts
+
+      - name: Setup ArgoCD CLI
+        run: |
+          curl -sSL -o argocd-linux-amd64 https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+          sudo install -m 555 argocd-linux-amd64 /usr/local/bin/argocd
+          rm argocd-linux-amd64
+
+      - name: Deploy to Staging
+        id: deploy
+        run: |
+          # Create a unique deployment ID for tracking
+          DEPLOYMENT_ID="deploy-$(date +%Y%m%d%H%M%S)-${GITHUB_SHA:0:7}"
+          echo "deployment_id=${DEPLOYMENT_ID}" >> $GITHUB_OUTPUT
+
+          # Login to ArgoCD
+          argocd login ${{ secrets.ARGOCD_SERVER }} --username ${{ secrets.ARGOCD_USERNAME }} --password ${{ secrets.ARGOCD_PASSWORD }} --insecure
+
+          # Update and sync the application
+          argocd app set maily-staging --parameter deploymentId=${DEPLOYMENT_ID}
+          argocd app sync maily-staging
+          argocd app wait maily-staging --health
+        env:
+          ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+
+      - name: Store deployment info
+        run: |
+          echo "${{ steps.deploy.outputs.deployment_id }}" > deployment-id.txt
+          mkdir -p deployment-info
+          cp deployment-id.txt deployment-info/
+
+      - name: Upload deployment info
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-deployment-info
+          path: deployment-info
+          retention-days: 1
+
+  verify-staging:
+    name: Verify Staging Deployment
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    environment: staging
+
+    outputs:
+      verification_status: ${{ steps.verify.outputs.status }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download deployment info
+        uses: actions/download-artifact@v4
+        with:
+          name: staging-deployment-info
+          path: deployment-info
+
+      - name: Setup monitoring tools
+        run: |
+          # Install necessary tools
+          sudo apt-get update
+          sudo apt-get install -y jq bc curl
+
+      - name: Run deployment verification
+        id: verify
+        run: |
+          # Load deployment ID
+          DEPLOYMENT_ID=$(cat deployment-info/deployment-id.txt)
+
+          echo "Verifying staging deployment ${DEPLOYMENT_ID}..."
+
+          # Run the verification script
+          chmod +x ./scripts/automated-deployment-verification.sh
+
+          # Set environment variables for the script
+          export NAMESPACE="maily-staging"
+          export DEPLOYMENT_ID="${DEPLOYMENT_ID}"
+          export VERIFICATION_TIMEOUT=600
+          export SLACK_WEBHOOK_URL="${{ secrets.SLACK_WEBHOOK_URL }}"
+
+          # Run verification
+          if ./scripts/automated-deployment-verification.sh; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "Staging deployment verification successful!"
+          else
+            echo "status=failure" >> $GITHUB_OUTPUT
+            echo "Staging deployment verification failed!"
+          fi
+
+      - name: Upload verification report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-verification-report
+          path: ./deployment-reports/
+          retention-days: 30
+
+      - name: Rollback on verification failure
+        if: steps.verify.outputs.status == 'failure'
+        run: |
+          echo "Staging verification failed. Rolling back..."
+
+          # Login to ArgoCD
+          argocd login ${{ secrets.ARGOCD_SERVER }} --username ${{ secrets.ARGOCD_USERNAME }} --password ${{ secrets.ARGOCD_PASSWORD }} --insecure
+
+          # Rollback to the previous known good version
+          argocd app rollback maily-staging
+
+          # Wait for rollback to complete
+          argocd app wait maily-staging --health --timeout 300
+
+          echo "Rollback completed"
+        env:
+          ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [build, verify-staging]
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    environment: production
+
+    outputs:
+      deployment_id: ${{ steps.deploy.outputs.deployment_id }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+          path: artifacts
+
+      - name: Setup ArgoCD CLI
+        run: |
+          curl -sSL -o argocd-linux-amd64 https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+          sudo install -m 555 argocd-linux-amd64 /usr/local/bin/argocd
+          rm argocd-linux-amd64
+
+      - name: Deploy to Production
+        id: deploy
+        run: |
+          # Create a unique deployment ID for tracking
+          DEPLOYMENT_ID="deploy-$(date +%Y%m%d%H%M%S)-${GITHUB_SHA:0:7}"
+          echo "deployment_id=${DEPLOYMENT_ID}" >> $GITHUB_OUTPUT
+
+          # Login to ArgoCD
+          argocd login ${{ secrets.ARGOCD_SERVER }} --username ${{ secrets.ARGOCD_USERNAME }} --password ${{ secrets.ARGOCD_PASSWORD }} --insecure
+
+          # Update and sync the application
+          argocd app set maily-production --parameter deploymentId=${DEPLOYMENT_ID}
+          argocd app sync maily-production
+          argocd app wait maily-production --health
+        env:
+          ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+
+      - name: Store deployment info
+        run: |
+          echo "${{ steps.deploy.outputs.deployment_id }}" > deployment-id.txt
+          mkdir -p deployment-info
+          cp deployment-id.txt deployment-info/
+
+      - name: Upload deployment info
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-deployment-info
+          path: deployment-info
+          retention-days: 1
+
+  verify-production:
+    name: Verify Production Deployment
+    runs-on: ubuntu-latest
+    needs: deploy-production
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download deployment info
+        uses: actions/download-artifact@v4
+        with:
+          name: production-deployment-info
+          path: deployment-info
+
+      - name: Setup monitoring tools
+        run: |
+          # Install necessary tools
+          sudo apt-get update
+          sudo apt-get install -y jq bc curl
+
+      - name: Run deployment verification
+        id: verify
+        run: |
+          # Load deployment ID
+          DEPLOYMENT_ID=$(cat deployment-info/deployment-id.txt)
+
+          echo "Verifying production deployment ${DEPLOYMENT_ID}..."
+
+          # Run the verification script
+          chmod +x ./scripts/automated-deployment-verification.sh
+
+          # Set environment variables for the script
+          export NAMESPACE="maily-production"
+          export DEPLOYMENT_ID="${DEPLOYMENT_ID}"
+          export VERIFICATION_TIMEOUT=600
+          export SLACK_WEBHOOK_URL="${{ secrets.SLACK_WEBHOOK_URL }}"
+
+          # Run verification
+          if ./scripts/automated-deployment-verification.sh; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "Production deployment verification successful!"
+          else
+            echo "status=failure" >> $GITHUB_OUTPUT
+            echo "Production deployment verification failed!"
+            exit 1
+          fi
+
+      - name: Upload verification report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-verification-report
+          path: ./deployment-reports/
+          retention-days: 30
+
+      - name: Rollback on verification failure
+        if: failure()
+        run: |
+          echo "Production verification failed. Rolling back..."
+
+          # Login to ArgoCD
+          argocd login ${{ secrets.ARGOCD_SERVER }} --username ${{ secrets.ARGOCD_USERNAME }} --password ${{ secrets.ARGOCD_PASSWORD }} --insecure
+
+          # Rollback to the previous known good version
+          argocd app rollback maily-production
+
+          # Wait for rollback to complete
+          argocd app wait maily-production --health --timeout 300
+
+          echo "Rollback completed"
+        env:
+          ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+
+      - name: Production deployment notification
+        if: success()
+        run: |
+          # Send notification of successful deployment
+          curl -X POST -H "Content-Type: application/json" -d '{
+            "text": "🚀 *Production deployment successful*\n• Build: '"${GITHUB_SHA:0:7}"'\n• Workflow: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View workflow run>"
+          }' ${{ secrets.SLACK_WEBHOOK_URL }}

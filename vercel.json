@@ -1,0 +1,27 @@
+{
+  "version": 2,
+  "name": "maily",
+  "scope": "eipp",
+  "regions": ["cdg1", "sfo1", "iad1", "sin1"],
+  "builds": [
+    {
+      "src": "apps/web/package.json",
+      "use": "@vercel/next"
+    },
+    {
+      "src": "apps/api/index.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    { "src": "/api/(.*)", "dest": "apps/api/index.js" },
+    { "src": "/(.*)", "dest": "apps/web/$1" }
+  ],
+  "env": {
+    "NODE_ENV": "production"
+  },
+  "github": {
+    "silent": true,
+    "autoJobCancelation": true
+  }
+}

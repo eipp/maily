@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: email-processing-service
+  namespace: maily-production
+  labels:
+    app: email-processing-service
+    service: email
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: email-processing-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: email-processing-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3000"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: email-processing-service
+        image: ${REGISTRY}/email-processing-service:${TAG}
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 3000
+          name: http
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: PORT
+          value: "3000"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: database-credentials
+              key: email-processing-db-url
+        - name: SENDGRID_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: email-provider-credentials
+              key: sendgrid-api-key
+        - name: RESEND_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: email-provider-credentials
+              key: resend-api-key
+        - name: MAILGUN_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: email-provider-credentials
+              key: mailgun-api-key
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 2
+          successThreshold: 1
+          failureThreshold: 3
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      imagePullSecrets:
+      - name: registry-credentials

@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: contact-management-service
+  namespace: maily-production
+  labels:
+    app: contact-management-service
+    service: contacts
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8000"
+spec:
+  selector:
+    app: contact-management-service
+  ports:
+  - port: 80
+    targetPort: 8000
+    name: http
+  type: ClusterIP

@@ -1,0 +1,227 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kyverno
+---
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: kyverno
+  namespace: kyverno
+spec:
+  interval: 5m
+  chart:
+    spec:
+      chart: kyverno
+      version: "2.7.4"
+      sourceRef:
+        kind: HelmRepository
+        name: kyverno
+        namespace: flux-system
+  values:
+    replicaCount: 1
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-labels
+spec:
+  validationFailureAction: enforce
+  background: true
+  rules:
+  - name: check-required-labels
+    match:
+      resources:
+        kinds:
+        - Pod
+    validate:
+      message: "The following labels are required: app, environment, owner"
+      pattern:
+        metadata:
+          labels:
+            app: "?*"
+            environment: "?*"
+            owner: "?*"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-image-registries
+spec:
+  validationFailureAction: enforce
+  background: true
+  rules:
+  - name: validate-registries
+    match:
+      resources:
+        kinds:
+        - Pod
+    validate:
+      message: "Images must come from approved registries"
+      pattern:
+        spec:
+          containers:
+          - image: "{{ allowed_registries }}"
+      foreach:
+      - list: "request.object.spec.containers"
+        allowed_registries:
+        - "docker.io/*"
+        - "gcr.io/*"
+        - "quay.io/*"
+        - "k8s.gcr.io/*"
+        - "registry.k8s.io/*"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-privileged-containers
+spec:
+  validationFailureAction: enforce
+  background: true
+  rules:
+  - name: privileged-containers
+    match:
+      resources:
+        kinds:
+        - Pod
+    validate:
+      message: "Privileged containers are not allowed"
+      pattern:
+        spec:
+          containers:
+            - name: "*"
+              securityContext:
+                privileged: false
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-pod-probes
+spec:
+  validationFailureAction: enforce
+  background: true
+  rules:
+  - name: require-probes
+    match:
+      resources:
+        kinds:
+        - Deployment
+    validate:
+      message: "Liveness and readiness probes are required"
+      pattern:
+        spec:
+          template:
+            spec:
+              containers:
+              - name: "*"
+                livenessProbe:
+                  {}
+                readinessProbe:
+                  {}
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: gdpr-data-protection
+spec:
+  validationFailureAction: enforce
+  background: true
+  rules:
+  - name: check-data-classification
+    match:
+      resources:
+        kinds:
+        - ConfigMap
+        - Secret
+    validate:
+      message: "GDPR compliance: Data resources must have a dataClassification label"
+      pattern:
+        metadata:
+          labels:
+            dataClassification: "?*"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: ccpa-encryption-required
+spec:
+  validationFailureAction: enforce
+  background: true
+  rules:
+  - name: check-encryption
+    match:
+      resources:
+        kinds:
+        - PersistentVolumeClaim
+    validate:
+      message: "CCPA compliance: PVCs must have encryption enabled"
+      pattern:
+        metadata:
+          annotations:
+            encryption: "enabled"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: canspam-email-templates
+spec:
+  validationFailureAction: enforce
+  background: true
+  rules:
+  - name: check-email-templates
+    match:
+      resources:
+        kinds:
+        - ConfigMap
+        selector:
+          matchLabels:
+            type: "email-template"
+    validate:
+      message: "CAN-SPAM compliance: Email templates must have unsubscribe information"
+      pattern:
+        metadata:
+          annotations:
+            hasUnsubscribe: "true"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: generate-compliance-report
+spec:
+  background: true
+  rules:
+  - name: generate-report
+    match:
+      resources:
+        kinds:
+        - Namespace
+    generate:
+      kind: ConfigMap
+      name: compliance-report-{{request.object.metadata.name}}
+      namespace: kyverno
+      data:
+        kind: ConfigMap
+        apiVersion: v1
+        metadata:
+          name: compliance-report-{{request.object.metadata.name}}
+          namespace: kyverno
+          labels:
+            report-type: compliance
+        data:
+          namespace: "{{request.object.metadata.name}}"
+          creation-time: "{{time_now_utc()}}"
+          report: |
+            Compliance report for namespace {{request.object.metadata.name}}
+            Generated on {{time_now_utc()}}
+
+            This namespace is subject to the following compliance policies:
+            - GDPR data protection
+            - CCPA encryption requirements
+            - CAN-SPAM email requirements

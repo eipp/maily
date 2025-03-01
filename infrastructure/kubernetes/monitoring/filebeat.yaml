@@ -1,0 +1,319 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: filebeat-config
+  namespace: monitoring
+data:
+  filebeat.yml: |
+    filebeat.config:
+      modules:
+        path: ${path.config}/modules.d/*.yml
+        reload.enabled: true
+
+    # Autodiscover configuration for Kubernetes
+    filebeat.autodiscover:
+      providers:
+        - type: kubernetes
+          node: ${NODE_NAME}
+          scope: node
+          hints.enabled: true
+          hints.default_config:
+            type: container
+            paths:
+              - /var/log/containers/*${data.kubernetes.container.id}.log
+          templates:
+            # Template for API services
+            - condition:
+                contains:
+                  kubernetes.labels.app: maily-api
+              config:
+                - type: container
+                  paths:
+                    - /var/log/containers/*${data.kubernetes.container.id}.log
+                  json.keys_under_root: true
+                  json.message_key: message
+                  json.add_error_key: true
+                  processors:
+                    - add_kubernetes_metadata:
+                        host: ${NODE_NAME}
+                    - add_fields:
+                        target: ''
+                        fields:
+                          service: maily-api
+                    - rename:
+                        fields:
+                          - from: "log"
+                            to: "container_log"
+                        ignore_missing: true
+                  fields:
+                    log_type: application
+                    app: maily-api
+                  fields_under_root: true
+
+            # Template for Web app
+            - condition:
+                contains:
+                  kubernetes.labels.app: maily-web
+              config:
+                - type: container
+                  paths:
+                    - /var/log/containers/*${data.kubernetes.container.id}.log
+                  json.keys_under_root: true
+                  json.message_key: message
+                  json.add_error_key: true
+                  processors:
+                    - add_kubernetes_metadata:
+                        host: ${NODE_NAME}
+                    - add_fields:
+                        target: ''
+                        fields:
+                          service: maily-web
+                    - rename:
+                        fields:
+                          - from: "log"
+                            to: "container_log"
+                        ignore_missing: true
+                  fields:
+                    log_type: application
+                    app: maily-web
+                  fields_under_root: true
+
+            # Template for Worker services
+            - condition:
+                contains:
+                  kubernetes.labels.app: maily-workers
+              config:
+                - type: container
+                  paths:
+                    - /var/log/containers/*${data.kubernetes.container.id}.log
+                  json.keys_under_root: true
+                  json.message_key: message
+                  json.add_error_key: true
+                  processors:
+                    - add_kubernetes_metadata:
+                        host: ${NODE_NAME}
+                    - add_fields:
+                        target: ''
+                        fields:
+                          service: maily-workers
+                    - rename:
+                        fields:
+                          - from: "log"
+                            to: "container_log"
+                        ignore_missing: true
+                  fields:
+                    log_type: application
+                    app: maily-workers
+                  fields_under_root: true
+
+    # Additional log inputs (if needed)
+    filebeat.inputs:
+      # Host system logs
+      - type: log
+        enabled: true
+        paths:
+          - /var/log/syslog
+          - /var/log/messages
+          - /var/log/auth.log
+        fields:
+          log_type: system
+          service: host
+        fields_under_root: true
+
+    # Processors applied to all events
+    processors:
+      - add_host_metadata: ~
+      - add_cloud_metadata: ~
+      - add_kubernetes_metadata:
+          host: ${NODE_NAME}
+          matchers:
+            - logs_path:
+                logs_path: "/var/log/containers/"
+      # Add environment info
+      - add_fields:
+          target: ''
+          fields:
+            environment: ${ENVIRONMENT:production}
+      # Clean up redundant fields
+      - drop_fields:
+          fields: ["agent.ephemeral_id", "ecs.version", "input.type"]
+          ignore_missing: true
+
+    # Output configuration - send to Logstash
+    output.logstash:
+      hosts: ["logstash.monitoring.svc.cluster.local:5044"]
+      loadbalance: true
+
+    # Alternative direct Elasticsearch output (uncomment if needed)
+    # output.elasticsearch:
+    #   hosts: ["elasticsearch.monitoring.svc.cluster.local:9200"]
+    #   index: "filebeat-%{[agent.version]}-%{+yyyy.MM.dd}"
+    #   username: "${ELASTICSEARCH_USERNAME}"
+    #   password: "${ELASTICSEARCH_PASSWORD}"
+
+    # Monitoring settings
+    monitoring:
+      enabled: true
+      elasticsearch:
+        hosts: ["elasticsearch.monitoring.svc.cluster.local:9200"]
+        username: "${ELASTICSEARCH_USERNAME:elastic}"
+        password: "${ELASTICSEARCH_PASSWORD}"
+
+    # Logging settings for Filebeat itself
+    logging.level: info
+    logging.to_files: true
+    logging.files:
+      path: /var/log/filebeat
+      name: filebeat
+      keepfiles: 7
+      permissions: 0644
+
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: filebeat
+  namespace: monitoring
+  labels:
+    app: filebeat
+spec:
+  selector:
+    matchLabels:
+      app: filebeat
+  template:
+    metadata:
+      labels:
+        app: filebeat
+    spec:
+      serviceAccountName: filebeat
+      terminationGracePeriodSeconds: 30
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+        - name: filebeat
+          image: docker.elastic.co/beats/filebeat:8.12.0
+          args: ["-c", "/etc/filebeat.yml", "-e"]
+          env:
+            - name: ELASTICSEARCH_USERNAME
+              value: elastic
+            - name: ELASTICSEARCH_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: elasticsearch-credentials
+                  key: password
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: ENVIRONMENT
+              valueFrom:
+                configMapKeyRef:
+                  name: app-environment
+                  key: environment
+                  optional: true
+          securityContext:
+            runAsUser: 0
+            # If using PSP, this requires appropriate permissions
+            privileged: true
+          resources:
+            limits:
+              memory: 500Mi
+              cpu: 500m
+            requests:
+              cpu: 100m
+              memory: 200Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/filebeat.yml
+              readOnly: true
+              subPath: filebeat.yml
+            - name: data
+              mountPath: /usr/share/filebeat/data
+            - name: varlibdockercontainers
+              mountPath: /var/lib/docker/containers
+              readOnly: true
+            - name: varlog
+              mountPath: /var/log
+              readOnly: true
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - |
+                  #!/usr/bin/env bash -e
+                  filebeat test config
+                  filebeat test output
+            initialDelaySeconds: 60
+            periodSeconds: 60
+            timeoutSeconds: 10
+      volumes:
+        - name: config
+          configMap:
+            defaultMode: 0600
+            name: filebeat-config
+        - name: varlibdockercontainers
+          hostPath:
+            path: /var/lib/docker/containers
+        - name: varlog
+          hostPath:
+            path: /var/log
+        - name: data
+          hostPath:
+            path: /var/lib/filebeat-data
+            type: DirectoryOrCreate
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: filebeat
+  labels:
+    app: filebeat
+rules:
+  - apiGroups: [""]
+    resources:
+      - namespaces
+      - pods
+      - nodes
+    verbs:
+      - get
+      - watch
+      - list
+  - apiGroups: ["apps"]
+    resources:
+      - replicasets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups: ["batch"]
+    resources:
+      - jobs
+    verbs:
+      - get
+      - list
+      - watch
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: filebeat
+  namespace: monitoring
+  labels:
+    app: filebeat
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: filebeat
+subjects:
+  - kind: ServiceAccount
+    name: filebeat
+    namespace: monitoring
+roleRef:
+  kind: ClusterRole
+  name: filebeat
+  apiGroup: rbac.authorization.k8s.io

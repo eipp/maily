@@ -1,0 +1,524 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-cluster-config
+  namespace: default
+data:
+  redis.conf: |
+    # Redis configuration file
+
+    # Network
+    bind 0.0.0.0
+    protected-mode yes
+    port 6379
+    tcp-backlog 511
+    timeout 0
+    tcp-keepalive 300
+
+    # General
+    daemonize no
+    supervised no
+    pidfile /var/run/redis_6379.pid
+    loglevel notice
+    logfile ""
+    databases 16
+    always-show-logo yes
+
+    # Snapshotting
+    save 900 1
+    save 300 10
+    save 60 10000
+    stop-writes-on-bgsave-error yes
+    rdbcompression yes
+    rdbchecksum yes
+    dbfilename dump.rdb
+    dir /data
+
+    # Replication
+    replica-serve-stale-data yes
+    replica-read-only yes
+    repl-diskless-sync no
+    repl-diskless-sync-delay 5
+    repl-disable-tcp-nodelay no
+    replica-priority 100
+
+    # Security
+    requirepass ${REDIS_PASSWORD}
+    masterauth ${REDIS_PASSWORD}
+
+    # Clients
+    maxclients 10000
+
+    # Memory management
+    maxmemory 2gb
+    maxmemory-policy allkeys-lru
+    maxmemory-samples 5
+
+    # Lazy freeing
+    lazyfree-lazy-eviction no
+    lazyfree-lazy-expire no
+    lazyfree-lazy-server-del no
+    replica-lazy-flush no
+
+    # Advanced config
+    hash-max-ziplist-entries 512
+    hash-max-ziplist-value 64
+    list-max-ziplist-size -2
+    list-compress-depth 0
+    set-max-intset-entries 512
+    zset-max-ziplist-entries 128
+    zset-max-ziplist-value 64
+    hll-sparse-max-bytes 3000
+    stream-node-max-bytes 4096
+    stream-node-max-entries 100
+    activerehashing yes
+    client-output-buffer-limit normal 0 0 0
+    client-output-buffer-limit replica 256mb 64mb 60
+    client-output-buffer-limit pubsub 32mb 8mb 60
+    hz 10
+    dynamic-hz yes
+    aof-rewrite-incremental-fsync yes
+    rdb-save-incremental-fsync yes
+
+    # Cluster
+    cluster-enabled yes
+    cluster-config-file nodes.conf
+    cluster-node-timeout 5000
+    cluster-replica-validity-factor 10
+    cluster-migration-barrier 1
+    cluster-require-full-coverage yes
+    cluster-replica-no-failover no
+
+  sentinel.conf: |
+    # Redis Sentinel configuration
+
+    # Basic configuration
+    port 26379
+    daemonize no
+    pidfile /var/run/redis-sentinel.pid
+    logfile ""
+    dir /data
+
+    # Security
+    sentinel auth-pass mymaster ${REDIS_PASSWORD}
+
+    # Master configuration
+    sentinel monitor mymaster redis-0.redis-headless.default.svc.cluster.local 6379 2
+    sentinel down-after-milliseconds mymaster 5000
+    sentinel failover-timeout mymaster 60000
+    sentinel parallel-syncs mymaster 1
+
+    # Notification script
+    # sentinel notification-script mymaster /data/notify.sh
+
+    # Client reconfiguration script
+    # sentinel client-reconfig-script mymaster /data/reconfig.sh
+
+    # Security
+    protected-mode no
+
+  update-node.sh: |
+    #!/bin/bash
+
+    set -e
+
+    # Find all pods in the statefulset
+    PODS=$(kubectl get pods -l app=redis -o jsonpath='{range.items[*]}{.metadata.name} {end}')
+
+    # Get this pod's name
+    THIS_POD=${HOSTNAME}
+
+    # Get this pod's IP address
+    THIS_POD_IP=$(hostname -i)
+
+    # Initialize the cluster if this is the first pod
+    if [[ "${THIS_POD}" == "redis-0" ]]; then
+        # Check if the cluster is already initialized
+        if redis-cli -a "${REDIS_PASSWORD}" cluster info 2>/dev/null | grep -q "cluster_state:ok"; then
+            echo "Cluster is already initialized, skipping initialization"
+            exit 0
+        fi
+
+        echo "Initializing Redis Cluster on ${THIS_POD}..."
+
+        # Create a list of cluster nodes
+        NODES=""
+        for POD in ${PODS}; do
+            POD_IP=$(kubectl get pod ${POD} -o jsonpath='{.status.podIP}')
+            NODES="${NODES} ${POD_IP}:6379"
+        done
+
+        # Initialize the cluster
+        echo "yes" | redis-cli -a "${REDIS_PASSWORD}" --cluster create ${NODES} --cluster-replicas 1
+
+        echo "Redis Cluster initialized"
+    else
+        # Wait for the cluster to be initialized
+        echo "Waiting for Redis Cluster to be initialized..."
+
+        # Check if the cluster is already initialized
+        while ! redis-cli -h redis-0.redis-headless.default.svc.cluster.local -a "${REDIS_PASSWORD}" cluster info 2>/dev/null | grep -q "cluster_state:ok"; do
+            echo "Waiting for cluster to be initialized..."
+            sleep 5
+        done
+
+        echo "Redis Cluster is initialized, joining the cluster..."
+
+        # Check if this node is already part of the cluster
+        if redis-cli -a "${REDIS_PASSWORD}" cluster nodes | grep -q "${THIS_POD_IP}"; then
+            echo "Node is already part of the cluster"
+            exit 0
+        fi
+
+        # Join the cluster
+        redis-cli -h redis-0.redis-headless.default.svc.cluster.local -a "${REDIS_PASSWORD}" --cluster add-node "${THIS_POD_IP}:6379" "redis-0.redis-headless.default.svc.cluster.local:6379"
+
+        echo "Node joined the cluster"
+
+        # Rebalance the cluster if needed
+        if [[ "${THIS_POD}" == "redis-3" ]]; then
+            echo "Rebalancing the cluster..."
+            redis-cli -h redis-0.redis-headless.default.svc.cluster.local -a "${REDIS_PASSWORD}" --cluster rebalance redis-0.redis-headless.default.svc.cluster.local:6379
+            echo "Cluster rebalanced"
+        fi
+    fi
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: redis-secret
+  namespace: default
+type: Opaque
+data:
+  redis-password: UmVkaXNQYXNzd29yZDEyMw==  # RedisPassword123
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-headless
+  namespace: default
+  labels:
+    app: redis
+spec:
+  selector:
+    app: redis
+  clusterIP: None
+  ports:
+  - name: redis
+    port: 6379
+    targetPort: 6379
+  - name: sentinel
+    port: 26379
+    targetPort: 26379
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: default
+  labels:
+    app: redis
+spec:
+  selector:
+    app: redis
+  ports:
+  - name: redis
+    port: 6379
+    targetPort: 6379
+  - name: sentinel
+    port: 26379
+    targetPort: 26379
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  namespace: default
+spec:
+  serviceName: redis-headless
+  replicas: 6
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      terminationGracePeriodSeconds: 30
+      initContainers:
+      - name: config
+        image: busybox:1.34
+        command: ['sh', '-c', 'cp /readonly/redis.conf /config/redis.conf && cp /readonly/sentinel.conf /config/sentinel.conf && echo "requirepass $REDIS_PASSWORD" >> /config/redis.conf && echo "masterauth $REDIS_PASSWORD" >> /config/sentinel.conf && echo "sentinel auth-pass mymaster $REDIS_PASSWORD" >> /config/sentinel.conf']
+        env:
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-secret
+              key: redis-password
+        volumeMounts:
+        - name: config
+          mountPath: /config
+        - name: config-readonly
+          mountPath: /readonly
+      containers:
+      - name: redis
+        image: redis:7.0-alpine
+        command: ["redis-server", "/config/redis.conf"]
+        ports:
+        - containerPort: 6379
+          name: redis
+        env:
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-secret
+              key: redis-password
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        - name: config
+          mountPath: /config
+        resources:
+          requests:
+            cpu: 200m
+            memory: 500Mi
+          limits:
+            cpu: 1000m
+            memory: 2Gi
+        livenessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - redis-cli -a $REDIS_PASSWORD ping
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - redis-cli -a $REDIS_PASSWORD ping
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 3
+      - name: sentinel
+        image: redis:7.0-alpine
+        command: ["redis-sentinel", "/config/sentinel.conf"]
+        ports:
+        - containerPort: 26379
+          name: sentinel
+        env:
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-secret
+              key: redis-password
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        - name: config
+          mountPath: /config
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
+          limits:
+            cpu: 200m
+            memory: 200Mi
+        livenessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - redis-cli -p 26379 ping
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - redis-cli -p 26379 ping
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 3
+      - name: cluster-init
+        image: bitnami/kubectl:latest
+        command: ['sh', '-c', 'cp /readonly/update-node.sh /scripts/update-node.sh && chmod +x /scripts/update-node.sh && /scripts/update-node.sh']
+        env:
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-secret
+              key: redis-password
+        volumeMounts:
+        - name: scripts
+          mountPath: /scripts
+        - name: config-readonly
+          mountPath: /readonly
+      volumes:
+      - name: config
+        emptyDir: {}
+      - name: scripts
+        emptyDir: {}
+      - name: config-readonly
+        configMap:
+          name: redis-cluster-config
+          defaultMode: 0755
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: gp2
+      resources:
+        requests:
+          storage: 10Gi
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: redis-pdb
+  namespace: default
+spec:
+  maxUnavailable: 2
+  selector:
+    matchLabels:
+      app: redis
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: redis-monitor
+  namespace: monitoring
+spec:
+  selector:
+    matchLabels:
+      app: redis
+  endpoints:
+  - port: redis
+    interval: 30s
+    scrapeTimeout: 10s
+    metricRelabelings:
+    - sourceLabels: [__name__]
+      regex: 'redis_.*'
+      action: keep
+  - port: sentinel
+    interval: 30s
+    scrapeTimeout: 10s
+    metricRelabelings:
+    - sourceLabels: [__name__]
+      regex: 'redis_sentinel_.*'
+      action: keep
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-exporter-config
+  namespace: default
+data:
+  redis_exporter.conf: |
+    redis.addr=redis://redis:6379
+    redis.password=${REDIS_PASSWORD}
+    namespace=redis
+    web.listen-address=:9121
+    web.telemetry-path=/metrics
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-exporter
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis-exporter
+  template:
+    metadata:
+      labels:
+        app: redis-exporter
+    spec:
+      containers:
+      - name: redis-exporter
+        image: oliver006/redis_exporter:v1.44.0
+        env:
+        - name: REDIS_ADDR
+          value: "redis://redis:6379"
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-secret
+              key: redis-password
+        ports:
+        - containerPort: 9121
+          name: metrics
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
+          limits:
+            cpu: 200m
+            memory: 200Mi
+        livenessProbe:
+          httpGet:
+            path: /metrics
+            port: metrics
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /metrics
+            port: metrics
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-exporter
+  namespace: default
+  labels:
+    app: redis-exporter
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9121"
+spec:
+  selector:
+    app: redis-exporter
+  ports:
+  - name: metrics
+    port: 9121
+    targetPort: metrics
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: redis-exporter-monitor
+  namespace: monitoring
+spec:
+  selector:
+    matchLabels:
+      app: redis-exporter
+  endpoints:
+  - port: metrics
+    interval: 30s
+    scrapeTimeout: 10s

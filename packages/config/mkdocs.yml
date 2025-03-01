@@ -1,0 +1,105 @@
+site_name: Maily Documentation
+site_description: Documentation for the Maily AI-Powered Email Campaign Platform
+site_author: Maily Team
+repo_url: https://github.com/yourusername/maily
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+    - search.highlight
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+nav:
+  - Getting Started:
+    - 'Core Guide': 'core-guide.md'
+    - 'Glossary and FAQ': 'glossary-and-faq.md'
+    - 'Quick Start': 'quick-start.md'
+
+  - Platform Documentation:
+    - 'Architecture Overview': 'architecture-overview.md'
+    - 'Tech Stack': 'tech-stack.md'
+    - 'Enhancement Plan': 'enhancement-plan.md'
+    - 'Modernization Roadmap': 'modernization-roadmap.md'
+    - 'Integration Guide': 'integration-guide.md'
+
+  - Features:
+    - 'AI Handbook': 'ai-handbook.md'
+    - 'Security & Compliance': 'security-compliance-handbook.md'
+    - 'Analytics Capabilities': 'analytics-capabilities.md'
+    - 'Email Features': 'email-features-handbook.md'
+    - 'Internationalization': 'internationalization-guide.md'
+
+  - Applications:
+    - 'Frontend Applications': 'frontend-apps.md'
+    - 'API Services': 'api-services.md'
+    - 'Worker Services': 'worker-services.md'
+    - 'App Components': 'app-components.md'
+
+  - Technical Reference:
+    - 'API Reference': 'api-reference.md'
+    - 'Database Schema': 'database-schema.md'
+    - 'Enhancement Tools': 'enhancement-tools-reference.md'
+    - 'Configuration Guide': 'configuration-guide.md'
+    - 'Error Codes': 'error-codes.md'
+
+  - Development:
+    - 'Contributing Guide': 'contributing-guide.md'
+    - 'Testing Strategy': 'testing-strategy.md'
+    - 'Code Style Guide': 'code-style-guide.md'
+    - 'CI/CD Pipeline': 'ci-cd-pipeline.md'
+
+  - Resources:
+    - 'Implementation Summaries':
+      - 'Infrastructure': 'infrastructure-implementation-summary.md'
+      - 'Security': 'security-implementation-summary.md'
+      - 'Trust Zones': 'trust-infrastructure-implementation-plan.md'
+    - 'Documentation':
+      - 'Documentation Management Plan': 'documentation-management-plan.md'
+      - 'Documentation Inventory': 'documentation-inventory.md'
+      - 'Documentation Consolidation Progress': 'documentation-consolidation-progress.md'
+      - 'Documentation Consolidation Workflow': 'documentation-consolidation-workflow.md'
+
+markdown_extensions:
+  - admonition
+  - codehilite
+  - footnotes
+  - meta
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+plugins:
+  - search
+  - minify:
+      minify_html: true
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/yourusername/maily
+    - icon: fontawesome/brands/twitter
+      link: https://twitter.com/mailyapp
+
+copyright: Copyright &copy; 2024-2025 Maily Team

@@ -1,0 +1,329 @@
+name: Security Scanning
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '0 0 * * 0'  # Run weekly on Sunday at midnight
+
+jobs:
+  trivy-scan:
+    name: Trivy Container Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build API image
+        run: docker build -t maily-api:${{ github.sha }} -f apps/api/Dockerfile .
+
+      - name: Build Web image
+        run: docker build -t maily-web:${{ github.sha }} -f apps/web/Dockerfile .
+
+      - name: Build Workers image
+        run: docker build -t maily-workers:${{ github.sha }} -f apps/workers/Dockerfile .
+
+      - name: Run Trivy vulnerability scanner on API image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'maily-api:${{ github.sha }}'
+          format: 'sarif'
+          output: 'trivy-api-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          timeout: '10m'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+
+      - name: Run Trivy vulnerability scanner on Web image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'maily-web:${{ github.sha }}'
+          format: 'sarif'
+          output: 'trivy-web-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          timeout: '10m'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+
+      - name: Run Trivy vulnerability scanner on Workers image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'maily-workers:${{ github.sha }}'
+          format: 'sarif'
+          output: 'trivy-workers-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          timeout: '10m'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-fs-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          timeout: '10m'
+
+      - name: Run Trivy config scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-config-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          timeout: '5m'
+
+      - name: Upload Trivy API scan results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-api-results.sarif'
+          category: 'trivy-api'
+
+      - name: Upload Trivy Web scan results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-web-results.sarif'
+          category: 'trivy-web'
+
+      - name: Upload Trivy Workers scan results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-workers-results.sarif'
+          category: 'trivy-workers'
+
+      - name: Upload Trivy filesystem scan results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-fs-results.sarif'
+          category: 'trivy-fs'
+
+      - name: Upload Trivy config scan results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-config-results.sarif'
+          category: 'trivy-config'
+
+  snyk-scan:
+    name: Snyk Dependency Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r apps/api/requirements.txt
+          npm ci
+
+      - name: Run Snyk to check for Python vulnerabilities
+        uses: snyk/actions/python@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: test
+          args: --file=apps/api/requirements.txt --severity-threshold=high --sarif-file-output=snyk-python.sarif
+
+      - name: Run Snyk to check for JavaScript vulnerabilities
+        uses: snyk/actions/node@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: test
+          args: --severity-threshold=high --sarif-file-output=snyk-js.sarif
+
+      - name: Run Snyk to check for Docker vulnerabilities
+        uses: snyk/actions/docker@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: test
+          image: maily-api:${{ github.sha }}
+          args: --file=apps/api/Dockerfile --severity-threshold=high --sarif-file-output=snyk-docker.sarif
+
+      - name: Upload Snyk Python results to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: snyk-python.sarif
+          category: 'snyk-python'
+
+      - name: Upload Snyk JavaScript results to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: snyk-js.sarif
+          category: 'snyk-js'
+
+      - name: Upload Snyk Docker results to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: snyk-docker.sarif
+          category: 'snyk-docker'
+
+  sonarqube-scan:
+    name: SonarQube Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r apps/api/requirements.txt
+          npm ci
+
+      - name: Run Python tests with coverage
+        run: |
+          cd apps/api
+          pytest --cov=. --cov-report=xml
+
+      - name: Run JavaScript tests with coverage
+        run: |
+          cd apps/web
+          npm test -- --coverage
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        with:
+          args: >
+            -Dsonar.projectKey=maily
+            -Dsonar.projectName=Maily
+            -Dsonar.sources=apps,packages
+            -Dsonar.tests=apps/api/tests,apps/web/__tests__
+            -Dsonar.python.coverage.reportPaths=apps/api/coverage.xml
+            -Dsonar.javascript.lcov.reportPaths=apps/web/coverage/lcov.info
+            -Dsonar.python.xunit.reportPath=apps/api/junit.xml
+            -Dsonar.javascript.xunit.reportPaths=apps/web/junit.xml
+            -Dsonar.exclusions=**/node_modules/**,**/tests/**,**/__tests__/**
+            -Dsonar.coverage.exclusions=**/tests/**,**/__tests__/**,**/migrations/**
+
+      - name: SonarQube Quality Gate check
+        uses: sonarsource/sonarqube-quality-gate-action@master
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+  zap-scan:
+    name: OWASP ZAP API Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: ZAP API Scan
+        uses: zaproxy/action-api-scan@v0.5.0
+        with:
+          target: 'https://api.staging.justmaily.com'
+          rules_file_name: '.zap/rules.tsv'
+          format: openapi
+          cmd_options: '-a -j'
+          allow_issue_writing: false
+          fail_action: false
+
+      - name: ZAP Full Scan
+        uses: zaproxy/action-full-scan@v0.7.0
+        with:
+          target: 'https://staging.justmaily.com'
+          rules_file_name: '.zap/rules.tsv'
+          cmd_options: '-a'
+          allow_issue_writing: false
+          fail_action: false
+
+  codeql-scan:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ['javascript', 'python']
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v2
+        with:
+          languages: ${{ matrix.language }}
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v2
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v2
+        with:
+          category: "/language:${{ matrix.language }}"
+
+  secret-scan:
+    name: Secret Scanning
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: TruffleHog OSS
+        uses: trufflesecurity/trufflehog@v3.63.2
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --debug --only-verified
+
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v3
+        with:
+          fail-on-severity: critical

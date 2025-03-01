@@ -1,0 +1,105 @@
+apiVersion: helm.fluxcd.io/v1
+kind: HelmRelease
+metadata:
+  name: tempo
+  namespace: monitoring
+spec:
+  releaseName: tempo
+  chart:
+    repository: https://grafana.github.io/helm-charts
+    name: tempo
+    version: 1.0.0
+  values:
+    tempo:
+      repository: grafana/tempo
+      tag: 1.5.0
+      pullPolicy: IfNotPresent
+      resources:
+        requests:
+          cpu: 200m
+          memory: 512Mi
+        limits:
+          cpu: 500m
+          memory: 1Gi
+      storage:
+        trace:
+          backend: s3
+          s3:
+            bucket: tempo-traces
+            endpoint: s3.amazonaws.com
+            region: us-west-2
+            access_key: ${AWS_ACCESS_KEY_ID}
+            secret_key: ${AWS_SECRET_ACCESS_KEY}
+      receivers:
+        jaeger:
+          protocols:
+            thrift_http:
+              endpoint: 0.0.0.0:14268
+            grpc:
+              endpoint: 0.0.0.0:14250
+            thrift_binary:
+              endpoint: 0.0.0.0:6832
+            thrift_compact:
+              endpoint: 0.0.0.0:6831
+        zipkin:
+          endpoint: 0.0.0.0:9411
+        otlp:
+          protocols:
+            grpc:
+              endpoint: 0.0.0.0:4317
+            http:
+              endpoint: 0.0.0.0:4318
+      retention: 336h  # 14 days
+      global_overrides:
+        max_traces_per_user: 1000000
+      server:
+        http_listen_port: 3200
+      distributor:
+        receivers:
+          jaeger:
+            protocols:
+              thrift_http:
+                endpoint: 0.0.0.0:14268
+              grpc:
+                endpoint: 0.0.0.0:14250
+              thrift_binary:
+                endpoint: 0.0.0.0:6832
+              thrift_compact:
+                endpoint: 0.0.0.0:6831
+          zipkin:
+            endpoint: 0.0.0.0:9411
+          otlp:
+            protocols:
+              grpc:
+                endpoint: 0.0.0.0:4317
+              http:
+                endpoint: 0.0.0.0:4318
+      ingester:
+        trace_idle_period: 10s
+        max_block_bytes: 1_000_000
+        max_block_duration: 5m
+      compactor:
+        compaction:
+          compaction_window: 1h
+          max_compaction_objects: 1000000
+          block_retention: 336h
+          compacted_block_retention: 336h
+      metrics_generator:
+        registry:
+          external_labels:
+            source: tempo
+            cluster: maily
+        storage:
+          path: /tmp/tempo/generator/wal
+          remote_write:
+            - url: http://prometheus-operator-prometheus:9090/api/v1/write
+              send_exemplars: true
+    serviceMonitor:
+      enabled: true
+    service:
+      type: ClusterIP
+      annotations: {}
+    persistence:
+      enabled: true
+      storageClassName: gp2
+      size: 50Gi

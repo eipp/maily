@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Vault maintenance tasks daily
+Requires=vault-maintenance.service
+
+[Timer]
+Unit=vault-maintenance.service
+OnCalendar=*-*-* 02:00:00
+RandomizedDelaySec=1800
+Persistent=true
+
+[Install]
+WantedBy=timers.target

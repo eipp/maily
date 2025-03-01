@@ -1,0 +1,81 @@
+# Prometheus configuration for API metrics baseline
+# This file defines the scrape configurations for monitoring Maily API services
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+# Rule files to load
+rule_files:
+  - "rules/api-alerts.yml"
+
+# Scrape configurations
+scrape_configs:
+  # API services scrape configuration
+  - job_name: 'maily-api-metrics'
+    metrics_path: '/metrics'
+    scheme: 'http'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+    static_configs:
+      - targets:
+          - 'api:8000'
+          - 'email-processing:8001'
+          - 'contact-management:8002'
+          - 'analytics:8003'
+          - 'canvas:8004'
+          - 'blockchain:8005'
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: '(.*):.*'
+        target_label: service
+        replacement: '$1'
+      - source_labels: [__address__]
+        target_label: instance
+
+  # API Gateway scrape configuration
+  - job_name: 'maily-api-gateway'
+    metrics_path: '/metrics'
+    scheme: 'http'
+    scrape_interval: 5s
+    static_configs:
+      - targets:
+          - 'api-gateway:9000'
+
+  # Database metrics
+  - job_name: 'maily-database-metrics'
+    metrics_path: '/metrics'
+    scheme: 'http'
+    scrape_interval: 30s
+    static_configs:
+      - targets:
+          - 'db-exporter:9187'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: database
+
+  # Redis metrics
+  - job_name: 'maily-redis-metrics'
+    metrics_path: '/metrics'
+    scheme: 'http'
+    scrape_interval: 30s
+    static_configs:
+      - targets:
+          - 'redis-exporter:9121'
+
+  # Node Exporter for system metrics
+  - job_name: 'maily-node-metrics'
+    metrics_path: '/metrics'
+    scheme: 'http'
+    scrape_interval: 30s
+    static_configs:
+      - targets:
+          - 'node-exporter:9100'

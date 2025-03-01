@@ -1,0 +1,26 @@
+# Maily WORKERS Requirements
+# Generated on 2025-02-25 20:20:49
+
+# Worker Dependencies
+# Include base requirements
+-r ../../requirements.txt
+
+
+# Queue Processing
+celery==5.3.1
+flower==2.0.1
+redis==4.5.5
+
+# Email Processing
+beautifulsoup4==4.12.2
+lxml==4.9.3
+premailer==3.10.0
+
+# Data Processing
+pandas==2.0.3
+numpy==1.24.3
+polars==0.19.3
+
+# Storage
+boto3==1.28.38
+minio==7.1.15

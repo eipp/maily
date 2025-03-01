@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ip-warming-service
+  labels:
+    app: maily
+    component: ip-warming
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: maily
+      component: ip-warming
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: maily
+        component: ip-warming
+    spec:
+      containers:
+      - name: ip-warming
+        image: ${DOCKER_REGISTRY}/maily-ip-warming:${IMAGE_TAG}
+        imagePullPolicy: Always
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: maily-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: maily-secrets
+              key: redis-url
+        - name: RABBITMQ_URL
+          valueFrom:
+            secretKeyRef:
+              name: maily-secrets
+              key: rabbitmq-url
+        - name: SENDGRID_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: maily-secrets
+              key: sendgrid-api-key
+        - name: MAILGUN_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: maily-secrets
+              key: mailgun-api-key
+        - name: MAILGUN_DOMAIN
+          valueFrom:
+            secretKeyRef:
+              name: maily-secrets
+              key: mailgun-domain
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        volumeMounts:
+        - name: compliance-config
+          mountPath: /app/config/compliance
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+          requests:
+            cpu: "200m"
+            memory: "256Mi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+      volumes:
+      - name: compliance-config
+        configMap:
+          name: compliance-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ip-warming-service
+  labels:
+    app: maily
+    component: ip-warming
+spec:
+  selector:
+    app: maily
+    component: ip-warming
+  ports:
+  - port: 80
+    targetPort: 8080
+    name: http
+  type: ClusterIP

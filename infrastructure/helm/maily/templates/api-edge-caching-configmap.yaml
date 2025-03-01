@@ -1,0 +1,233 @@
+{{- if .Values.apiEdgeCaching.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "maily.fullname" . }}-api-edge-config
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+    component: api-edge-cache
+data:
+  nginx.conf: |
+    user nginx;
+    worker_processes auto;
+    error_log /var/log/nginx/error.log warn;
+    pid /var/run/nginx.pid;
+
+    events {
+      worker_connections 1024;
+    }
+
+    http {
+      include /etc/nginx/mime.types;
+      default_type application/octet-stream;
+
+      # Logging configuration
+      log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                      '$status $body_bytes_sent "$http_referer" '
+                      '"$http_user_agent" "$http_x_forwarded_for" '
+                      '$request_time $upstream_response_time $pipe';
+
+      # Enhanced logging for security events
+      log_format security '$remote_addr - $remote_user [$time_local] "$request" '
+                         '$status $body_bytes_sent "$http_referer" '
+                         '"$http_user_agent" "$http_x_forwarded_for" '
+                         '"$http_authorization" "$sent_http_content_security_policy" '
+                         '$request_time';
+
+      access_log /var/log/nginx/access.log main;
+      access_log /var/log/nginx/security.log security;
+
+      # Optimization settings
+      sendfile on;
+      tcp_nopush on;
+      tcp_nodelay on;
+      keepalive_timeout 65;
+      types_hash_max_size 2048;
+      server_tokens off;
+
+      # Gzip Settings
+      gzip on;
+      gzip_disable "msie6";
+      gzip_vary on;
+      gzip_proxied any;
+      gzip_comp_level 6;
+      gzip_buffers 16 8k;
+      gzip_http_version 1.1;
+      gzip_min_length 256;
+      gzip_types
+        application/atom+xml
+        application/javascript
+        application/json
+        application/ld+json
+        application/manifest+json
+        application/rss+xml
+        application/vnd.geo+json
+        application/vnd.ms-fontobject
+        application/x-font-ttf
+        application/x-web-app-manifest+json
+        application/xhtml+xml
+        application/xml
+        font/opentype
+        image/bmp
+        image/svg+xml
+        image/x-icon
+        text/cache-manifest
+        text/css
+        text/plain
+        text/vcard
+        text/vnd.rim.location.xloc
+        text/vtt
+        text/x-component
+        text/x-cross-domain-policy;
+
+      # Rate limiting configuration
+      limit_req_zone $binary_remote_addr zone=api_limit:{{ .Values.apiEdgeCaching.rateLimit.zone }}
+                     rate={{ .Values.apiEdgeCaching.rateLimit.rate }};
+      limit_req_zone $binary_remote_addr zone=auth_limit:{{ .Values.apiEdgeCaching.rateLimit.authZone }}
+                     rate={{ .Values.apiEdgeCaching.rateLimit.authRate }};
+      limit_conn_zone $binary_remote_addr zone=conn_limit:{{ .Values.apiEdgeCaching.rateLimit.connZone }};
+
+      # Cache settings
+      proxy_cache_path /var/cache/nginx levels=1:2 keys_zone=api_cache:{{ .Values.apiEdgeCaching.caching.keyZoneSize }} max_size={{ .Values.apiEdgeCaching.caching.maxCacheSize }} inactive={{ .Values.apiEdgeCaching.caching.inactiveTimeout }} use_temp_path=off;
+      proxy_cache_key "$scheme$request_method$host$request_uri";
+      proxy_cache_valid 200 302 {{ .Values.apiEdgeCaching.caching.validityPeriods.default }};
+      proxy_cache_valid 404 {{ .Values.apiEdgeCaching.caching.validityPeriods.notFound }};
+      proxy_cache_bypass $http_pragma $http_cache_control;
+      proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
+      proxy_cache_background_update on;
+      proxy_cache_lock on;
+
+      # API Server
+      server {
+        listen 80;
+        server_name api-edge.justmaily.com;
+
+        # Security headers for all responses
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-XSS-Protection "1; mode=block" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.justmaily.com; style-src 'self' 'unsafe-inline' https://cdn.justmaily.com; img-src 'self' data: https://cdn.justmaily.com; font-src 'self' https://cdn.justmaily.com; connect-src 'self' https://*.justmaily.com; frame-ancestors 'self'; form-action 'self'" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
+
+        # Health check
+        location /health {
+          access_log off;
+          add_header Content-Type text/plain;
+          return 200 'OK';
+        }
+
+        # Authentication endpoints - strict rate limiting
+        location ~* ^/api/v1/(auth|login|register|password|token) {
+          limit_req zone=auth_limit burst={{ .Values.apiEdgeCaching.rateLimit.authBurst }} nodelay;
+          limit_conn conn_limit {{ .Values.apiEdgeCaching.rateLimit.authConn }};
+
+          proxy_pass http://{{ include "maily.fullname" . }}-backend;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+
+          # No caching for auth endpoints
+          add_header Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0";
+          expires off;
+
+          # CSRF protection
+          add_header X-CSRF-Token $request_id;
+        }
+
+        # Static user content - heavily cached
+        location ~* ^/api/v1/content/ {
+          # Basic rate limiting
+          limit_req zone=api_limit burst={{ .Values.apiEdgeCaching.rateLimit.apiBurst }} nodelay;
+
+          proxy_pass http://{{ include "maily.fullname" . }}-backend;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+
+          # Enable caching
+          proxy_cache api_cache;
+          proxy_cache_valid 200 {{ .Values.apiEdgeCaching.caching.validityPeriods.content }};
+          proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
+          add_header X-Cache-Status $upstream_cache_status;
+
+          # Cache control headers
+          expires {{ .Values.apiEdgeCaching.caching.validityPeriods.content }};
+          add_header Cache-Control "public, max-age={{ index (index .Values.apiEdgeCaching.caching.contentTypes 0) "max_age" }}";
+        }
+
+        # API endpoints for analytics - medium cache time
+        location ~* ^/api/v1/(analytics|reports|stats)/ {
+          # Basic rate limiting
+          limit_req zone=api_limit burst={{ .Values.apiEdgeCaching.rateLimit.apiBurst }} nodelay;
+
+          proxy_pass http://{{ include "maily.fullname" . }}-backend;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+
+          # Enable caching - shorter TTL for analytics
+          proxy_cache api_cache;
+          proxy_cache_valid 200 {{ .Values.apiEdgeCaching.caching.validityPeriods.analytics }};
+          proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
+          add_header X-Cache-Status $upstream_cache_status;
+
+          # Cache control headers
+          expires {{ .Values.apiEdgeCaching.caching.validityPeriods.analytics }};
+          add_header Cache-Control "public, max-age={{ index (index .Values.apiEdgeCaching.caching.contentTypes 1) "max_age" }}";
+        }
+
+        # Templates and static configuration - medium cache time
+        location ~* ^/api/v1/(templates|configuration)/ {
+          # Basic rate limiting
+          limit_req zone=api_limit burst={{ .Values.apiEdgeCaching.rateLimit.apiBurst }} nodelay;
+
+          proxy_pass http://{{ include "maily.fullname" . }}-backend;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+
+          # Enable caching
+          proxy_cache api_cache;
+          proxy_cache_valid 200 {{ .Values.apiEdgeCaching.caching.validityPeriods.templates }};
+          proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
+          add_header X-Cache-Status $upstream_cache_status;
+
+          # Cache control headers
+          expires {{ .Values.apiEdgeCaching.caching.validityPeriods.templates }};
+          add_header Cache-Control "public, max-age={{ index (index .Values.apiEdgeCaching.caching.contentTypes 2) "max_age" }}";
+        }
+
+        # Default handling for all other API endpoints - minimal caching
+        location / {
+          # Basic rate limiting for general requests
+          limit_req zone=api_limit burst={{ .Values.apiEdgeCaching.rateLimit.apiBurst }} nodelay;
+          limit_conn conn_limit {{ .Values.apiEdgeCaching.rateLimit.apiConn }};
+
+          proxy_pass http://{{ include "maily.fullname" . }}-backend;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+
+          # No caching by default for dynamic content
+          add_header Cache-Control "no-cache, no-store, must-revalidate";
+          add_header Pragma "no-cache";
+          add_header Expires 0;
+        }
+
+        # Return 429 Too Many Requests for rate limited requests
+        error_page 429 = @too_many_requests;
+        location @too_many_requests {
+          add_header Retry-After 60;
+          add_header Content-Type application/json;
+          return 429 '{"error": "Too many requests. Please try again later."}';
+        }
+      }
+    }
+{{- end }}

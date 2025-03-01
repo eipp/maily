@@ -1,0 +1,857 @@
+{{- if .Values.monitoring.enabled }}
+---
+# ELK Stack Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "maily.fullname" . }}-elk
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+    component: monitoring
+    tier: elk
+spec:
+  replicas: {{ .Values.monitoring.elk.replicas }}
+  selector:
+    matchLabels:
+      {{- include "maily.selectorLabels" . | nindent 6 }}
+      component: monitoring
+      tier: elk
+  template:
+    metadata:
+      labels:
+        {{- include "maily.selectorLabels" . | nindent 8 }}
+        component: monitoring
+        tier: elk
+    spec:
+      containers:
+        - name: elasticsearch
+          image: "{{ .Values.monitoring.elk.elasticsearch.image.repository }}:{{ .Values.monitoring.elk.elasticsearch.image.tag }}"
+          imagePullPolicy: {{ .Values.monitoring.elk.elasticsearch.image.pullPolicy }}
+          ports:
+            - containerPort: 9200
+              name: http
+            - containerPort: 9300
+              name: transport
+          volumeMounts:
+            - name: elasticsearch-data
+              mountPath: /usr/share/elasticsearch/data
+          env:
+            - name: discovery.type
+              value: "single-node"
+            - name: ES_JAVA_OPTS
+              value: "-Xms{{ .Values.monitoring.elk.elasticsearch.heapSize }} -Xmx{{ .Values.monitoring.elk.elasticsearch.heapSize }}"
+          resources:
+            {{- toYaml .Values.monitoring.elk.elasticsearch.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /_cluster/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /_cluster/health
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 10
+
+        - name: logstash
+          image: "{{ .Values.monitoring.elk.logstash.image.repository }}:{{ .Values.monitoring.elk.logstash.image.tag }}"
+          imagePullPolicy: {{ .Values.monitoring.elk.logstash.image.pullPolicy }}
+          ports:
+            - containerPort: 5044
+              name: beats
+            - containerPort: 9600
+              name: monitoring
+          env:
+            - name: LS_JAVA_OPTS
+              value: "-Xms{{ .Values.monitoring.elk.logstash.heapSize }} -Xmx{{ .Values.monitoring.elk.logstash.heapSize }}"
+            - name: ELASTICSEARCH_HOST
+              value: "localhost"
+            - name: ELASTICSEARCH_PORT
+              value: "9200"
+          volumeMounts:
+            - name: logstash-config
+              mountPath: /usr/share/logstash/config
+            - name: logstash-pipeline
+              mountPath: /usr/share/logstash/pipeline
+          resources:
+            {{- toYaml .Values.monitoring.elk.logstash.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: monitoring
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: monitoring
+            initialDelaySeconds: 60
+            periodSeconds: 10
+
+        - name: kibana
+          image: "{{ .Values.monitoring.elk.kibana.image.repository }}:{{ .Values.monitoring.elk.kibana.image.tag }}"
+          imagePullPolicy: {{ .Values.monitoring.elk.kibana.image.pullPolicy }}
+          ports:
+            - containerPort: 5601
+              name: http
+          env:
+            - name: ELASTICSEARCH_HOSTS
+              value: http://localhost:9200
+          resources:
+            {{- toYaml .Values.monitoring.elk.kibana.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /api/status
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/status
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 10
+      volumes:
+        - name: elasticsearch-data
+          {{- if .Values.monitoring.elk.elasticsearch.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "maily.fullname" . }}-elasticsearch
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: logstash-config
+          configMap:
+            name: {{ include "maily.fullname" . }}-logstash-config
+        - name: logstash-pipeline
+          configMap:
+            name: {{ include "maily.fullname" . }}-logstash-pipeline
+---
+# Prometheus Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "maily.fullname" . }}-prometheus
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+    component: monitoring
+    tier: prometheus
+spec:
+  replicas: {{ .Values.monitoring.prometheus.replicas }}
+  selector:
+    matchLabels:
+      {{- include "maily.selectorLabels" . | nindent 6 }}
+      component: monitoring
+      tier: prometheus
+  template:
+    metadata:
+      labels:
+        {{- include "maily.selectorLabels" . | nindent 8 }}
+        component: monitoring
+        tier: prometheus
+    spec:
+      serviceAccountName: {{ include "maily.fullname" . }}-prometheus
+      containers:
+        - name: prometheus
+          image: "{{ .Values.monitoring.prometheus.image.repository }}:{{ .Values.monitoring.prometheus.image.tag }}"
+          imagePullPolicy: {{ .Values.monitoring.prometheus.image.pullPolicy }}
+          args:
+            - "--config.file=/etc/prometheus/prometheus.yml"
+            - "--storage.tsdb.path=/prometheus"
+            - "--storage.tsdb.retention.time={{ .Values.monitoring.prometheus.retention }}"
+            - "--web.console.libraries=/etc/prometheus/console_libraries"
+            - "--web.console.templates=/etc/prometheus/consoles"
+            - "--web.enable-lifecycle"
+          ports:
+            - containerPort: 9090
+              name: http
+          volumeMounts:
+            - name: prometheus-config
+              mountPath: /etc/prometheus
+            - name: prometheus-data
+              mountPath: /prometheus
+          resources:
+            {{- toYaml .Values.monitoring.prometheus.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 10
+
+        - name: alertmanager
+          image: "{{ .Values.monitoring.alertmanager.image.repository }}:{{ .Values.monitoring.alertmanager.image.tag }}"
+          imagePullPolicy: {{ .Values.monitoring.alertmanager.image.pullPolicy }}
+          args:
+            - "--config.file=/etc/alertmanager/alertmanager.yml"
+            - "--storage.path=/alertmanager"
+          ports:
+            - containerPort: 9093
+              name: http
+          volumeMounts:
+            - name: alertmanager-config
+              mountPath: /etc/alertmanager
+            - name: alertmanager-data
+              mountPath: /alertmanager
+          resources:
+            {{- toYaml .Values.monitoring.alertmanager.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 10
+      volumes:
+        - name: prometheus-config
+          configMap:
+            name: {{ include "maily.fullname" . }}-prometheus-config
+        - name: prometheus-data
+          {{- if .Values.monitoring.prometheus.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "maily.fullname" . }}-prometheus
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: alertmanager-config
+          configMap:
+            name: {{ include "maily.fullname" . }}-alertmanager-config
+        - name: alertmanager-data
+          {{- if .Values.monitoring.alertmanager.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "maily.fullname" . }}-alertmanager
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+---
+# Grafana Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "maily.fullname" . }}-grafana
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+    component: monitoring
+    tier: grafana
+spec:
+  replicas: {{ .Values.monitoring.grafana.replicas }}
+  selector:
+    matchLabels:
+      {{- include "maily.selectorLabels" . | nindent 6 }}
+      component: monitoring
+      tier: grafana
+  template:
+    metadata:
+      labels:
+        {{- include "maily.selectorLabels" . | nindent 8 }}
+        component: monitoring
+        tier: grafana
+    spec:
+      securityContext:
+        fsGroup: 472
+        runAsUser: 472
+      containers:
+        - name: grafana
+          image: "{{ .Values.monitoring.grafana.image.repository }}:{{ .Values.monitoring.grafana.image.tag }}"
+          imagePullPolicy: {{ .Values.monitoring.grafana.image.pullPolicy }}
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            - name: GF_SECURITY_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "maily.fullname" . }}-grafana
+                  key: admin-user
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "maily.fullname" . }}-grafana
+                  key: admin-password
+            - name: GF_INSTALL_PLUGINS
+              value: {{ .Values.monitoring.grafana.plugins | quote }}
+          volumeMounts:
+            - name: grafana-data
+              mountPath: /var/lib/grafana
+            - name: grafana-provisioning
+              mountPath: /etc/grafana/provisioning
+          resources:
+            {{- toYaml .Values.monitoring.grafana.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 10
+      volumes:
+        - name: grafana-data
+          {{- if .Values.monitoring.grafana.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "maily.fullname" . }}-grafana
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: grafana-provisioning
+          configMap:
+            name: {{ include "maily.fullname" . }}-grafana-provisioning
+---
+# SLO Monitoring Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "maily.fullname" . }}-slo-monitor
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+    component: monitoring
+    tier: slo
+spec:
+  replicas: {{ .Values.monitoring.slo.replicas }}
+  selector:
+    matchLabels:
+      {{- include "maily.selectorLabels" . | nindent 6 }}
+      component: monitoring
+      tier: slo
+  template:
+    metadata:
+      labels:
+        {{- include "maily.selectorLabels" . | nindent 8 }}
+        component: monitoring
+        tier: slo
+    spec:
+      containers:
+        - name: slo-monitor
+          image: "{{ .Values.monitoring.slo.image.repository }}:{{ .Values.monitoring.slo.image.tag }}"
+          imagePullPolicy: {{ .Values.monitoring.slo.image.pullPolicy }}
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: PROMETHEUS_URL
+              value: "http://{{ include "maily.fullname" . }}-prometheus:9090"
+            - name: SLO_CONFIG_PATH
+              value: "/config/slo-config.yaml"
+          volumeMounts:
+            - name: slo-config
+              mountPath: /config
+          resources:
+            {{- toYaml .Values.monitoring.slo.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 10
+      volumes:
+        - name: slo-config
+          configMap:
+            name: {{ include "maily.fullname" . }}-slo-config
+---
+# Filebeat DaemonSet
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "maily.fullname" . }}-filebeat
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+    component: monitoring
+    tier: logs
+spec:
+  selector:
+    matchLabels:
+      {{- include "maily.selectorLabels" . | nindent 6 }}
+      component: monitoring
+      tier: logs
+  template:
+    metadata:
+      labels:
+        {{- include "maily.selectorLabels" . | nindent 8 }}
+        component: monitoring
+        tier: logs
+    spec:
+      serviceAccountName: {{ include "maily.fullname" . }}-filebeat
+      containers:
+        - name: filebeat
+          image: "{{ .Values.monitoring.filebeat.image.repository }}:{{ .Values.monitoring.filebeat.image.tag }}"
+          imagePullPolicy: {{ .Values.monitoring.filebeat.image.pullPolicy }}
+          args:
+            - "-e"
+            - "-c"
+            - "/etc/filebeat/filebeat.yml"
+          env:
+            - name: ELASTICSEARCH_HOST
+              value: "{{ include "maily.fullname" . }}-elk"
+            - name: ELASTICSEARCH_PORT
+              value: "9200"
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          securityContext:
+            runAsUser: 0
+          resources:
+            {{- toYaml .Values.monitoring.filebeat.resources | nindent 12 }}
+          volumeMounts:
+            - name: filebeat-config
+              mountPath: /etc/filebeat
+            - name: varlog
+              mountPath: /var/log
+              readOnly: true
+            - name: varlibdockercontainers
+              mountPath: /var/lib/docker/containers
+              readOnly: true
+      volumes:
+        - name: filebeat-config
+          configMap:
+            name: {{ include "maily.fullname" . }}-filebeat-config
+            items:
+              - key: filebeat.yml
+                path: filebeat.yml
+        - name: varlog
+          hostPath:
+            path: /var/log
+        - name: varlibdockercontainers
+          hostPath:
+            path: /var/lib/docker/containers
+---
+# Services
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "maily.fullname" . }}-elk
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+    component: monitoring
+    tier: elk
+spec:
+  type: ClusterIP
+  ports:
+    - port: 9200
+      targetPort: 9200
+      protocol: TCP
+      name: elasticsearch
+    - port: 5601
+      targetPort: 5601
+      protocol: TCP
+      name: kibana
+    - port: 5044
+      targetPort: 5044
+      protocol: TCP
+      name: logstash-beats
+  selector:
+    {{- include "maily.selectorLabels" . | nindent 4 }}
+    component: monitoring
+    tier: elk
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "maily.fullname" . }}-prometheus
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+    component: monitoring
+    tier: prometheus
+spec:
+  type: ClusterIP
+  ports:
+    - port: 9090
+      targetPort: 9090
+      protocol: TCP
+      name: prometheus
+    - port: 9093
+      targetPort: 9093
+      protocol: TCP
+      name: alertmanager
+  selector:
+    {{- include "maily.selectorLabels" . | nindent 4 }}
+    component: monitoring
+    tier: prometheus
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "maily.fullname" . }}-grafana
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+    component: monitoring
+    tier: grafana
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 3000
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "maily.selectorLabels" . | nindent 4 }}
+    component: monitoring
+    tier: grafana
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "maily.fullname" . }}-slo-monitor
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+    component: monitoring
+    tier: slo
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "maily.selectorLabels" . | nindent 4 }}
+    component: monitoring
+    tier: slo
+---
+# Config Maps
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "maily.fullname" . }}-prometheus-config
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+data:
+  prometheus.yml: |-
+    global:
+      scrape_interval: {{ .Values.monitoring.prometheus.scrapeInterval }}
+      evaluation_interval: {{ .Values.monitoring.prometheus.evaluationInterval }}
+
+    alerting:
+      alertmanagers:
+      - static_configs:
+        - targets:
+          - localhost:9093
+
+    rule_files:
+      - /etc/prometheus/rules/*.yml
+
+    scrape_configs:
+      - job_name: 'kubernetes-pods'
+        kubernetes_sd_configs:
+        - role: pod
+        relabel_configs:
+        - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+          action: keep
+          regex: true
+        - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+          action: replace
+          target_label: __metrics_path__
+          regex: (.+)
+        - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+          action: replace
+          regex: ([^:]+)(?::\d+)?;(\d+)
+          replacement: $1:$2
+          target_label: __address__
+        - action: labelmap
+          regex: __meta_kubernetes_pod_label_(.+)
+        - source_labels: [__meta_kubernetes_namespace]
+          action: replace
+          target_label: kubernetes_namespace
+        - source_labels: [__meta_kubernetes_pod_name]
+          action: replace
+          target_label: kubernetes_pod_name
+
+      - job_name: 'kubernetes-services'
+        kubernetes_sd_configs:
+        - role: service
+        relabel_configs:
+        - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
+          action: keep
+          regex: true
+        - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_path]
+          action: replace
+          target_label: __metrics_path__
+          regex: (.+)
+        - source_labels: [__address__, __meta_kubernetes_service_annotation_prometheus_io_port]
+          action: replace
+          regex: ([^:]+)(?::\d+)?;(\d+)
+          replacement: $1:$2
+          target_label: __address__
+        - action: labelmap
+          regex: __meta_kubernetes_service_label_(.+)
+        - source_labels: [__meta_kubernetes_namespace]
+          action: replace
+          target_label: kubernetes_namespace
+        - source_labels: [__meta_kubernetes_service_name]
+          action: replace
+          target_label: kubernetes_name
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "maily.fullname" . }}-alertmanager-config
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+data:
+  alertmanager.yml: |-
+    global:
+      resolve_timeout: 5m
+      smtp_from: {{ .Values.monitoring.alertmanager.smtp.from }}
+      smtp_smarthost: {{ .Values.monitoring.alertmanager.smtp.smarthost }}
+      smtp_auth_username: {{ .Values.monitoring.alertmanager.smtp.username }}
+      smtp_auth_password: {{ .Values.monitoring.alertmanager.smtp.password }}
+
+    route:
+      group_by: ['alertname', 'job']
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 12h
+      receiver: 'team-email'
+      routes:
+      - match:
+          severity: critical
+        receiver: 'pagerduty'
+        continue: true
+      - match:
+          severity: warning
+        receiver: 'slack'
+        continue: true
+
+    receivers:
+    - name: 'team-email'
+      email_configs:
+      - to: {{ .Values.monitoring.alertmanager.receivers.email }}
+        send_resolved: true
+
+    - name: 'slack'
+      slack_configs:
+      - api_url: {{ .Values.monitoring.alertmanager.receivers.slack }}
+        channel: '#alerts'
+        send_resolved: true
+        title: '[{{ "{{" }} .Status | toUpper {{ "}}" }}] {{ "{{" }} .CommonLabels.alertname {{ "}}" }}'
+        text: >-
+          {{ "{{" }} range .Alerts {{ "}}" }}
+            *Alert:* {{ "{{" }} .Annotations.summary {{ "}}" }}
+            *Description:* {{ "{{" }} .Annotations.description {{ "}}" }}
+            *Severity:* {{ "{{" }} .Labels.severity {{ "}}" }}
+            *Details:*
+            {{ "{{" }} range .Labels.SortedPairs {{ "}}" }}
+              {{ "{{" }} .Name {{ "}}" }}: {{ "{{" }} .Value {{ "}}" }}
+            {{ "{{" }} end {{ "}}" }}
+          {{ "{{" }} end {{ "}}" }}
+
+    - name: 'pagerduty'
+      pagerduty_configs:
+      - service_key: {{ .Values.monitoring.alertmanager.receivers.pagerduty }}
+        send_resolved: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "maily.fullname" . }}-filebeat-config
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+data:
+  filebeat.yml: |-
+    filebeat.inputs:
+    - type: container
+      paths:
+        - /var/lib/docker/containers/*/*.log
+      processors:
+        - add_kubernetes_metadata:
+            host: ${NODE_NAME}
+            matchers:
+            - logs_path:
+                logs_path: "/var/lib/docker/containers/"
+
+    processors:
+      - add_host_metadata: ~
+      - add_cloud_metadata: ~
+      - add_kubernetes_metadata: ~
+      - add_docker_metadata: ~
+
+    output.elasticsearch:
+      host: '${ELASTICSEARCH_HOST}:${ELASTICSEARCH_PORT}'
+      indices:
+        - index: "filebeat-%{[agent.version]}-%{+yyyy.MM.dd}"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "maily.fullname" . }}-slo-config
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+data:
+  slo-config.yaml: |-
+    slos:
+      - name: api-availability
+        description: "API Uptime SLO - 99.9% Availability"
+        target: 0.999
+        window: 30d
+        indicators:
+          - name: availability
+            prometheus_query: 'sum(rate(http_requests_total{job="maily-api",code!~"5.."}[5m])) / sum(rate(http_requests_total{job="maily-api"}[5m]))'
+
+      - name: api-latency
+        description: "API Latency SLO - 95% of requests under 500ms"
+        target: 0.95
+        window: 30d
+        indicators:
+          - name: latency
+            prometheus_query: 'sum(rate(http_request_duration_seconds_bucket{job="maily-api",le="0.5"}[5m])) / sum(rate(http_request_duration_seconds_count{job="maily-api"}[5m]))'
+
+      - name: email-delivery
+        description: "Email Delivery SLO - 99.5% of emails delivered successfully"
+        target: 0.995
+        window: 30d
+        indicators:
+          - name: delivery
+            prometheus_query: 'sum(rate(email_delivery_total{status="delivered"}[1h])) / sum(rate(email_delivery_total[1h]))'
+
+      - name: frontend-performance
+        description: "Frontend Performance SLO - 90% of page loads under 2 seconds"
+        target: 0.9
+        window: 30d
+        indicators:
+          - name: performance
+            prometheus_query: 'sum(rate(frontend_page_load_seconds_bucket{le="2"}[5m])) / sum(rate(frontend_page_load_seconds_count[5m]))'
+
+      - name: database-latency
+        description: "Database Query Latency SLO - 95% of queries under 100ms"
+        target: 0.95
+        window: 30d
+        indicators:
+          - name: db_latency
+            prometheus_query: 'sum(rate(database_query_duration_seconds_bucket{le="0.1"}[5m])) / sum(rate(database_query_duration_seconds_count[5m]))'
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "maily.fullname" . }}-grafana-provisioning
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+data:
+  datasources.yaml: |-
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        url: http://{{ include "maily.fullname" . }}-prometheus:9090
+        access: proxy
+        isDefault: true
+      - name: Elasticsearch
+        type: elasticsearch
+        url: http://{{ include "maily.fullname" . }}-elk:9200
+        database: filebeat-*
+        jsonData:
+          timeField: "@timestamp"
+          esVersion: 7
+          logMessageField: message
+          logLevelField: fields.level
+---
+# Service Accounts
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "maily.fullname" . }}-prometheus
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "maily.fullname" . }}-filebeat
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+---
+# PVCs if Persistence is Enabled
+{{- if .Values.monitoring.elk.elasticsearch.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "maily.fullname" . }}-elasticsearch
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.monitoring.elk.elasticsearch.persistence.storageClass | default .Values.global.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.monitoring.elk.elasticsearch.persistence.size }}
+{{- end }}
+{{- if .Values.monitoring.prometheus.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "maily.fullname" . }}-prometheus
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.monitoring.prometheus.persistence.storageClass | default .Values.global.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.monitoring.prometheus.persistence.size }}
+{{- end }}
+{{- if .Values.monitoring.alertmanager.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "maily.fullname" . }}-alertmanager
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.monitoring.alertmanager.persistence.storageClass | default .Values.global.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.monitoring.alertmanager.persistence.size }}
+{{- end }}
+{{- if .Values.monitoring.grafana.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "maily.fullname" . }}-grafana
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.monitoring.grafana.persistence.storageClass | default .Values.global.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.monitoring.grafana.persistence.size }}
+{{- end }}
+---
+# Grafana Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "maily.fullname" . }}-grafana
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+type: Opaque
+data:
+  admin-user: {{ .Values.monitoring.grafana.adminUser | b64enc | quote }}
+  admin-password: {{ .Values.monitoring.grafana.adminPassword | b64enc | quote }}
+{{- end }}

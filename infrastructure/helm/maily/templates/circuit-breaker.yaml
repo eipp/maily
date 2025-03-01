@@ -1,0 +1,162 @@
+{{- if .Values.circuitBreaker.enabled }}
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: {{ include "maily.fullname" . }}-external-services
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+spec:
+  host: "*.external-services.svc.cluster.local"
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: {{ .Values.circuitBreaker.maxConnections }}
+        connectTimeout: {{ .Values.circuitBreaker.connectTimeout }}
+      http:
+        maxRequestsPerConnection: {{ .Values.circuitBreaker.maxRequestsPerConnection }}
+        http1MaxPendingRequests: {{ .Values.circuitBreaker.http1MaxPendingRequests }}
+        maxRetries: {{ .Values.circuitBreaker.maxRetries }}
+    outlierDetection:
+      consecutiveErrors: {{ .Values.circuitBreaker.consecutiveErrors }}
+      interval: {{ .Values.circuitBreaker.interval }}
+      baseEjectionTime: {{ .Values.circuitBreaker.baseEjectionTime }}
+      maxEjectionPercent: {{ .Values.circuitBreaker.maxEjectionPercent }}
+---
+# Circuit Breaker for SendGrid API
+{{- if .Values.circuitBreaker.services.sendgrid.enabled }}
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: {{ include "maily.fullname" . }}-sendgrid
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+spec:
+  host: api.sendgrid.com
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: {{ .Values.circuitBreaker.services.sendgrid.maxConnections }}
+        connectTimeout: {{ .Values.circuitBreaker.services.sendgrid.connectTimeout }}
+      http:
+        maxRequestsPerConnection: {{ .Values.circuitBreaker.services.sendgrid.maxRequestsPerConnection }}
+        http1MaxPendingRequests: {{ .Values.circuitBreaker.services.sendgrid.http1MaxPendingRequests }}
+        maxRetries: {{ .Values.circuitBreaker.services.sendgrid.maxRetries }}
+    outlierDetection:
+      consecutiveErrors: {{ .Values.circuitBreaker.services.sendgrid.consecutiveErrors }}
+      interval: {{ .Values.circuitBreaker.services.sendgrid.interval }}
+      baseEjectionTime: {{ .Values.circuitBreaker.services.sendgrid.baseEjectionTime }}
+      maxEjectionPercent: {{ .Values.circuitBreaker.services.sendgrid.maxEjectionPercent }}
+{{- end }}
+
+# Circuit Breaker for Mailgun API
+{{- if .Values.circuitBreaker.services.mailgun.enabled }}
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: {{ include "maily.fullname" . }}-mailgun
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+spec:
+  host: api.mailgun.net
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: {{ .Values.circuitBreaker.services.mailgun.maxConnections }}
+        connectTimeout: {{ .Values.circuitBreaker.services.mailgun.connectTimeout }}
+      http:
+        maxRequestsPerConnection: {{ .Values.circuitBreaker.services.mailgun.maxRequestsPerConnection }}
+        http1MaxPendingRequests: {{ .Values.circuitBreaker.services.mailgun.http1MaxPendingRequests }}
+        maxRetries: {{ .Values.circuitBreaker.services.mailgun.maxRetries }}
+    outlierDetection:
+      consecutiveErrors: {{ .Values.circuitBreaker.services.mailgun.consecutiveErrors }}
+      interval: {{ .Values.circuitBreaker.services.mailgun.interval }}
+      baseEjectionTime: {{ .Values.circuitBreaker.services.mailgun.baseEjectionTime }}
+      maxEjectionPercent: {{ .Values.circuitBreaker.services.mailgun.maxEjectionPercent }}
+{{- end }}
+
+# Circuit Breaker for SMTP Services
+{{- if .Values.circuitBreaker.services.smtp.enabled }}
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: {{ include "maily.fullname" . }}-smtp
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+spec:
+  host: "*.smtp.provider"
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: {{ .Values.circuitBreaker.services.smtp.maxConnections }}
+        connectTimeout: {{ .Values.circuitBreaker.services.smtp.connectTimeout }}
+      http:
+        maxRequestsPerConnection: {{ .Values.circuitBreaker.services.smtp.maxRequestsPerConnection }}
+        http1MaxPendingRequests: {{ .Values.circuitBreaker.services.smtp.http1MaxPendingRequests }}
+        maxRetries: {{ .Values.circuitBreaker.services.smtp.maxRetries }}
+    outlierDetection:
+      consecutiveErrors: {{ .Values.circuitBreaker.services.smtp.consecutiveErrors }}
+      interval: {{ .Values.circuitBreaker.services.smtp.interval }}
+      baseEjectionTime: {{ .Values.circuitBreaker.services.smtp.baseEjectionTime }}
+      maxEjectionPercent: {{ .Values.circuitBreaker.services.smtp.maxEjectionPercent }}
+{{- end }}
+
+# Circuit Breaker for Third-party Analytics API
+{{- if .Values.circuitBreaker.services.analytics.enabled }}
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: {{ include "maily.fullname" . }}-analytics
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+spec:
+  host: "*.analytics-provider.com"
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: {{ .Values.circuitBreaker.services.analytics.maxConnections }}
+        connectTimeout: {{ .Values.circuitBreaker.services.analytics.connectTimeout }}
+      http:
+        maxRequestsPerConnection: {{ .Values.circuitBreaker.services.analytics.maxRequestsPerConnection }}
+        http1MaxPendingRequests: {{ .Values.circuitBreaker.services.analytics.http1MaxPendingRequests }}
+        maxRetries: {{ .Values.circuitBreaker.services.analytics.maxRetries }}
+    outlierDetection:
+      consecutiveErrors: {{ .Values.circuitBreaker.services.analytics.consecutiveErrors }}
+      interval: {{ .Values.circuitBreaker.services.analytics.interval }}
+      baseEjectionTime: {{ .Values.circuitBreaker.services.analytics.baseEjectionTime }}
+      maxEjectionPercent: {{ .Values.circuitBreaker.services.analytics.maxEjectionPercent }}
+{{- end }}
+
+# Default fallback responses for circuit broken services
+{{- if .Values.circuitBreaker.fallbacks.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "maily.fullname" . }}-circuit-breaker-fallbacks
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+data:
+  fallbacks.json: |-
+    {
+      "sendgrid": {
+        "status": "degraded",
+        "message": "Email sending service temporarily unavailable",
+        "fallbackAction": "{{ .Values.circuitBreaker.fallbacks.sendgrid.action }}"
+      },
+      "mailgun": {
+        "status": "degraded",
+        "message": "Email sending service temporarily unavailable",
+        "fallbackAction": "{{ .Values.circuitBreaker.fallbacks.mailgun.action }}"
+      },
+      "smtp": {
+        "status": "degraded",
+        "message": "Email sending service temporarily unavailable",
+        "fallbackAction": "{{ .Values.circuitBreaker.fallbacks.smtp.action }}"
+      },
+      "analytics": {
+        "status": "degraded",
+        "message": "Analytics service temporarily unavailable",
+        "fallbackAction": "{{ .Values.circuitBreaker.fallbacks.analytics.action }}"
+      }
+    }
+{{- end }}
+{{- end }}

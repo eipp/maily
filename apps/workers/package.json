@@ -1,0 +1,27 @@
+{
+  "name": "@maily/workers",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "node dist/index.js",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@maily/config": "*",
+    "@maily/database": "*",
+    "@maily/utils": "*",
+    "amqplib": "^0.10.3",
+    "bullmq": "^5.1.1",
+    "nodemailer": "^6.9.10"
+  },
+  "author": "Maily Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/maily/maily.git"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  }
+}

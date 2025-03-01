@@ -1,0 +1,32 @@
+{{- if .Values.cdn.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-cdn-config
+  labels:
+    app.kubernetes.io/name: {{ .Release.Name }}-cdn
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: cdn
+    app.kubernetes.io/part-of: maily
+data:
+  cdn-domains.json: |
+    {
+      "mainDomain": "{{ .Values.cdn.mainDomain }}",
+      "assetsDomain": "{{ .Values.cdn.assetsDomain }}",
+      "imagesDomain": "{{ .Values.cdn.imagesDomain }}"
+    }
+  cdn-paths.json: |
+    {
+      "static": "/static",
+      "images": "/images",
+      "templates": "/templates",
+      "userUploads": "/uploads"
+    }
+  cdn-ttl.json: |
+    {
+      "static": {{ .Values.cdn.ttl.static }},
+      "images": {{ .Values.cdn.ttl.images }},
+      "templates": {{ .Values.cdn.ttl.templates }},
+      "userUploads": {{ .Values.cdn.ttl.userUploads }}
+    }
+{{- end }}

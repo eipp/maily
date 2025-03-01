@@ -1,0 +1,89 @@
+groups:
+- name: maily_recording_rules
+  rules:
+  # Campaign performance metrics
+  - record: campaign:email_delivery_rate
+    expr: sum(rate(maily_campaign_sends_total[1h])) by (campaign_id) / sum(rate(maily_campaign_sends_total[1h])) by (campaign_id)
+
+  - record: campaign:open_rate
+    expr: sum(rate(maily_campaign_opens_total[1h])) by (campaign_id) / sum(rate(maily_campaign_sends_total[1h])) by (campaign_id)
+
+  - record: campaign:click_rate
+    expr: sum(rate(maily_campaign_clicks_total[1h])) by (campaign_id) / sum(rate(maily_campaign_opens_total[1h])) by (campaign_id)
+
+  - record: campaign:bounce_rate
+    expr: sum(rate(maily_campaign_bounces_total[1h])) by (campaign_id) / sum(rate(maily_campaign_sends_total[1h])) by (campaign_id)
+
+  - record: campaign:unsubscribe_rate
+    expr: sum(rate(maily_campaign_unsubscribes_total[1h])) by (campaign_id) / sum(rate(maily_campaign_sends_total[1h])) by (campaign_id)
+
+  # AI performance metrics
+  - record: ai:avg_request_duration
+    expr: rate(maily_ai_request_duration_seconds_sum[5m]) / rate(maily_ai_request_duration_seconds_count[5m])
+
+  - record: ai:error_rate
+    expr: sum(rate(maily_ai_errors_total[5m])) by (model_name) / sum(rate(maily_ai_request_duration_seconds_count[5m])) by (model_name)
+
+  - record: ai:token_usage_rate
+    expr: rate(maily_ai_token_usage_total[1h])
+
+  # System performance metrics
+  - record: system:api_success_rate
+    expr: sum(rate(http_requests_total{status=~"2.."}[5m])) / sum(rate(http_requests_total[5m]))
+
+  - record: system:api_error_rate
+    expr: sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m]))
+
+  - record: system:api_latency_p95
+    expr: histogram_quantile(0.95, sum(rate(maily_api_request_duration_seconds_bucket[5m])) by (le))
+
+  - record: system:api_latency_p99
+    expr: histogram_quantile(0.99, sum(rate(maily_api_request_duration_seconds_bucket[5m])) by (le))
+
+  # Database performance metrics
+  - record: db:query_latency_p95
+    expr: histogram_quantile(0.95, sum(rate(maily_db_query_duration_seconds_bucket[5m])) by (le))
+
+  - record: db:connection_utilization
+    expr: sum(maily_db_connection_pool_size) / sum(maily_db_connection_pool_size{status="max"})
+
+  # Cache performance metrics
+  - record: cache:hit_rate_5m
+    expr: rate(cache_hits_total[5m]) / (rate(cache_hits_total[5m]) + rate(cache_misses_total[5m]))
+
+  - record: cache:memory_usage
+    expr: sum(maily_cache_size_bytes) by (cache_name)
+
+  # Compliance metrics
+  - record: compliance:gdpr_requests_hourly
+    expr: sum(rate(maily_gdpr_requests_total[1h])) by (request_type)
+
+  - record: compliance:consent_changes_hourly
+    expr: sum(rate(maily_consent_changes_total[1h])) by (change_type)
+
+  # Resource utilization metrics
+  - record: resource:cpu_usage_percent
+    expr: 100 * (1 - rate(node_cpu_seconds_total{mode="idle"}[5m]))
+
+  - record: resource:memory_usage_percent
+    expr: 100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)
+
+  - record: resource:disk_usage_percent
+    expr: 100 * (1 - node_filesystem_avail_bytes / node_filesystem_size_bytes)
+
+  # Queue metrics
+  - record: queue:processing_rate
+    expr: rate(maily_queue_size[5m])
+
+  - record: queue:average_wait_time
+    expr: rate(maily_queue_wait_time_seconds_sum[5m]) / rate(maily_queue_wait_time_seconds_count[5m])
+
+  # Business metrics
+  - record: business:active_campaigns
+    expr: count(count by (campaign_id) (maily_campaign_sends_total))
+
+  - record: business:total_recipients
+    expr: sum(maily_campaign_sends_total)
+
+  - record: business:engagement_score
+    expr: (sum(rate(maily_campaign_opens_total[24h])) + sum(rate(maily_campaign_clicks_total[24h]))) / sum(rate(maily_campaign_sends_total[24h]))

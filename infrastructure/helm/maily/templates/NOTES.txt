@@ -1,0 +1,47 @@
+Thank you for installing {{ .Chart.Name }}.
+
+Your release is named {{ .Release.Name }}.
+
+To learn more about the release, try:
+
+  $ helm status {{ .Release.Name }}
+  $ helm get all {{ .Release.Name }}
+
+{{- if .Values.ingress.enabled }}
+You can access the application at:
+{{- range .Values.ingress.hosts }}
+  - {{ .host }}
+{{- end }}
+{{- else }}
+To access the application, you need to set up port forwarding:
+
+  $ kubectl port-forward svc/{{ .Release.Name }}-frontend {{ .Values.frontend.service.port }}:{{ .Values.frontend.service.port }}
+
+Then access the application at: http://localhost:{{ .Values.frontend.service.port }}
+
+For the API:
+
+  $ kubectl port-forward svc/{{ .Release.Name }}-backend {{ .Values.backend.service.port }}:{{ .Values.backend.service.port }}
+
+Then access the API at: http://localhost:{{ .Values.backend.service.port }}
+{{- end }}
+
+For RabbitMQ management console:
+
+  $ kubectl port-forward svc/{{ .Release.Name }}-rabbitmq {{ .Values.rabbitmq.service.managementPort }}:{{ .Values.rabbitmq.service.managementPort }}
+
+Then access the RabbitMQ management console at: http://localhost:{{ .Values.rabbitmq.service.managementPort }}
+Username: {{ .Values.rabbitmq.env.RABBITMQ_DEFAULT_USER }}
+Password: Use the password stored in the secret {{ .Values.secrets.name }}
+
+To view logs for the backend:
+
+  $ kubectl logs -f deployment/{{ .Release.Name }}-backend
+
+To view logs for the worker:
+
+  $ kubectl logs -f deployment/{{ .Release.Name }}-worker
+
+To view logs for the frontend:
+
+  $ kubectl logs -f deployment/{{ .Release.Name }}-frontend

@@ -1,0 +1,82 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: modsecurity-rules
+  labels:
+    app: maily
+    component: security
+data:
+  modsecurity.conf: |
+    # Basic ModSecurity configuration
+    SecRuleEngine On
+    SecRequestBodyAccess On
+    SecResponseBodyAccess On
+    SecResponseBodyMimeType text/plain text/html text/xml application/json
+    SecResponseBodyLimit 1024
+    SecDebugLog /var/log/modsecurity/debug.log
+    SecDebugLogLevel 1
+    SecAuditEngine RelevantOnly
+    SecAuditLog /var/log/modsecurity/audit.log
+    SecAuditLogParts ABIJDEFHZ
+    SecAuditLogType Serial
+    SecAuditLogStorageDir /var/log/modsecurity/audit/
+    SecAuditLogRelevantStatus "^(?:5|4(?!04))"
+
+    # Default rules for ModSecurity Core Rule Set (CRS)
+    Include /etc/modsecurity.d/owasp-crs/crs-setup.conf
+    Include /etc/modsecurity.d/owasp-crs/rules/*.conf
+
+    # Exceptions and custom rules
+    # Prevent SQL injection attacks
+    SecRule REQUEST_COOKIES|REQUEST_COOKIES_NAMES|REQUEST_FILENAME|REQUEST_HEADERS|REQUEST_HEADERS_NAMES|REQUEST_LINE|ARGS|ARGS_NAMES|ARGS_COMBINED_SIZE "(?i:(?:\b(?:and|or)\b\s+[\w\p{L}]+[!=+]+[\w\p{L}]+(?:\s+|$)|[\"'`´'']\s+(?:or|and)\s+[\w\p{L}]+[!=+]+[\w\p{L}]+[\s\"'`´'']|/\*.*(?:--|#).*\*/|;waitfor\s+delay\s+|;\s*shutdown\b|--[^\n]*$))" \
+        "id:1000,phase:2,log,deny,status:403,msg:'SQL Injection Attack'"
+
+    # Prevent XSS attacks
+    SecRule REQUEST_COOKIES|REQUEST_COOKIES_NAMES|REQUEST_HEADERS|REQUEST_HEADERS_NAMES|ARGS|ARGS_NAMES "(?i:<script[^>]*>.*</script>|<[^>]*?\bon(?:error|load|mouse|key|focus)\s*=|javascript:)" \
+        "id:1001,phase:2,log,deny,status:403,msg:'XSS Attack'"
+
+    # Prevent remote file inclusion (RFI)
+    SecRule ARGS "(?i:(?:ht|f)tps?:\/\/(?:\w+:{0,1}\w*@)?(?:\S+)(?::[0-9]+)?(?:\/|\/([\w#!:.?+=&%@!\-\/]))?)" \
+        "id:1002,phase:2,log,deny,status:403,msg:'Remote File Inclusion (RFI) Attack'"
+
+    # Prevent path traversal
+    SecRule REQUEST_URI|ARGS|REQUEST_HEADERS:referer "(?i:(?:\.\.|%2e%2e))" \
+        "id:1003,phase:2,log,deny,status:403,msg:'Path Traversal Attack'"
+
+    # Prevent HTTP response splitting
+    SecRule REQUEST_COOKIES|REQUEST_COOKIES_NAMES|REQUEST_HEADERS|REQUEST_HEADERS_NAMES|ARGS|ARGS_NAMES "(?i:%0a|%0d)" \
+        "id:1004,phase:2,log,deny,status:403,msg:'HTTP Response Splitting Attack'"
+
+  crs-setup.conf: |
+    # OWASP CRS setup
+    SecDefaultAction "phase:1,log,auditlog,deny,status:403"
+    SecDefaultAction "phase:2,log,auditlog,deny,status:403"
+
+    # Set anomaly scoring thresholds
+    SecAction \
+      "id:900110,\
+      phase:1,\
+      nolog,\
+      pass,\
+      t:none,\
+      setvar:tx.inbound_anomaly_score_threshold=7,\
+      setvar:tx.outbound_anomaly_score_threshold=7"
+
+  ip-reputation.conf: |
+    # IP-based blocking
+    SecRule REMOTE_ADDR "@ipMatchFromFile /etc/modsecurity.d/ip-blacklist.conf" \
+      "id:2000,phase:1,log,deny,status:403,msg:'Client IP in blacklist'"
+
+    # Rate limiting by IP address
+    SecAction \
+      "id:2001,\
+      phase:1,\
+      nolog,\
+      pass,\
+      t:none,\
+      initcol:ip=%{REMOTE_ADDR},\
+      setvar:ip.requests=+1,\
+      expirevar:ip.requests=60"
+
+    SecRule IP:REQUESTS "@gt 100" \
+      "id:2002,phase:1,deny,status:429,log,msg:'Rate limit exceeded'"

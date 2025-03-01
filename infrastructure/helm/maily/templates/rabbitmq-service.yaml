@@ -1,0 +1,25 @@
+{{- if .Values.rabbitmq.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-rabbitmq
+  labels:
+    app.kubernetes.io/name: {{ .Release.Name }}-rabbitmq
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: message-queue
+    app.kubernetes.io/part-of: maily
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.rabbitmq.service.port }}
+      targetPort: 5672
+      protocol: TCP
+      name: amqp
+    - port: {{ .Values.rabbitmq.service.managementPort }}
+      targetPort: 15672
+      protocol: TCP
+      name: management
+  selector:
+    app.kubernetes.io/name: {{ .Release.Name }}-rabbitmq
+    app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}

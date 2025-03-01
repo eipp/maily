@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: maily-worker
+  labels:
+    app: maily
+    component: worker
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: maily
+      component: worker
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: maily
+        component: worker
+    spec:
+      containers:
+      - name: worker
+        image: ${DOCKER_REGISTRY}/maily-backend:${IMAGE_TAG}
+        command: ["python", "-m", "workers.email_worker"]
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: maily-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: maily-secrets
+              key: redis-url
+        - name: RABBITMQ_URL
+          valueFrom:
+            secretKeyRef:
+              name: maily-secrets
+              key: rabbitmq-url
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: maily-secrets
+              key: openai-api-key
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: maily-secrets
+              key: anthropic-api-key
+        - name: GOOGLE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: maily-secrets
+              key: google-api-key
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+          requests:
+            cpu: "200m"
+            memory: "256Mi"
+        livenessProbe:
+          exec:
+            command:
+            - python
+            - -c
+            - |
+              import os
+              import sys
+              import psutil
+              process = psutil.Process(os.getpid())
+              if process.is_running():
+                  sys.exit(0)
+              else:
+                  sys.exit(1)
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3

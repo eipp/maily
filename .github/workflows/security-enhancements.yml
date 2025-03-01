@@ -1,0 +1,130 @@
+name: Security Enhancements
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'  # Run weekly on Sunday at midnight
+  workflow_dispatch:     # Allow manual triggering
+  push:
+    paths:
+      - 'scripts/security/**'
+      - 'infrastructure/kubernetes/security/**'
+      - 'infrastructure/prometheus/**'
+      - 'apps/api/middleware/security.py'
+      - 'apps/web/middleware.ts'
+
+jobs:
+  security-enhancements:
+    name: Apply Security Enhancements
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r scripts/security/requirements.txt
+
+      - name: Run security monitoring enhancements in dry-run mode
+        id: dry-run-monitoring
+        run: python scripts/security/enhance_security_monitoring.py --dry-run --verbose
+
+      - name: Run blockchain security enhancements in dry-run mode
+        id: dry-run-blockchain
+        run: python scripts/security/enhance_blockchain_security.py --dry-run --verbose
+
+      - name: Generate security enhancement report
+        run: |
+          echo "# Security Enhancement Report" > security-report.md
+          echo "## Date: $(date)" >> security-report.md
+          echo "## Branch: ${{ github.ref }}" >> security-report.md
+          echo "## Commit: ${{ github.sha }}" >> security-report.md
+          echo "" >> security-report.md
+          echo "## Security Monitoring Enhancements" >> security-report.md
+          echo '```' >> security-report.md
+          python scripts/security/enhance_security_monitoring.py --dry-run --verbose >> security-report.md
+          echo '```' >> security-report.md
+          echo "" >> security-report.md
+          echo "## Blockchain Security Enhancements" >> security-report.md
+          echo '```' >> security-report.md
+          python scripts/security/enhance_blockchain_security.py --dry-run --verbose >> security-report.md
+          echo '```' >> security-report.md
+
+      - name: Upload security enhancement report
+        uses: actions/upload-artifact@v3
+        with:
+          name: security-enhancement-report
+          path: security-report.md
+
+      - name: Apply security monitoring enhancements
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: python scripts/security/enhance_security_monitoring.py --verbose
+
+      - name: Apply blockchain security enhancements
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: python scripts/security/enhance_blockchain_security.py --verbose
+
+      - name: Create Pull Request for security enhancements
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "feat(security): Apply automated security enhancements"
+          title: "Security Enhancements - Automated Update"
+          body: |
+            This PR contains automated security enhancements applied by the security enhancement scripts.
+
+            ## Changes included:
+            - Updated Prometheus security alerts
+            - Updated Falco runtime security rules
+            - Enhanced API and Web security headers
+            - Updated blockchain security measures
+
+            Please review the changes carefully before merging.
+          branch: automated-security-enhancements
+          base: main
+          labels: security, automated
+
+      - name: Notify security team
+        if: always()
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          payload: |
+            {
+              "text": "Security Enhancement Workflow Results",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Security Enhancement Workflow Results*\n${{ job.status == 'success' && '✅ Succeeded' || '❌ Failed' }}"
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Commit:* ${{ github.sha }}"
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "View the <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow run> for more details."
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_SECURITY_WEBHOOK }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK

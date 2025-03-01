@@ -1,0 +1,182 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: monitoring
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+      scrape_timeout: 10s
+
+    alerting:
+      alertmanagers:
+      - static_configs:
+        - targets: ['alertmanager:9093']
+
+    rule_files:
+      - "/etc/prometheus/rules/*.yml"
+
+    scrape_configs:
+      - job_name: 'prometheus'
+        static_configs:
+          - targets: ['localhost:9090']
+
+      - job_name: 'kubernetes-apiservers'
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names:
+                - default
+        scheme: https
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+            action: keep
+            regex: kubernetes;https
+
+      - job_name: 'kubernetes-nodes'
+        kubernetes_sd_configs:
+          - role: node
+        relabel_configs:
+          - action: labelmap
+            regex: __meta_kubernetes_node_label_(.+)
+          - target_label: __address__
+            replacement: kubernetes.default.svc:443
+          - source_labels: [__meta_kubernetes_node_name]
+            regex: (.+)
+            target_label: __metrics_path__
+            replacement: /api/v1/nodes/${1}/proxy/metrics
+
+      - job_name: 'kubernetes-pods'
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: kubernetes_pod_name
+
+      - job_name: 'mailydocs'
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names:
+                - maily
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_label_app]
+            regex: mailydocs
+            action: keep
+          - source_labels: [__meta_kubernetes_endpoint_port_name]
+            regex: http
+            action: keep
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_service_name]
+            target_label: kubernetes_service_name
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: kubernetes_pod_name
+          - source_labels: [__meta_kubernetes_service_name]
+            target_label: job
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-mailydocs-rules
+  namespace: monitoring
+data:
+  mailydocs_alerts.yml: |
+    groups:
+    - name: mailydocs
+      rules:
+      - alert: HighDocumentGenerationErrorRate
+        expr: sum(rate(mailydocs_document_generation_requests_total{status="error"}[5m])) / sum(rate(mailydocs_document_generation_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High document generation error rate"
+          description: "Document generation error rate is above 5% for 5 minutes ({{ $value | humanizePercentage }})"
+
+      - alert: DocumentGenerationSlowResponse
+        expr: histogram_quantile(0.95, sum(rate(mailydocs_document_generation_duration_seconds_bucket[5m])) by (le, document_type)) > 60
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow document generation"
+          description: "95th percentile of document generation time is above 60 seconds for document type {{ $labels.document_type }}"
+
+      - alert: DocumentGenerationHighLoadWarning
+        expr: sum(mailydocs_active_document_generations) > 20
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High number of active document generations"
+          description: "More than 20 active document generations for 10 minutes (current: {{ $value }})"
+
+      - alert: DocumentGenerationHighLoadCritical
+        expr: sum(mailydocs_active_document_generations) > 50
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical number of active document generations"
+          description: "More than 50 active document generations for 5 minutes (current: {{ $value }})"
+
+      - alert: MailyDocsServiceDown
+        expr: up{job="mailydocs"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "MailyDocs service is down"
+          description: "MailyDocs service has been down for more than 1 minute"
+
+      - alert: MailyDocsApiErrorRate
+        expr: sum(rate(http_requests_total{job="mailydocs", status_code=~"5.."}[5m])) / sum(rate(http_requests_total{job="mailydocs"}[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High API error rate for MailyDocs"
+          description: "MailyDocs API error rate is above 5% for 5 minutes ({{ $value | humanizePercentage }})"
+
+      - alert: MailyDocsApiLatency
+        expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job="mailydocs"}[5m])) by (le, endpoint)) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High API latency for MailyDocs"
+          description: "95th percentile of API latency is above 2 seconds for endpoint {{ $labels.endpoint }}"
+
+      - alert: BlockchainVerificationFailure
+        expr: sum(rate(mailydocs_errors_total{error_type=~".*Blockchain.*"}[5m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Blockchain verification failures detected"
+          description: "MailyDocs blockchain verification is failing ({{ $value }} failures in last 5 minutes)"

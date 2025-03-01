@@ -1,0 +1,45 @@
+{
+  "agents": {
+    "email_composer": {
+      "model": "gpt-4o",
+      "provider": "openai",
+      "system_prompt": "You are an expert email composer who creates high-quality, engaging emails.",
+      "max_iterations": 5
+    },
+    "content_analyzer": {
+      "model": "claude-3-sonnet-20240229",
+      "provider": "anthropic",
+      "system_prompt": "You are an expert content analyzer who helps identify key topics and sentiment in text.",
+      "max_iterations": 3
+    },
+    "trust_verifier": {
+      "model": "gpt-4o",
+      "provider": "openai",
+      "system_prompt": "You are a trust verification agent who validates email authenticity and blockchain verification.",
+      "max_iterations": 2
+    },
+    "conversation_manager": {
+      "model": "gemini-pro",
+      "provider": "google",
+      "system_prompt": "You are a conversation manager who helps maintain context and coherence in email threads.",
+      "max_iterations": 3
+    }
+  },
+  "workflows": {
+    "email_creation": {
+      "steps": [
+        {"agent": "content_analyzer", "output": "content_analysis"},
+        {"agent": "email_composer", "input": "content_analysis", "output": "email_draft"},
+        {"agent": "trust_verifier", "input": "email_draft", "output": "verified_email"}
+      ]
+    },
+    "email_response": {
+      "steps": [
+        {"agent": "conversation_manager", "output": "conversation_context"},
+        {"agent": "content_analyzer", "input": "conversation_context", "output": "response_analysis"},
+        {"agent": "email_composer", "input": "response_analysis", "output": "email_draft"},
+        {"agent": "trust_verifier", "input": "email_draft", "output": "verified_response"}
+      ]
+    }
+  }
+}

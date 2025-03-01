@@ -1,0 +1,200 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: email-service
+  namespace: production
+  labels:
+    app: justmaily-email-service
+    component: email
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: email-service
+  template:
+    metadata:
+      labels:
+        app: justmaily-email-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: email-service
+        image: maily/email-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: PORT
+          value: "8080"
+        # Domain Configuration
+        - name: MAIN_DOMAIN
+          valueFrom:
+            configMapKeyRef:
+              name: email-service-config
+              key: main_domain
+        - name: APP_DOMAIN
+          valueFrom:
+            configMapKeyRef:
+              name: email-service-config
+              key: app_domain
+        - name: CONSOLE_DOMAIN
+          valueFrom:
+            configMapKeyRef:
+              name: email-service-config
+              key: console_domain
+        - name: CORS_ALLOWED_ORIGINS
+          valueFrom:
+            configMapKeyRef:
+              name: email-service-config
+              key: cors_allowed_origins
+        - name: DB_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: email-service-config
+              key: db_host
+        - name: DB_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: email-service-config
+              key: db_port
+        - name: DB_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: email-service-secrets
+              key: db_username
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: email-service-secrets
+              key: db_password
+        - name: DB_DATABASE
+          valueFrom:
+            configMapKeyRef:
+              name: email-service-config
+              key: db_database
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: email-service-config
+              key: redis_host
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: email-service-config
+              key: redis_port
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: email-service-secrets
+              key: redis_password
+              optional: true
+        - name: EMAIL_PROVIDER_TYPE
+          valueFrom:
+            configMapKeyRef:
+              name: email-service-config
+              key: email_provider_type
+        - name: EMAIL_PROVIDER_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: email-service-secrets
+              key: email_provider_api_key
+        - name: EMAIL_PROVIDER_DOMAIN
+          valueFrom:
+            configMapKeyRef:
+              name: email-service-config
+              key: email_provider_domain
+              optional: true
+        - name: RATE_LIMIT_RESEND
+          valueFrom:
+            configMapKeyRef:
+              name: email-service-config
+              key: rate_limit_resend
+              optional: true
+        - name: RATE_LIMIT_SENDGRID
+          valueFrom:
+            configMapKeyRef:
+              name: email-service-config
+              key: rate_limit_sendgrid
+              optional: true
+        - name: RATE_LIMIT_MAILGUN
+          valueFrom:
+            configMapKeyRef:
+              name: email-service-config
+              key: rate_limit_mailgun
+              optional: true
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        readinessProbe:
+          httpGet:
+            path: /api/emails/health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /api/emails/health
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+        volumeMounts:
+        - name: config-volume
+          mountPath: /app/config
+      volumes:
+      - name: config-volume
+        configMap:
+          name: email-service-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: email-service
+  namespace: production
+  labels:
+    app: email-service
+spec:
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: email-service
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: email-service-config
+  namespace: production
+data:
+  main_domain: "justmaily.com"
+  app_domain: "app.justmaily.com"
+  console_domain: "console.justmaily.com"
+  cors_allowed_origins: "https://justmaily.com,https://app.justmaily.com,https://console.justmaily.com"
+  db_host: "postgres-service"
+  db_port: "5432"
+  db_database: "email_service"
+  redis_host: "redis-service"
+  redis_port: "6379"
+  email_provider_type: "resend"
+  email_provider_domain: ""
+  rate_limit_resend: "1000"
+  rate_limit_sendgrid: "1000"
+  rate_limit_mailgun: "1000"

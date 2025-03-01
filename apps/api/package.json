@@ -1,0 +1,17 @@
+{
+  "name": "@maily/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "uvicorn main:app --reload"
+  },
+  "engines": {
+    "python": ">=3.9.0"
+  },
+  "author": "Maily Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/maily/maily.git"
+  }
+}

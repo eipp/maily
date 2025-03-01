@@ -1,0 +1,82 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: maily-api
+  namespace: maily-production
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    # Security headers
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-XSS-Protection: 1; mode=block";
+    # Enable CORS
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, PUT, POST, DELETE, PATCH, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Authorization"
+    # Rate limiting
+    nginx.ingress.kubernetes.io/rate-limit-rps: "10"
+    # Add WAF protection
+    nginx.ingress.kubernetes.io/enable-modsecurity: "true"
+    nginx.ingress.kubernetes.io/enable-owasp-core-rules: "true"
+spec:
+  tls:
+  - hosts:
+    - api.maily.com
+    secretName: maily-api-tls
+  rules:
+  - host: api.maily.com
+    http:
+      paths:
+      - path: /api/v1/emails
+        pathType: Prefix
+        backend:
+          service:
+            name: email-processing-service
+            port:
+              number: 80
+      - path: /api/v1/templates
+        pathType: Prefix
+        backend:
+          service:
+            name: email-processing-service
+            port:
+              number: 80
+      - path: /api/v1/contacts
+        pathType: Prefix
+        backend:
+          service:
+            name: contact-management-service
+            port:
+              number: 80
+      - path: /api/v1/segments
+        pathType: Prefix
+        backend:
+          service:
+            name: contact-management-service
+            port:
+              number: 80
+      - path: /api/v1/metrics
+        pathType: Prefix
+        backend:
+          service:
+            name: analytics-service
+            port:
+              number: 80
+      - path: /api/v1/campaigns
+        pathType: Prefix
+        backend:
+          service:
+            name: canvas-service
+            port:
+              number: 80
+      - path: /api/v1/verify
+        pathType: Prefix
+        backend:
+          service:
+            name: blockchain-service
+            port:
+              number: 80

@@ -1,0 +1,19 @@
+{{- if .Values.apiEdgeCaching.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "maily.fullname" . }}-api-edge-cache
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+    component: api-edge-cache
+spec:
+  selector:
+    {{- include "maily.selectorLabels" . | nindent 4 }}
+    component: api-edge-cache
+  ports:
+  - port: {{ .Values.apiEdgeCaching.service.port }}
+    targetPort: {{ .Values.apiEdgeCaching.service.targetPort }}
+    protocol: TCP
+    name: http
+  type: {{ .Values.apiEdgeCaching.service.type }}
+{{- end }}

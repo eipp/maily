@@ -1,0 +1,1 @@
+/Users/ivanpeychev/saas/maily/apps/api/models/campaign.py

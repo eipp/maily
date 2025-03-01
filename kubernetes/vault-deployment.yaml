@@ -1,0 +1,248 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vault
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault
+  namespace: vault
+  labels:
+    app.kubernetes.io/name: vault
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: vault-tls
+  namespace: vault
+type: kubernetes.io/tls
+data:
+  # These values need to be base64 encoded versions of the certificates
+  tls.crt: ""  # Replace with base64 encoded certificate
+  tls.key: ""  # Replace with base64 encoded key
+  ca.crt: ""   # Replace with base64 encoded CA certificate
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: vault
+  namespace: vault
+  labels:
+    app.kubernetes.io/name: vault
+spec:
+  serviceName: vault
+  replicas: 1  # Set higher for HA
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vault
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vault
+    spec:
+      serviceAccountName: vault
+      terminationGracePeriodSeconds: 10
+      containers:
+      - name: vault
+        image: hashicorp/vault:1.15.2
+        command:
+        - /bin/sh
+        - -c
+        - |
+          cp /vault/tls-mounted/* /vault/tls/
+          chmod 644 /vault/tls/vault.crt /vault/tls/ca.crt
+          chmod 600 /vault/tls/vault.key
+          vault server -config=/vault/config/vault.hcl
+        ports:
+        - containerPort: 8200
+          name: http
+        - containerPort: 8201
+          name: internal
+        - containerPort: 8202
+          name: replication
+        securityContext:
+          capabilities:
+            add: ["IPC_LOCK"]
+        volumeMounts:
+        - name: vault-config
+          mountPath: /vault/config
+        - name: vault-data
+          mountPath: /vault/data
+        - name: vault-logs
+          mountPath: /vault/logs
+        - name: vault-tls-mounted
+          mountPath: /vault/tls-mounted
+        - name: vault-policies
+          mountPath: /vault/policies
+        env:
+        - name: VAULT_ADDR
+          value: "https://127.0.0.1:8200"
+        - name: VAULT_API_ADDR
+          value: "https://vault.vault.svc.cluster.local:8200"
+        - name: VAULT_CLUSTER_ADDR
+          value: "https://$(POD_IP):8201"
+        - name: VAULT_SKIP_VERIFY
+          value: "true"  # Only for initial setup, remove in production
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        readinessProbe:
+          httpGet:
+            path: /v1/sys/health?standbyok=true
+            port: 8200
+            scheme: HTTPS
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /v1/sys/health?standbyok=true
+            port: 8200
+            scheme: HTTPS
+          initialDelaySeconds: 60
+          periodSeconds: 30
+      volumes:
+      - name: vault-config
+        configMap:
+          name: vault-config
+      - name: vault-tls-mounted
+        secret:
+          secretName: vault-tls
+      - name: vault-policies
+        configMap:
+          name: vault-policies
+  volumeClaimTemplates:
+  - metadata:
+      name: vault-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 10Gi
+  - metadata:
+      name: vault-logs
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vault
+  namespace: vault
+  labels:
+    app.kubernetes.io/name: vault
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 8200
+    targetPort: 8200
+  - name: internal
+    port: 8201
+    targetPort: 8201
+  selector:
+    app.kubernetes.io/name: vault
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-config
+  namespace: vault
+data:
+  vault.hcl: |
+    storage "raft" {
+      path    = "/vault/data"
+      node_id = "${POD_NAME}"
+    }
+
+    listener "tcp" {
+      address     = "0.0.0.0:8200"
+      tls_disable = "false"
+      tls_cert_file = "/vault/tls/vault.crt"
+      tls_key_file  = "/vault/tls/vault.key"
+    }
+
+    api_addr = "https://vault.vault.svc.cluster.local:8200"
+    cluster_addr = "https://${POD_IP}:8201"
+
+    ui = true
+
+    telemetry {
+      prometheus_retention_time = "30s"
+      disable_hostname = true
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-policies
+  namespace: vault
+data:
+  app-policy.hcl: |
+    # API Service Policy
+
+    # Allow API service to read database credentials
+    path "database/creds/api-service" {
+      capabilities = ["read"]
+    }
+
+    # Allow reading and listing of secrets
+    path "secret/data/api/*" {
+      capabilities = ["read", "list"]
+    }
+
+    # Allow reading Redis secrets
+    path "secret/data/redis" {
+      capabilities = ["read"]
+    }
+
+    # Allow transit operations for data encryption/decryption
+    path "transit/encrypt/maily-data*" {
+      capabilities = ["update"]
+    }
+
+    path "transit/decrypt/maily-data*" {
+      capabilities = ["update"]
+    }
+
+    # Allow renewing leases
+    path "sys/leases/renew" {
+      capabilities = ["update"]
+    }
+
+    # Allow looking up lease information
+    path "sys/leases/lookup" {
+      capabilities = ["update"]
+    }
+
+  monitoring-policy.hcl: |
+    # Monitoring Policy
+
+    # Allow monitoring endpoints to be checked
+    path "sys/health" {
+      capabilities = ["read", "sudo"]
+    }
+
+    # Allow reading telemetry data
+    path "sys/metrics" {
+      capabilities = ["read"]
+    }
+
+    # Allow reading seal status
+    path "sys/seal-status" {
+      capabilities = ["read"]
+    }
+
+    # Allow reading leader status
+    path "sys/leader" {
+      capabilities = ["read"]
+    }
+
+    # Allow checking license status
+    path "sys/license/status" {
+      capabilities = ["read"]
+    }

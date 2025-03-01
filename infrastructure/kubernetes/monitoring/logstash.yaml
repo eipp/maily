@@ -1,0 +1,395 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logstash-config
+  namespace: monitoring
+data:
+  logstash.yml: |
+    http.host: "0.0.0.0"
+    monitoring.elasticsearch.hosts: ["http://elasticsearch:9200"]
+    xpack.monitoring.enabled: true
+    config.reload.automatic: true
+    config.reload.interval: 10s
+    queue.type: persisted
+    queue.max_bytes: 1gb
+    path.config: /usr/share/logstash/pipeline
+    path.logs: /var/log/logstash
+    log.level: info
+
+  pipelines.yml: |
+    - pipeline.id: main
+      path.config: "/usr/share/logstash/pipeline/*.conf"
+      pipeline.workers: 4
+      pipeline.batch.size: 1000
+      pipeline.batch.delay: 50
+      queue.type: persisted
+      queue.max_bytes: 1gb
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logstash-pipeline
+  namespace: monitoring
+data:
+  main.conf: |
+    # Maily Logstash Pipeline Configuration
+
+    input {
+      # Receive logs from Filebeat
+      beats {
+        port => 5044
+        host => "0.0.0.0"
+      }
+
+      # Direct TCP input for application logs
+      tcp {
+        port => 5000
+        codec => json
+        tags => ["app_direct"]
+      }
+
+      # Direct UDP input for high-volume logs
+      udp {
+        port => 5000
+        codec => json
+        tags => ["app_direct"]
+      }
+
+      # HTTP input for direct log submission from applications
+      http {
+        port => 8080
+        codec => json
+        tags => ["http_input"]
+      }
+    }
+
+    filter {
+      # Add common fields
+      mutate {
+        add_field => {
+          "[@metadata][processed_timestamp]" => "%{@timestamp}"
+          "environment" => "${ENVIRONMENT:production}"
+        }
+      }
+
+      # Process logs based on service/application
+      if [kubernetes][labels][app] == "maily-api" or [service] == "maily-api" {
+        mutate { add_field => { "[@metadata][app_type]" => "api" } }
+
+        # Parse JSON if not already parsed
+        if [message] and ![level] {
+          json {
+            source => "message"
+            skip_on_invalid_json => true
+            target => "parsed_json"
+          }
+
+          # If parsing succeeded, restructure the log
+          if [parsed_json] {
+            mutate {
+              rename => { "[parsed_json][level]" => "level" }
+              rename => { "[parsed_json][message]" => "message" }
+              rename => { "[parsed_json][timestamp]" => "app_timestamp" }
+              rename => { "[parsed_json][request_id]" => "request_id" }
+              rename => { "[parsed_json][user_id]" => "user_id" }
+              rename => { "[parsed_json][tenant_id]" => "tenant_id" }
+              rename => { "[parsed_json][path]" => "path" }
+              rename => { "[parsed_json][method]" => "method" }
+              rename => { "[parsed_json][status_code]" => "status_code" }
+              rename => { "[parsed_json][duration_ms]" => "duration_ms" }
+              remove_field => ["parsed_json"]
+            }
+
+            # Convert level to lowercase for consistent searching
+            mutate { lowercase => ["level"] }
+
+            # Set log timestamp from app timestamp if available
+            if [app_timestamp] {
+              date {
+                match => ["app_timestamp", "ISO8601"]
+                target => "@timestamp"
+                remove_field => ["app_timestamp"]
+              }
+            }
+          }
+        }
+
+        # Add API metrics
+        if [duration_ms] {
+          # Tag slow requests
+          if [duration_ms] > 500 {
+            mutate { add_tag => ["slow_request"] }
+          }
+
+          # Tag very slow requests
+          if [duration_ms] > 2000 {
+            mutate { add_tag => ["very_slow_request"] }
+          }
+        }
+      }
+
+      # Web/frontend logs
+      else if [kubernetes][labels][app] == "maily-web" or [service] == "maily-web" {
+        mutate { add_field => { "[@metadata][app_type]" => "web" } }
+
+        # Parse JSON if not already parsed
+        if [message] and ![level] {
+          json {
+            source => "message"
+            skip_on_invalid_json => true
+            target => "parsed_json"
+          }
+
+          # If parsing succeeded, restructure the log
+          if [parsed_json] {
+            mutate {
+              rename => { "[parsed_json][level]" => "level" }
+              rename => { "[parsed_json][message]" => "message" }
+              rename => { "[parsed_json][timestamp]" => "app_timestamp" }
+              rename => { "[parsed_json][route]" => "route" }
+              rename => { "[parsed_json][userId]" => "user_id" }
+              rename => { "[parsed_json][page]" => "page" }
+              remove_field => ["parsed_json"]
+            }
+
+            # Convert level to lowercase for consistent searching
+            mutate { lowercase => ["level"] }
+
+            # Set log timestamp from app timestamp if available
+            if [app_timestamp] {
+              date {
+                match => ["app_timestamp", "ISO8601"]
+                target => "@timestamp"
+                remove_field => ["app_timestamp"]
+              }
+            }
+          }
+        }
+      }
+
+      # Workers logs
+      else if [kubernetes][labels][app] == "maily-workers" or [service] == "maily-workers" {
+        mutate { add_field => { "[@metadata][app_type]" => "workers" } }
+
+        # Parse JSON if not already parsed
+        if [message] and ![level] {
+          json {
+            source => "message"
+            skip_on_invalid_json => true
+            target => "parsed_json"
+          }
+
+          # If parsing succeeded, restructure the log
+          if [parsed_json] {
+            mutate {
+              rename => { "[parsed_json][level]" => "level" }
+              rename => { "[parsed_json][message]" => "message" }
+              rename => { "[parsed_json][timestamp]" => "app_timestamp" }
+              rename => { "[parsed_json][job_id]" => "job_id" }
+              rename => { "[parsed_json][worker_type]" => "worker_type" }
+              rename => { "[parsed_json][execution_time]" => "execution_time" }
+              remove_field => ["parsed_json"]
+            }
+
+            # Convert level to lowercase for consistent searching
+            mutate { lowercase => ["level"] }
+
+            # Set log timestamp from app timestamp if available
+            if [app_timestamp] {
+              date {
+                match => ["app_timestamp", "ISO8601"]
+                target => "@timestamp"
+                remove_field => ["app_timestamp"]
+              }
+            }
+          }
+        }
+      }
+
+      # Process system logs
+      else if [kubernetes][container_name] or [docker][container] {
+        mutate { add_field => { "[@metadata][app_type]" => "system" } }
+
+        # Extract container info
+        if [kubernetes][container_name] {
+          mutate {
+            add_field => { "container_name" => "%{[kubernetes][container_name]}" }
+            add_field => { "pod_name" => "%{[kubernetes][pod_name]}" }
+            add_field => { "namespace" => "%{[kubernetes][namespace_name]}" }
+          }
+        } else if [docker][container] {
+          mutate {
+            add_field => { "container_name" => "%{[docker][container][name]}" }
+            add_field => { "container_id" => "%{[docker][container][id]}" }
+          }
+        }
+      }
+
+      # Add severity level for all logs if missing
+      if ![level] {
+        if "error" in [message] or "exception" in [message] or "fail" in [message] or "failed" in [message] {
+          mutate { add_field => { "level" => "error" } }
+        } else if "warn" in [message] or "warning" in [message] {
+          mutate { add_field => { "level" => "warn" } }
+        } else {
+          mutate { add_field => { "level" => "info" } }
+        }
+      }
+    }
+
+    output {
+      # Output to Elasticsearch
+      elasticsearch {
+        hosts => ["elasticsearch:9200"]
+        index => "maily-logs-%{[@metadata][app_type]}-%{+YYYY.MM.dd}"
+        user => "${ELASTICSEARCH_USER:elastic}"
+        password => "${ELASTICSEARCH_PASSWORD}"
+
+        # Set to true to wait for Elasticsearch to respond to indexing operations
+        action => "index"
+
+        # Templates and ILM settings for production
+        manage_template => false
+        ilm_enabled => true
+        ilm_rollover_alias => "maily"
+        ilm_pattern => "000001"
+        ilm_policy => "maily"
+
+        # Retry settings
+        retry_on_conflict => 5
+        action_on_failure => "log"
+      }
+    }
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: logstash
+  namespace: monitoring
+  labels:
+    app: logstash
+spec:
+  ports:
+    - port: 5044
+      targetPort: 5044
+      protocol: TCP
+      name: beats
+    - port: 5000
+      targetPort: 5000
+      protocol: TCP
+      name: tcp
+    - port: 5000
+      targetPort: 5000
+      protocol: UDP
+      name: udp
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http
+    - port: 9600
+      targetPort: 9600
+      protocol: TCP
+      name: monitoring
+  selector:
+    app: logstash
+  type: ClusterIP
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: logstash
+  namespace: monitoring
+  labels:
+    app: logstash
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: logstash
+  template:
+    metadata:
+      labels:
+        app: logstash
+    spec:
+      containers:
+        - name: logstash
+          image: docker.elastic.co/logstash/logstash:8.12.0
+          resources:
+            limits:
+              cpu: "1"
+              memory: 2Gi
+            requests:
+              cpu: 500m
+              memory: 1Gi
+          env:
+            - name: LS_JAVA_OPTS
+              value: "-Xmx1g -Xms1g"
+            - name: ELASTICSEARCH_USER
+              value: "elastic"
+            - name: ELASTICSEARCH_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: elasticsearch-credentials
+                  key: password
+            - name: ENVIRONMENT
+              valueFrom:
+                configMapKeyRef:
+                  name: app-environment
+                  key: environment
+                  optional: true
+          ports:
+            - containerPort: 5044
+              name: beats
+            - containerPort: 5000
+              name: tcp
+              protocol: TCP
+            - containerPort: 5000
+              name: udp
+              protocol: UDP
+            - containerPort: 8080
+              name: http
+            - containerPort: 9600
+              name: monitoring
+          volumeMounts:
+            - name: logstash-config
+              mountPath: /usr/share/logstash/config/logstash.yml
+              subPath: logstash.yml
+            - name: logstash-pipelines
+              mountPath: /usr/share/logstash/config/pipelines.yml
+              subPath: pipelines.yml
+            - name: logstash-pipeline
+              mountPath: /usr/share/logstash/pipeline
+            - name: logstash-data
+              mountPath: /usr/share/logstash/data
+          readinessProbe:
+            httpGet:
+              path: /_node/stats
+              port: 9600
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /_node/stats
+              port: 9600
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 30
+      volumes:
+        - name: logstash-config
+          configMap:
+            name: logstash-config
+        - name: logstash-pipelines
+          configMap:
+            name: logstash-config
+            items:
+              - key: pipelines.yml
+                path: pipelines.yml
+        - name: logstash-pipeline
+          configMap:
+            name: logstash-pipeline
+        - name: logstash-data
+          emptyDir: {}

@@ -1,0 +1,73 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-agent-config
+  namespace: maily
+data:
+  vault-agent-config.hcl: |
+    # Vault Agent Configuration
+
+    # Auto-auth configuration for Kubernetes
+    auto_auth {
+      method "kubernetes" {
+        mount_path = "auth/kubernetes"
+        config = {
+          role = "maily"
+          token_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+        }
+      }
+
+      sink "file" {
+        config = {
+          path = "/vault/secrets/token"
+        }
+      }
+    }
+
+    # Vault API listener
+    api_proxy {
+      use_auto_auth_token = true
+    }
+
+    # Template configurations for various secrets
+    template {
+      destination = "/vault/secrets/db-credentials.env"
+      contents = <<EOF
+        {{ with secret "database/creds/maily" }}
+        DB_USERNAME="{{ .Data.username }}"
+        DB_PASSWORD="{{ .Data.password }}"
+        {{ end }}
+      EOF
+    }
+
+    template {
+      destination = "/vault/secrets/api-keys.env"
+      contents = <<EOF
+        {{ with secret "kv/data/api-keys" }}
+        AUTH0_CLIENT_SECRET="{{ .Data.data.auth0_client_secret }}"
+        AUTH0_CLIENT_ID="{{ .Data.data.auth0_client_id }}"
+        SENDGRID_API_KEY="{{ .Data.data.sendgrid_api_key }}"
+        STRIPE_SECRET_KEY="{{ .Data.data.stripe_secret_key }}"
+        {{ end }}
+      EOF
+    }
+
+    template {
+      destination = "/vault/secrets/service-key.pem"
+      contents = <<EOF
+        {{ with secret "kv/data/service-keys" }}{{ .Data.data.private_key }}{{ end }}
+      EOF
+      perms = 0400
+    }
+
+    template {
+      destination = "/vault/secrets/encryption-keys.env"
+      contents = <<EOF
+        {{ with secret "kv/data/encryption" }}
+        ENCRYPTION_KEY="{{ .Data.data.encryption_key }}"
+        DATA_ENCRYPTION_KEY="{{ .Data.data.data_encryption_key }}"
+        {{ end }}
+      EOF
+    }
+
+    # Include more templates as needed for other secrets

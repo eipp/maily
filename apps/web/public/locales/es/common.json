@@ -1,0 +1,44 @@
+{
+  "navigation": {
+    "home": "Inicio",
+    "campaigns": "Campañas",
+    "analytics": "Análisis",
+    "settings": "Configuración"
+  },
+  "auth": {
+    "login": "Iniciar Sesión",
+    "signup": "Registrarse",
+    "logout": "Cerrar Sesión",
+    "email": "Correo Electrónico",
+    "password": "Contraseña",
+    "forgotPassword": "¿Olvidaste tu Contraseña?",
+    "resetPassword": "Restablecer Contraseña"
+  },
+  "campaigns": {
+    "create": "Crear Campaña",
+    "edit": "Editar Campaña",
+    "delete": "Eliminar Campaña",
+    "name": "Nombre de la Campaña",
+    "subject": "Línea de Asunto",
+    "recipients": "Destinatarios",
+    "schedule": "Programar",
+    "send": "Enviar Campaña",
+    "test": "Enviar Correo de Prueba",
+    "preview": "Vista Previa",
+    "save": "Guardar Cambios",
+    "cancel": "Cancelar"
+  },
+  "errors": {
+    "required": "Este campo es obligatorio",
+    "invalidEmail": "Dirección de correo inválida",
+    "passwordLength": "La contraseña debe tener al menos 8 caracteres",
+    "networkError": "Error de red. Por favor, inténtalo de nuevo.",
+    "unauthorized": "Acceso no autorizado"
+  },
+  "success": {
+    "campaignCreated": "Campaña creada exitosamente",
+    "campaignUpdated": "Campaña actualizada exitosamente",
+    "campaignDeleted": "Campaña eliminada exitosamente",
+    "testEmailSent": "Correo de prueba enviado exitosamente"
+  }
+}

@@ -1,0 +1,85 @@
+{
+  "defaults": {
+    "standard": "WCAG2AA",
+    "timeout": 60000,
+    "wait": 2000,
+    "chromeLaunchConfig": {
+      "args": ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+    },
+    "viewport": {
+      "width": 1280,
+      "height": 800
+    },
+    "screenCapture": "./pa11y-screenshots/${DATE}-${TIME}-${HOSTNAME}-${URL}.png",
+    "reporters": ["cli"],
+    "ignore": [
+      "WCAG2AA.Principle1.Guideline1_4.1_4_3.G18.Fail",
+      "WCAG2AA.Principle4.Guideline4_1.4_1_2.H91.Button.Name"
+    ],
+    "actions": [
+      "wait for path to be .chart-container",
+      "wait for element .page-loaded to be visible"
+    ]
+  },
+  "urls": [
+    {
+      "url": "http://localhost:3000",
+      "actions": [
+        "wait for element .app-loaded to be visible",
+        "wait for path to be #main-content"
+      ]
+    },
+    {
+      "url": "http://localhost:3000/login",
+      "screenCapture": "./pa11y-screenshots/login-page.png",
+      "standard": "WCAG2AAA",
+      "actions": [
+        "wait for element form to be visible",
+        "click element button[type=submit]",
+        "wait for element .form-error to be visible"
+      ]
+    },
+    {
+      "url": "http://localhost:3000/dashboard",
+      "actions": [
+        "set field input[name=email] to test@example.com",
+        "set field input[name=password] to password123",
+        "click element button[type=submit]",
+        "wait for url to be http://localhost:3000/dashboard"
+      ]
+    },
+    {
+      "url": "http://localhost:3000/campaigns/new",
+      "beforeScript": "pa11y-ci-before-script.js",
+      "actions": [
+        "wait for element #campaign-editor to be visible"
+      ]
+    },
+    {
+      "url": "http://localhost:3000/analytics",
+      "threshold": 15
+    },
+    {
+      "url": "http://localhost:3000/settings",
+      "standard": "Section508"
+    },
+    {
+      "url": "http://localhost:3000/help",
+      "concurrency": 1,
+      "viewport": {
+        "width": 320,
+        "height": 568
+      }
+    }
+  ],
+  "concurrency": 4,
+  "runners": [
+    "axe",
+    "htmlcs"
+  ],
+  "includeNotices": false,
+  "includeWarnings": true,
+  "level": "error",
+  "rootElement": null,
+  "threshold": 10
+}

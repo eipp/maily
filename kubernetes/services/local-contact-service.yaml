@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: contact-management-service
+  namespace: maily-dev
+  labels:
+    app: contact-management-service
+spec:
+  selector:
+    app: contact-management-service
+  ports:
+  - port: 8000
+    targetPort: 8000
+    protocol: TCP
+  type: ClusterIP 

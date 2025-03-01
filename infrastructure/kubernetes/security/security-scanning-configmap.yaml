@@ -1,0 +1,224 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: security-scanning-config
+  labels:
+    app: maily
+    component: security
+data:
+  owasp-zap-scan.yaml: |
+    ---
+    env:
+      contexts:
+        - name: maily
+          urls:
+            - https://api.justmaily.com
+            - https://app.justmaily.com
+            - https://api-edge.justmaily.com
+          includePaths:
+            - https://api.justmaily.com.*
+            - https://app.justmaily.com.*
+            - https://api-edge.justmaily.com.*
+          excludePaths:
+            - https://api.justmaily.com/health.*
+            - https://app.justmaily.com/api/health.*
+          authentication:
+            method: form
+            loginUrl: https://app.justmaily.com/auth/login
+            usernameField: email
+            passwordField: password
+            loginPageUrl: https://app.justmaily.com/auth/login
+          users:
+            - name: user
+              credentials:
+                username: security-test@justmaily.com
+                password: ${SECURITY_TEST_PASSWORD}
+          technology:
+            includeHtml: true
+            includeJavaScript: true
+            includeJson: true
+            includeXml: true
+            includeSqlInjection: true
+            includeOther: true
+
+    rules:
+      - id: 10096 # Passive scan rules
+        enabled: true
+      - id: 10020 # Anti-CSRF tokens scanner
+        enabled: true
+      - id: 10021 # X-Content-Type-Options header missing
+        enabled: true
+      - id: 10024 # Information disclosure - sensitive information in URL
+        enabled: true
+      - id: 10028 # Open redirect
+        enabled: true
+      - id: 10032 # Viewstate scanner
+        enabled: true
+      - id: 10040 # Cross-site scripting
+        enabled: true
+      - id: 10045 # Source code disclosure
+        enabled: true
+      - id: 10048 # Remote file inclusion
+        enabled: true
+      - id: 10095 # Backup file scanner
+        enabled: true
+      - id: 10105 # Weak authentication method
+        enabled: true
+      - id: 10202 # Absence of anti-CSRF tokens
+        enabled: true
+      - id: 20012 # Anti CSRF tokens scanner
+        enabled: true
+      - id: 20019 # External redirect
+        enabled: true
+      - id: 40003 # CRLF injection
+        enabled: true
+      - id: 40012 # Cross site scripting
+        enabled: true
+      - id: 40014 # Path traversal
+        enabled: true
+      - id: 40018 # SQL injection
+        enabled: true
+      - id: 90019 # Server side include
+        enabled: true
+      - id: 90020 # Remote OS command injection
+        enabled: true
+
+    reporting:
+      formats:
+        - html
+        - xml
+        - json
+      title: "Maily Security Scan Report"
+      description: "This report contains the results of an automated security scan."
+      riskThreshold: "Medium"
+
+  dependency-check.yaml: |
+    ---
+    cve:
+      data_directory: /usr/share/dependency-check/data
+      url: https://nvd.nist.gov/feeds/json/cve/1.1
+
+    analyzers:
+      enabled:
+        - PYTHON
+        - JAVASCRIPT
+        - NODEJS
+        - RUBY
+        - SWIFT
+        - RUST
+        - COMPOSER
+        - GOLANG
+      disabled:
+        - ASSEMBLY
+        - CMAKE
+        - DART
+
+    suppression:
+      file: /app/security/suppression.xml
+
+    reporting:
+      output_directory: /app/security/reports
+      formats:
+        - HTML
+        - XML
+        - JSON
+        - CSV
+      report_filename: dependency-check-report
+
+    severity:
+      critical: 9.0
+      high: 7.0
+      medium: 4.0
+      low: 0.0
+
+    cache:
+      central: true
+      directory: /tmp/dependency-check-cache
+
+    database:
+      driver: org.h2.Driver
+      url: "jdbc:h2:file:/tmp/dependency-check-db;AUTO_SERVER=TRUE"
+
+  security-monitoring.yaml: |
+    ---
+    monitors:
+      - name: waf-logs
+        type: log
+        source: /var/log/modsecurity/audit.log
+        alert_patterns:
+          - pattern: "Access denied with code 403"
+            threshold: 10
+            period: 5m
+            severity: high
+          - pattern: "SQL Injection"
+            threshold: 1
+            period: 10m
+            severity: critical
+          - pattern: "XSS Attack"
+            threshold: 1
+            period: 10m
+            severity: critical
+
+      - name: nginx-error-logs
+        type: log
+        source: /var/log/nginx/error.log
+        alert_patterns:
+          - pattern: "denied by rule"
+            threshold: 20
+            period: 5m
+            severity: medium
+          - pattern: "error"
+            threshold: 50
+            period: 5m
+            severity: low
+
+      - name: api-security
+        type: http
+        endpoint: https://api.justmaily.com/api/health
+        interval: 1m
+        timeout: 5s
+        alert_conditions:
+          - condition: "status != 200"
+            threshold: 3
+            period: 5m
+            severity: high
+
+      - name: db-failed-logins
+        type: sql
+        query: "SELECT COUNT(*) FROM failed_logins WHERE attempt_time > NOW() - INTERVAL '10 MINUTES'"
+        alert_conditions:
+          - condition: "result > 20"
+            severity: high
+
+      - name: suspicious-activity
+        type: custom
+        source: /var/log/maily/security.log
+        alert_patterns:
+          - pattern: "multiple_failed_logins"
+            threshold: 5
+            period: 10m
+            severity: medium
+          - pattern: "unusual_access_pattern"
+            threshold: 1
+            period: 30m
+            severity: high
+          - pattern: "data_export"
+            threshold: 5
+            period: 10m
+            severity: medium
+
+    notification:
+      channels:
+        - type: email
+          recipients:
+            - security@justmaily.com
+          min_severity: high
+
+        - type: slack
+          webhook: "${SLACK_SECURITY_WEBHOOK}"
+          channel: "#security-alerts"
+          min_severity: medium
+
+        - type: pagerduty
+          integration_key: "${PAGERDUTY_KEY}"
+          min_severity: critical

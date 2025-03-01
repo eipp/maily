@@ -1,0 +1,20 @@
+{
+  "id": "email_body",
+  "name": "Email Body Generator",
+  "description": "Template for generating persuasive email body content",
+  "template": "Write a persuasive email body for a {{industry}} company. The email is about {{topic}} and is targeting {{audience}}. The tone should be {{tone}}. The call to action is to {{cta}}.\n\nThe email should:\n- Start with a compelling opening\n- Clearly communicate the value proposition\n- Include personalization elements\n- Be concise and scannable\n- End with a clear call to action\n\nEmail body:",
+  "version": "1.0.0",
+  "created_at": "2023-06-01T00:00:00Z",
+  "updated_at": "2023-06-01T00:00:00Z",
+  "tags": ["email", "marketing", "content"],
+  "metadata": {
+    "example_variables": {
+      "industry": "e-commerce",
+      "topic": "summer sale",
+      "audience": "existing customers",
+      "tone": "friendly",
+      "cta": "visit the sale page and make a purchase"
+    },
+    "recommended_models": ["gpt-4", "claude-3-opus", "claude-3-sonnet"]
+  }
+}

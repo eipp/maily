@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: maily-waf
+  labels:
+    app: maily
+    component: security
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: maily
+      component: security
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: maily
+        component: security
+    spec:
+      containers:
+      - name: nginx-modsecurity
+        image: owasp/modsecurity-crs:nginx-alpine
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 80
+          name: http
+        env:
+        - name: BACKEND
+          value: "http://maily-api-edge-cache"
+        - name: MODSEC_AUDIT_LOG_FORMAT
+          value: "JSON"
+        - name: MODSEC_AUDIT_LOG_TYPE
+          value: "Serial"
+        - name: MODSEC_RULE_ENGINE
+          value: "On"
+        volumeMounts:
+        - name: modsecurity-rules
+          mountPath: /etc/modsecurity.d/rules/custom
+        - name: modsecurity-logs
+          mountPath: /var/log/modsecurity
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+          requests:
+            cpu: "200m"
+            memory: "256Mi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+      volumes:
+      - name: modsecurity-rules
+        configMap:
+          name: modsecurity-rules
+      - name: modsecurity-logs
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: maily-waf
+  labels:
+    app: maily
+    component: security
+spec:
+  selector:
+    app: maily
+    component: security
+  ports:
+  - port: 80
+    targetPort: 80
+    name: http
+  type: ClusterIP

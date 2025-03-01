@@ -1,0 +1,325 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: elasticsearch-ilm-templates
+  namespace: monitoring
+data:
+  # Index Lifecycle Management Configuration
+  setup-ilm.sh: |
+    #!/bin/bash
+
+    # Wait for Elasticsearch to be ready
+    echo "Waiting for Elasticsearch to be ready..."
+    until curl -s "http://elasticsearch:9200/_cluster/health" | grep -q '"status":"green"\|"status":"yellow"'; do
+      sleep 5
+      echo "Waiting for Elasticsearch..."
+    done
+
+    echo "Elasticsearch is ready. Creating ILM policies and index templates..."
+
+    # Create ILM policies
+
+    # Maily logs policy (30 day retention with hot-warm-cold architecture)
+    curl -XPUT "http://elasticsearch:9200/_ilm/policy/maily" -H 'Content-Type: application/json' -d '
+    {
+      "policy": {
+        "phases": {
+          "hot": {
+            "min_age": "0ms",
+            "actions": {
+              "rollover": {
+                "max_age": "1d",
+                "max_size": "50gb"
+              },
+              "set_priority": {
+                "priority": 100
+              }
+            }
+          },
+          "warm": {
+            "min_age": "2d",
+            "actions": {
+              "shrink": {
+                "number_of_shards": 1
+              },
+              "forcemerge": {
+                "max_num_segments": 1
+              },
+              "set_priority": {
+                "priority": 50
+              }
+            }
+          },
+          "cold": {
+            "min_age": "7d",
+            "actions": {
+              "freeze": {},
+              "set_priority": {
+                "priority": 0
+              }
+            }
+          },
+          "delete": {
+            "min_age": "30d",
+            "actions": {
+              "delete": {}
+            }
+          }
+        }
+      }
+    }'
+
+    # Shorter retention for high-volume logs
+    curl -XPUT "http://elasticsearch:9200/_ilm/policy/maily-high-volume" -H 'Content-Type: application/json' -d '
+    {
+      "policy": {
+        "phases": {
+          "hot": {
+            "min_age": "0ms",
+            "actions": {
+              "rollover": {
+                "max_age": "1d",
+                "max_size": "50gb"
+              },
+              "set_priority": {
+                "priority": 100
+              }
+            }
+          },
+          "delete": {
+            "min_age": "7d",
+            "actions": {
+              "delete": {}
+            }
+          }
+        }
+      }
+    }'
+
+    # Create component templates
+
+    # Base settings template
+    curl -XPUT "http://elasticsearch:9200/_component_template/maily-settings" -H 'Content-Type: application/json' -d '
+    {
+      "template": {
+        "settings": {
+          "index": {
+            "lifecycle": {
+              "name": "maily",
+              "rollover_alias": "maily"
+            },
+            "number_of_shards": 3,
+            "number_of_replicas": 1,
+            "refresh_interval": "5s"
+          }
+        }
+      }
+    }'
+
+    # Base mappings template
+    curl -XPUT "http://elasticsearch:9200/_component_template/maily-mappings" -H 'Content-Type: application/json' -d '
+    {
+      "template": {
+        "mappings": {
+          "dynamic_templates": [
+            {
+              "strings_as_keywords": {
+                "match_mapping_type": "string",
+                "mapping": {
+                  "type": "keyword",
+                  "ignore_above": 1024,
+                  "fields": {
+                    "text": {
+                      "type": "text"
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "@timestamp": { "type": "date" },
+            "level": { "type": "keyword" },
+            "message": {
+              "type": "text",
+              "fields": {
+                "keyword": {
+                  "type": "keyword",
+                  "ignore_above": 256
+                }
+              }
+            },
+            "environment": { "type": "keyword" },
+            "service": { "type": "keyword" },
+            "container_name": { "type": "keyword" },
+            "pod_name": { "type": "keyword" },
+            "namespace": { "type": "keyword" },
+            "kubernetes": {
+              "properties": {
+                "container_name": { "type": "keyword" },
+                "namespace_name": { "type": "keyword" },
+                "pod_name": { "type": "keyword" },
+                "node_name": { "type": "keyword" },
+                "labels": {
+                  "type": "object",
+                  "dynamic": true
+                }
+              }
+            },
+            "request_id": { "type": "keyword" },
+            "user_id": { "type": "keyword" },
+            "tenant_id": { "type": "keyword" },
+            "duration_ms": { "type": "long" },
+            "status_code": { "type": "integer" },
+            "method": { "type": "keyword" },
+            "path": { "type": "keyword" },
+            "job_id": { "type": "keyword" },
+            "worker_type": { "type": "keyword" },
+            "execution_time": { "type": "long" },
+            "host": {
+              "properties": {
+                "name": { "type": "keyword" },
+                "ip": { "type": "ip" }
+              }
+            },
+            "tags": { "type": "keyword" }
+          }
+        }
+      }
+    }'
+
+    # Create index templates
+
+    # API logs template
+    curl -XPUT "http://elasticsearch:9200/_index_template/maily-logs-api" -H 'Content-Type: application/json' -d '
+    {
+      "index_patterns": ["maily-logs-api-*"],
+      "template": {
+        "settings": {
+          "index.lifecycle.rollover_alias": "maily-logs-api"
+        }
+      },
+      "composed_of": ["maily-settings", "maily-mappings"],
+      "priority": 200,
+      "_meta": {
+        "description": "Template for Maily API logs"
+      }
+    }'
+
+    # Web logs template
+    curl -XPUT "http://elasticsearch:9200/_index_template/maily-logs-web" -H 'Content-Type: application/json' -d '
+    {
+      "index_patterns": ["maily-logs-web-*"],
+      "template": {
+        "settings": {
+          "index.lifecycle.rollover_alias": "maily-logs-web"
+        }
+      },
+      "composed_of": ["maily-settings", "maily-mappings"],
+      "priority": 200,
+      "_meta": {
+        "description": "Template for Maily Web logs"
+      }
+    }'
+
+    # Workers logs template
+    curl -XPUT "http://elasticsearch:9200/_index_template/maily-logs-workers" -H 'Content-Type: application/json' -d '
+    {
+      "index_patterns": ["maily-logs-workers-*"],
+      "template": {
+        "settings": {
+          "index.lifecycle.rollover_alias": "maily-logs-workers"
+        }
+      },
+      "composed_of": ["maily-settings", "maily-mappings"],
+      "priority": 200,
+      "_meta": {
+        "description": "Template for Maily Workers logs"
+      }
+    }'
+
+    # System logs template
+    curl -XPUT "http://elasticsearch:9200/_index_template/maily-logs-system" -H 'Content-Type: application/json' -d '
+    {
+      "index_patterns": ["maily-logs-system-*"],
+      "template": {
+        "settings": {
+          "index.lifecycle.name": "maily-high-volume",
+          "index.lifecycle.rollover_alias": "maily-logs-system"
+        }
+      },
+      "composed_of": ["maily-settings", "maily-mappings"],
+      "priority": 200,
+      "_meta": {
+        "description": "Template for Maily system logs"
+      }
+    }'
+
+    # Create initial indices with aliases
+    curl -XPUT "http://elasticsearch:9200/maily-logs-api-000001" -H 'Content-Type: application/json' -d '
+    {
+      "aliases": {
+        "maily-logs-api": {
+          "is_write_index": true
+        }
+      }
+    }'
+
+    curl -XPUT "http://elasticsearch:9200/maily-logs-web-000001" -H 'Content-Type: application/json' -d '
+    {
+      "aliases": {
+        "maily-logs-web": {
+          "is_write_index": true
+        }
+      }
+    }'
+
+    curl -XPUT "http://elasticsearch:9200/maily-logs-workers-000001" -H 'Content-Type: application/json' -d '
+    {
+      "aliases": {
+        "maily-logs-workers": {
+          "is_write_index": true
+        }
+      }
+    }'
+
+    curl -XPUT "http://elasticsearch:9200/maily-logs-system-000001" -H 'Content-Type: application/json' -d '
+    {
+      "aliases": {
+        "maily-logs-system": {
+          "is_write_index": true
+        }
+      }
+    }'
+
+    echo "ILM policies and index templates created successfully!"
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: elasticsearch-setup-ilm
+  namespace: monitoring
+spec:
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      containers:
+      - name: setup-ilm
+        image: curlimages/curl:8.3.0
+        command:
+        - /bin/sh
+        - -c
+        - |
+          cd /scripts
+          chmod +x setup-ilm.sh
+          ./setup-ilm.sh
+        volumeMounts:
+        - name: scripts
+          mountPath: /scripts
+      restartPolicy: OnFailure
+      volumes:
+      - name: scripts
+        configMap:
+          name: elasticsearch-ilm-templates
+          defaultMode: 0777

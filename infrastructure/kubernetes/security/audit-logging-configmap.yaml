@@ -1,0 +1,141 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-logging-config
+  labels:
+    app: maily
+    component: security
+data:
+  fluentd.conf: |
+    <source>
+      @type forward
+      port 24224
+      bind 0.0.0.0
+    </source>
+
+    <filter **>
+      @type record_transformer
+      <record>
+        hostname "#{Socket.gethostname}"
+        environment "#{ENV['ENVIRONMENT']}"
+      </record>
+    </filter>
+
+    # Special handling for security-related events
+    <filter security.**>
+      @type grep
+      <regexp>
+        key event
+        pattern (login|logout|password_change|user_create|user_delete|role_change|permission_change|data_export|data_deletion|permission_denied|gdpr_consent|privacy_policy_acceptance|bulk_operation)
+      </regexp>
+    </filter>
+
+    # Process audit logs
+    <match audit.**>
+      @type elasticsearch
+      host "#{ENV['ELASTICSEARCH_HOST']}"
+      port "#{ENV['ELASTICSEARCH_PORT']}"
+      index_name audit-logs-${environment}-%Y.%m.%d
+      include_timestamp true
+      <buffer>
+        @type file
+        path /var/log/fluentd/audit-buffer
+        flush_thread_count 2
+        flush_interval 5s
+        chunk_limit_size 2M
+        queue_limit_length 8
+        retry_max_interval 30
+        retry_forever true
+      </buffer>
+    </match>
+
+    # Process security events
+    <match security.**>
+      @type elasticsearch
+      host "#{ENV['ELASTICSEARCH_HOST']}"
+      port "#{ENV['ELASTICSEARCH_PORT']}"
+      index_name security-logs-${environment}-%Y.%m.%d
+      include_timestamp true
+      <buffer>
+        @type file
+        path /var/log/fluentd/security-buffer
+        flush_thread_count 2
+        flush_interval 5s
+        chunk_limit_size 2M
+        queue_limit_length 8
+        retry_max_interval 30
+        retry_forever true
+      </buffer>
+    </match>
+
+    # Default log handling
+    <match **>
+      @type elasticsearch
+      host "#{ENV['ELASTICSEARCH_HOST']}"
+      port "#{ENV['ELASTICSEARCH_PORT']}"
+      index_name app-logs-${environment}-%Y.%m.%d
+      include_timestamp true
+      <buffer>
+        @type file
+        path /var/log/fluentd/buffer
+        flush_thread_count 2
+        flush_interval 5s
+        chunk_limit_size 2M
+        queue_limit_length 8
+        retry_max_interval 30
+        retry_forever true
+      </buffer>
+    </match>
+
+  logrotate.conf: |
+    /var/log/maily/*.log {
+      daily
+      rotate 30
+      compress
+      delaycompress
+      notifempty
+      create 0640 maily maily
+      sharedscripts
+      postrotate
+        /bin/kill -HUP `cat /var/run/syslogd.pid 2> /dev/null` 2> /dev/null || true
+      endscript
+    }
+
+    /var/log/audit/*.log {
+      daily
+      rotate 365
+      compress
+      delaycompress
+      notifempty
+      create 0640 maily maily
+      sharedscripts
+      postrotate
+        /bin/kill -HUP `cat /var/run/syslogd.pid 2> /dev/null` 2> /dev/null || true
+      endscript
+    }
+
+  retention-policy.json: |
+    {
+      "policies": [
+        {
+          "type": "app-logs",
+          "retention_days": 30,
+          "description": "Regular application logs retention"
+        },
+        {
+          "type": "security-logs",
+          "retention_days": 365,
+          "description": "Security related logs, one year retention for investigation"
+        },
+        {
+          "type": "audit-logs",
+          "retention_days": 730,
+          "description": "Audit logs for compliance, two year retention"
+        },
+        {
+          "type": "gdpr-logs",
+          "retention_days": 1095,
+          "description": "GDPR specific actions, three year retention"
+        }
+      ]
+    }

@@ -1,0 +1,144 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: maily-api
+  namespace: maily
+  labels:
+    app: maily-api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: maily-api
+  template:
+    metadata:
+      labels:
+        app: maily-api
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/agent-inject-status: "update"
+        vault.hashicorp.com/role: "maily"
+        vault.hashicorp.com/agent-inject-secret-db-credentials: "database/creds/maily"
+        vault.hashicorp.com/agent-inject-template-db-credentials: |
+          {{- with secret "database/creds/maily" -}}
+          export DB_USERNAME="{{ .Data.username }}"
+          export DB_PASSWORD="{{ .Data.password }}"
+          {{- end -}}
+        vault.hashicorp.com/agent-inject-secret-api-keys: "kv/data/api-keys"
+        vault.hashicorp.com/agent-inject-template-api-keys: |
+          {{- with secret "kv/data/api-keys" -}}
+          export AUTH0_CLIENT_SECRET="{{ .Data.data.auth0_client_secret }}"
+          export AUTH0_CLIENT_ID="{{ .Data.data.auth0_client_id }}"
+          export SENDGRID_API_KEY="{{ .Data.data.sendgrid_api_key }}"
+          export STRIPE_SECRET_KEY="{{ .Data.data.stripe_secret_key }}"
+          {{- end -}}
+        vault.hashicorp.com/agent-inject-secret-service-key: "kv/data/service-keys"
+        vault.hashicorp.com/agent-inject-template-service-key: |
+          {{- with secret "kv/data/service-keys" -}}
+          {{ .Data.data.private_key }}
+          {{- end -}}
+        vault.hashicorp.com/agent-inject-perms-service-key: "0400"
+        vault.hashicorp.com/agent-inject-secret-encryption-keys: "kv/data/encryption"
+        vault.hashicorp.com/agent-inject-template-encryption-keys: |
+          {{- with secret "kv/data/encryption" -}}
+          export ENCRYPTION_KEY="{{ .Data.data.encryption_key }}"
+          export DATA_ENCRYPTION_KEY="{{ .Data.data.data_encryption_key }}"
+          {{- end -}}
+    spec:
+      serviceAccountName: maily-api-sa
+      containers:
+        - name: maily-api
+          image: maily/api:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: VAULT_ADDR
+              value: "http://vault.vault:8200"
+            - name: VAULT_ROLE
+              value: "maily"
+            - name: SERVICE_NAME
+              value: "maily-api"
+            - name: SERVICE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: SERVICE_PRIVATE_KEY_PATH
+              value: "/vault/secrets/service-key"
+            - name: DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: maily-config
+                  key: db_host
+            - name: DB_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: maily-config
+                  key: db_port
+            - name: DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: maily-config
+                  key: db_name
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - "/bin/sh"
+                  - "-c"
+                  - |
+                    # Source Vault secret files when they become available
+                    for i in $(seq 1 30); do
+                      if [ -f /vault/secrets/db-credentials ]; then
+                        source /vault/secrets/db-credentials
+                        source /vault/secrets/api-keys
+                        source /vault/secrets/encryption-keys
+                        break
+                      fi
+                      sleep 1
+                    done
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: maily-api
+  namespace: maily
+spec:
+  selector:
+    app: maily-api
+  ports:
+    - port: 80
+      targetPort: http
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: maily-api-sa
+  namespace: maily

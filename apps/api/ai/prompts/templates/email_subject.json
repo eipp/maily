@@ -1,0 +1,19 @@
+{
+  "id": "email_subject",
+  "name": "Email Subject Line Generator",
+  "description": "Template for generating engaging email subject lines",
+  "template": "Generate 5 engaging and high-converting email subject lines for a {{industry}} company. The email is about {{topic}} and is targeting {{audience}}. The tone should be {{tone}}.\n\nSubject lines should be:\n- Concise (under 50 characters)\n- Engaging and curiosity-inducing\n- Relevant to the target audience\n- Not clickbait or spammy\n- Aligned with the company's brand voice\n\nSubject lines:",
+  "version": "1.0.0",
+  "created_at": "2023-06-01T00:00:00Z",
+  "updated_at": "2023-06-01T00:00:00Z",
+  "tags": ["email", "marketing", "subject-line"],
+  "metadata": {
+    "example_variables": {
+      "industry": "e-commerce",
+      "topic": "summer sale",
+      "audience": "existing customers",
+      "tone": "friendly"
+    },
+    "recommended_models": ["gpt-4", "claude-3-opus"]
+  }
+}

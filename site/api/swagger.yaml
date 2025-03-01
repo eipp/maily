@@ -1,0 +1,457 @@
+openapi: 3.0.0
+info:
+  title: Maily API
+  description: API documentation for Maily application
+  version: 1.0.0
+  contact:
+    name: Maily Team
+    url: https://maily.io
+    email: support@maily.io
+servers:
+  - url: https://app.maily.io/api
+    description: Production server
+  - url: https://staging.maily.io/api
+    description: Staging server
+  - url: http://localhost:3000/api
+    description: Local development server
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Template:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        name:
+          type: string
+          example: "Welcome Email"
+        description:
+          type: string
+          example: "Template for welcoming new users"
+        content:
+          type: string
+          example: "<h1>Welcome to Maily!</h1><p>Thank you for signing up.</p>"
+        thumbnail:
+          type: string
+          nullable: true
+          example: "https://example.com/thumbnail.jpg"
+        category:
+          type: string
+          nullable: true
+          example: "Marketing"
+        tags:
+          type: array
+          items:
+            type: string
+          example: ["welcome", "onboarding"]
+        is_public:
+          type: boolean
+          example: false
+        userId:
+          type: string
+          example: "user-123"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        user:
+          type: object
+          properties:
+            name:
+              type: string
+              nullable: true
+              example: "John Doe"
+            email:
+              type: string
+              nullable: true
+              example: "john@example.com"
+    TemplateCreateInput:
+      type: object
+      required:
+        - name
+        - content
+      properties:
+        name:
+          type: string
+          example: "Welcome Email"
+        description:
+          type: string
+          example: "Template for welcoming new users"
+        content:
+          type: string
+          example: "<h1>Welcome to Maily!</h1><p>Thank you for signing up.</p>"
+        thumbnail:
+          type: string
+          example: "https://example.com/thumbnail.jpg"
+        category:
+          type: string
+          example: "Marketing"
+        tags:
+          type: array
+          items:
+            type: string
+          example: ["welcome", "onboarding"]
+        is_public:
+          type: boolean
+          example: false
+    TemplateUpdateInput:
+      type: object
+      properties:
+        name:
+          type: string
+          example: "Welcome Email"
+        description:
+          type: string
+          example: "Template for welcoming new users"
+        content:
+          type: string
+          example: "<h1>Welcome to Maily!</h1><p>Thank you for signing up.</p>"
+        thumbnail:
+          type: string
+          example: "https://example.com/thumbnail.jpg"
+        category:
+          type: string
+          example: "Marketing"
+        tags:
+          type: array
+          items:
+            type: string
+          example: ["welcome", "onboarding"]
+        is_public:
+          type: boolean
+          example: false
+    TemplateListResponse:
+      type: object
+      properties:
+        templates:
+          type: array
+          items:
+            $ref: '#/components/schemas/Template'
+        pagination:
+          type: object
+          properties:
+            total:
+              type: integer
+              example: 10
+            page:
+              type: integer
+              example: 1
+            limit:
+              type: integer
+              example: 12
+            pages:
+              type: integer
+              example: 1
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "An error occurred"
+
+paths:
+  /templates:
+    get:
+      summary: Get all templates
+      description: Returns a list of templates with pagination
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+          description: Page number
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 12
+          description: Number of items per page
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Search term
+        - name: category
+          in: query
+          schema:
+            type: string
+          description: Filter by category
+        - name: sort
+          in: query
+          schema:
+            type: string
+            default: updatedAt
+          description: Sort field
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+          description: Sort order
+        - name: includePublic
+          in: query
+          schema:
+            type: boolean
+            default: true
+          description: Include public templates
+      responses:
+        '200':
+          description: A list of templates
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      summary: Create a new template
+      description: Creates a new template
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TemplateCreateInput'
+      responses:
+        '201':
+          description: Template created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Template'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /templates/{id}:
+    get:
+      summary: Get a template by ID
+      description: Returns a single template
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Template ID
+      responses:
+        '200':
+          description: A template
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Template'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Template not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    put:
+      summary: Update a template
+      description: Updates an existing template
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Template ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TemplateUpdateInput'
+      responses:
+        '200':
+          description: Template updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Template'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Template not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      summary: Delete a template
+      description: Deletes an existing template
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Template ID
+      responses:
+        '200':
+          description: Template deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Template deleted successfully"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Template not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /templates/{id}/duplicate:
+    post:
+      summary: Duplicate a template
+      description: Creates a copy of an existing template
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Template ID
+      responses:
+        '201':
+          description: Template duplicated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Template'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Template not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /health:
+    get:
+      summary: Health check
+      description: Returns the health status of the API
+      responses:
+        '200':
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+                  timestamp:
+                    type: string
+                    format: date-time
+                  version:
+                    type: string
+                    example: "1.0.0"
+                  environment:
+                    type: string
+                    example: "production"

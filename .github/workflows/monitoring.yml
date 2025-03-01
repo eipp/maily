@@ -1,0 +1,180 @@
+name: Maily Monitoring and Alerting
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'  # Run every 15 minutes
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  health-check:
+    name: Health Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check API Health
+        id: api-health
+        uses: jtalk/url-health-check-action@v3
+        with:
+          url: https://api.maily.app/health
+          max-attempts: 3
+          retry-delay: 5s
+          retry-all: true
+          follow-redirect: true
+        continue-on-error: true
+
+      - name: Check Frontend Health
+        id: frontend-health
+        uses: jtalk/url-health-check-action@v3
+        with:
+          url: https://maily.app
+          max-attempts: 3
+          retry-delay: 5s
+          retry-all: true
+          follow-redirect: true
+        continue-on-error: true
+
+      - name: Send Slack notification on failure
+        if: steps.api-health.outcome == 'failure' || steps.frontend-health.outcome == 'failure'
+        uses: slackapi/slack-github-action@v1.23.0
+        with:
+          payload: |
+            {
+              "text": "⚠️ *Maily Health Check Failed* ⚠️",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "⚠️ *Maily Health Check Failed* ⚠️"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*API Status:* ${{ steps.api-health.outcome == 'success' && '✅ Healthy' || '❌ Unhealthy' }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Frontend Status:* ${{ steps.frontend-health.outcome == 'success' && '✅ Healthy' || '❌ Unhealthy' }}"
+                    }
+                  ]
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "Check the <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow run> for more details."
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+  performance-metrics:
+    name: Collect Performance Metrics
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Configure kubectl
+        uses: azure/k8s-set-context@v3
+        with:
+          kubeconfig: ${{ secrets.KUBE_CONFIG }}
+
+      - name: Collect metrics
+        run: |
+          # Get CPU and memory usage for all pods
+          kubectl top pods -n default > pod_metrics.txt
+
+          # Get node metrics
+          kubectl top nodes > node_metrics.txt
+
+          # Get HPA status
+          kubectl get hpa -n default > hpa_status.txt
+
+          # Get logs for any pods in CrashLoopBackOff or Error state
+          PROBLEM_PODS=$(kubectl get pods -n default -o jsonpath='{range .items[?(@.status.phase=="Failed" || @.status.containerStatuses[*].state.waiting.reason=="CrashLoopBackOff")]}{.metadata.name}{"\n"}{end}')
+          if [ ! -z "$PROBLEM_PODS" ]; then
+            mkdir -p problem_logs
+            for pod in $PROBLEM_PODS; do
+              kubectl logs -n default $pod > problem_logs/$pod.log 2>&1 || true
+            done
+          fi
+
+      - name: Upload metrics as artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: performance-metrics
+          path: |
+            pod_metrics.txt
+            node_metrics.txt
+            hpa_status.txt
+            problem_logs/
+          retention-days: 7
+
+      - name: Check for resource constraints
+        id: resource-check
+        run: |
+          # Check if any pod is using more than 80% of its CPU or memory limit
+          HIGH_USAGE=$(grep -E '[8-9][0-9]%|100%' pod_metrics.txt || true)
+          if [ ! -z "$HIGH_USAGE" ]; then
+            echo "high_usage=true" >> $GITHUB_OUTPUT
+            echo "$HIGH_USAGE" > high_usage.txt
+          else
+            echo "high_usage=false" >> $GITHUB_OUTPUT
+          fi
+
+          # Check if any HPA is at max replicas
+          MAX_REPLICAS=$(grep "100%" hpa_status.txt || true)
+          if [ ! -z "$MAX_REPLICAS" ]; then
+            echo "max_replicas=true" >> $GITHUB_OUTPUT
+            echo "$MAX_REPLICAS" > max_replicas.txt
+          else
+            echo "max_replicas=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Send Slack notification on resource constraints
+        if: steps.resource-check.outputs.high_usage == 'true' || steps.resource-check.outputs.max_replicas == 'true'
+        uses: slackapi/slack-github-action@v1.23.0
+        with:
+          payload: |
+            {
+              "text": "⚠️ *Maily Resource Alert* ⚠️",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "⚠️ *Maily Resource Alert* ⚠️"
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "${{ steps.resource-check.outputs.high_usage == 'true' && '- High resource usage detected in some pods\n' || '' }}${{ steps.resource-check.outputs.max_replicas == 'true' && '- Some HPAs are at maximum replicas\n' || '' }}"
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "Check the <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow run> for more details."
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK

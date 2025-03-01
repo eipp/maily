@@ -1,0 +1,20 @@
+{
+  "id": "content_summary",
+  "name": "Content Summarizer",
+  "description": "Template for summarizing content into concise points",
+  "template": "Summarize the following {{content_type}} into {{num_points}} key points. The summary should be {{tone}} and focus on {{focus_area}}.\n\nContent to summarize:\n{{content}}\n\nSummary:",
+  "version": "1.0.0",
+  "created_at": "2023-06-01T00:00:00Z",
+  "updated_at": "2023-06-01T00:00:00Z",
+  "tags": ["content", "summary", "analysis"],
+  "metadata": {
+    "example_variables": {
+      "content_type": "article",
+      "num_points": 5,
+      "tone": "professional",
+      "focus_area": "actionable insights",
+      "content": "Lorem ipsum dolor sit amet, consectetur adipiscing elit..."
+    },
+    "recommended_models": ["gpt-4", "claude-3-opus", "gemini-1.5-pro"]
+  }
+}

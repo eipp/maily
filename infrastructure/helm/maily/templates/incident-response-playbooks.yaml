@@ -1,0 +1,362 @@
+{{- if .Values.incidentResponse.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "maily.fullname" . }}-incident-playbooks
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+data:
+  ## Email Delivery Issues Playbook
+  email-delivery-issues.yaml: |-
+    name: Email Delivery Issues Playbook
+    description: Automated responses for handling email delivery system failures
+    trigger:
+      type: "alert"
+      source: "monitoring"
+      condition: "delivery_rate < {{ .Values.incidentResponse.thresholds.emailDeliveryRate }}"
+    actions:
+      - name: "Check Email Provider Status"
+        type: "http"
+        method: "GET"
+        url: "{{ .Values.incidentResponse.actions.emailProviderStatusUrl }}"
+        timeout: 10
+        onSuccess:
+          - name: "Provider Status Check"
+            type: "condition"
+            condition: "response.status == 'operational'"
+            ifTrue:
+              - name: "Check Internal Systems"
+                type: "command"
+                command: "/scripts/check-email-systems.sh"
+            ifFalse:
+              - name: "Switch To Backup Provider"
+                type: "command"
+                command: "/scripts/switch-email-provider.sh --to-backup"
+              - name: "Notify Ops Team"
+                type: "notification"
+                channel: "slack"
+                message: "Email provider outage detected. Switched to backup provider."
+      - name: "Analyze Bounce Patterns"
+        type: "command"
+        command: "/scripts/analyze-bounces.sh --last=1h"
+        onSuccess:
+          - name: "High Bounce Rate Check"
+            type: "condition"
+            condition: "result.bounceRate > {{ .Values.incidentResponse.thresholds.highBounceRate }}"
+            ifTrue:
+              - name: "Pause High-Risk Campaigns"
+                type: "command"
+                command: "/scripts/pause-campaigns.sh --risk-level=high"
+              - name: "Notify Ops Team"
+                type: "notification"
+                channel: "slack"
+                message: "High bounce rate detected. High-risk campaigns paused automatically."
+      - name: "Generate Incident Report"
+        type: "command"
+        command: "/scripts/generate-incident-report.sh --type=email-delivery"
+
+  ## High Server Load Playbook
+  high-server-load.yaml: |-
+    name: High Server Load Playbook
+    description: Automated responses for handling high server load
+    trigger:
+      type: "alert"
+      source: "monitoring"
+      condition: "cpu_usage > {{ .Values.incidentResponse.thresholds.highCpuUsage }} OR memory_usage > {{ .Values.incidentResponse.thresholds.highMemoryUsage }}"
+    actions:
+      - name: "Identify High CPU Services"
+        type: "command"
+        command: "/scripts/identify-high-resource-services.sh --threshold={{ .Values.incidentResponse.thresholds.highCpuUsage }}"
+        onSuccess:
+          - name: "Scale Up Resources"
+            type: "kubernetes"
+            action: "scale"
+            resource: "{{ .Values.incidentResponse.actions.resourceType }}"
+            name: "{{ .Values.incidentResponse.actions.resourceName }}"
+            replicas: "{{ .Values.incidentResponse.actions.scaleTo }}"
+      - name: "Check Database Performance"
+        type: "command"
+        command: "/scripts/check-db-performance.sh"
+        onSuccess:
+          - name: "Database Issues Check"
+            type: "condition"
+            condition: "result.hasDatabaseIssues"
+            ifTrue:
+              - name: "Optimize Database"
+                type: "command"
+                command: "/scripts/db-optimize.sh"
+              - name: "Notify DB Admin"
+                type: "notification"
+                channel: "slack"
+                message: "Database performance issues detected. Running automatic optimization."
+      - name: "Check for DDoS"
+        type: "command"
+        command: "/scripts/check-ddos.sh"
+        onSuccess:
+          - name: "DDoS Check"
+            type: "condition"
+            condition: "result.possibleDDoS"
+            ifTrue:
+              - name: "Enable DDoS Protection"
+                type: "command"
+                command: "/scripts/enable-ddos-protection.sh"
+              - name: "Notify Security Team"
+                type: "notification"
+                channel: "slack"
+                message: "Possible DDoS detected. Enhanced protection enabled."
+      - name: "Generate Incident Report"
+        type: "command"
+        command: "/scripts/generate-incident-report.sh --type=server-load"
+
+  ## Security Breach Playbook
+  security-breach.yaml: |-
+    name: Security Breach Playbook
+    description: Automated responses for handling potential security breaches
+    trigger:
+      type: "alert"
+      source: "security-monitoring"
+      condition: "breach_score > {{ .Values.incidentResponse.thresholds.securityBreachScore }}"
+    actions:
+      - name: "Identify Compromised Systems"
+        type: "command"
+        command: "/scripts/identify-compromised-systems.sh"
+        onSuccess:
+          - name: "Isolate Systems"
+            type: "kubernetes"
+            action: "taint"
+            node: "{{ .Values.incidentResponse.actions.nodeName }}"
+            taint: "compromised=true:NoSchedule"
+      - name: "Block Suspicious IPs"
+        type: "command"
+        command: "/scripts/block-suspicious-ips.sh"
+      - name: "Rotate Access Keys"
+        type: "command"
+        command: "/scripts/rotate-access-keys.sh"
+      - name: "Notify Security Team"
+        type: "notification"
+        channel: "pagerduty"
+        priority: "high"
+        message: "Potential security breach detected. Systems isolated and keys rotated."
+      - name: "Generate Incident Report"
+        type: "command"
+        command: "/scripts/generate-incident-report.sh --type=security-breach"
+
+  ## Database Performance Issues Playbook
+  database-performance.yaml: |-
+    name: Database Performance Issues Playbook
+    description: Automated responses for handling database performance degradation
+    trigger:
+      type: "alert"
+      source: "monitoring"
+      condition: "db_query_time > {{ .Values.incidentResponse.thresholds.dbQueryTime }} OR db_connections > {{ .Values.incidentResponse.thresholds.dbConnections }}"
+    actions:
+      - name: "Identify Slow Queries"
+        type: "command"
+        command: "/scripts/identify-slow-queries.sh --threshold={{ .Values.incidentResponse.thresholds.dbQueryTime }}"
+      - name: "Analyze Database Resource Usage"
+        type: "command"
+        command: "/scripts/db-resource-analysis.sh"
+        onSuccess:
+          - name: "Resource Constraint Check"
+            type: "condition"
+            condition: "result.resourceConstrained"
+            ifTrue:
+              - name: "Scale Up Database"
+                type: "kubernetes"
+                action: "scale"
+                resource: "statefulset"
+                name: "{{ include "maily.fullname" . }}-postgresql"
+                resources: "{{ .Values.incidentResponse.actions.dbResourceIncrease }}"
+      - name: "Connection Pool Check"
+        type: "command"
+        command: "/scripts/check-connection-pools.sh"
+        onSuccess:
+          - name: "Connection Pool Issues Check"
+            type: "condition"
+            condition: "result.poolExhausted"
+            ifTrue:
+              - name: "Reconfigure Connection Pools"
+                type: "command"
+                command: "/scripts/reconfigure-connection-pools.sh --increase={{ .Values.incidentResponse.actions.connectionPoolIncrease }}"
+      - name: "Notify Database Team"
+        type: "notification"
+        channel: "slack"
+        message: "Database performance issues detected. Automated resolution in progress."
+      - name: "Generate Incident Report"
+        type: "command"
+        command: "/scripts/generate-incident-report.sh --type=database-performance"
+
+  ## Network Connectivity Issues Playbook
+  network-connectivity.yaml: |-
+    name: Network Connectivity Issues Playbook
+    description: Automated responses for handling network connectivity problems
+    trigger:
+      type: "alert"
+      source: "monitoring"
+      condition: "network_errors > {{ .Values.incidentResponse.thresholds.networkErrors }}"
+    actions:
+      - name: "Check Network Endpoints"
+        type: "command"
+        command: "/scripts/check-network-endpoints.sh"
+        onSuccess:
+          - name: "Endpoint Issues Check"
+            type: "condition"
+            condition: "result.endpointIssues"
+            ifTrue:
+              - name: "Restart Network Services"
+                type: "command"
+                command: "/scripts/restart-network-services.sh"
+      - name: "Check DNS Resolution"
+        type: "command"
+        command: "/scripts/check-dns-resolution.sh"
+        onSuccess:
+          - name: "DNS Issues Check"
+            type: "condition"
+            condition: "result.dnsIssues"
+            ifTrue:
+              - name: "Switch DNS Providers"
+                type: "command"
+                command: "/scripts/switch-dns-provider.sh"
+      - name: "Test External Connectivity"
+        type: "command"
+        command: "/scripts/test-external-connectivity.sh"
+        onSuccess:
+          - name: "External Connectivity Issues Check"
+            type: "condition"
+            condition: "result.externalIssues"
+            ifTrue:
+              - name: "Contact Cloud Provider"
+                type: "notification"
+                channel: "email"
+                recipient: "{{ .Values.incidentResponse.notifications.cloudSupportEmail }}"
+                message: "Network connectivity issues detected in the cloud environment."
+      - name: "Generate Incident Report"
+        type: "command"
+        command: "/scripts/generate-incident-report.sh --type=network-connectivity"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "maily.fullname" . }}-incident-response-scripts
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+data:
+  switch-email-provider.sh: |
+    #!/bin/bash
+    # Script to switch between primary and backup email providers
+
+    if [[ "$1" == "--to-backup" ]]; then
+      kubectl patch configmap {{ include "maily.fullname" . }}-email-config -p '{"data":{"active_provider":"backup"}}'
+      echo "Switched to backup email provider"
+    elif [[ "$1" == "--to-primary" ]]; then
+      kubectl patch configmap {{ include "maily.fullname" . }}-email-config -p '{"data":{"active_provider":"primary"}}'
+      echo "Switched to primary email provider"
+    else
+      echo "Usage: $0 --to-backup|--to-primary"
+      exit 1
+    fi
+
+  analyze-bounces.sh: |
+    #!/bin/bash
+    # Script to analyze email bounce patterns
+
+    TIMEFRAME="1h"
+    if [[ "$1" == "--last" && -n "$2" ]]; then
+      TIMEFRAME="$2"
+    fi
+
+    # Query logs for bounces in the specified timeframe
+    TOTAL_SENT=$(kubectl logs -l app={{ include "maily.fullname" . }}-worker --since=$TIMEFRAME | grep "email_sent" | wc -l)
+    TOTAL_BOUNCED=$(kubectl logs -l app={{ include "maily.fullname" . }}-worker --since=$TIMEFRAME | grep "email_bounced" | wc -l)
+
+    if [[ $TOTAL_SENT -gt 0 ]]; then
+      BOUNCE_RATE=$(echo "scale=2; ($TOTAL_BOUNCED/$TOTAL_SENT)*100" | bc)
+      echo "{\"bounceRate\": $BOUNCE_RATE, \"totalSent\": $TOTAL_SENT, \"totalBounced\": $TOTAL_BOUNCED}"
+    else
+      echo "{\"bounceRate\": 0, \"totalSent\": 0, \"totalBounced\": 0}"
+    fi
+
+  pause-campaigns.sh: |
+    #!/bin/bash
+    # Script to pause high-risk email campaigns
+
+    RISK_LEVEL="medium"
+    if [[ "$1" == "--risk-level" && -n "$2" ]]; then
+      RISK_LEVEL="$2"
+    fi
+
+    # Get campaigns with specified risk level
+    CAMPAIGNS=$(kubectl exec -it {{ include "maily.fullname" . }}-backend-0 -- python -c "
+    from app import db
+    from app.models import Campaign
+    campaigns = Campaign.query.filter_by(risk_level='$RISK_LEVEL', status='active').all()
+    for c in campaigns:
+        c.status = 'paused'
+        print(f'Paused campaign: {c.id} - {c.name}')
+    db.session.commit()
+    ")
+
+    echo "$CAMPAIGNS"
+
+  generate-incident-report.sh: |
+    #!/bin/bash
+    # Script to generate an incident report
+
+    INCIDENT_TYPE="general"
+    if [[ "$1" == "--type" && -n "$2" ]]; then
+      INCIDENT_TYPE="$2"
+    fi
+
+    TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
+    REPORT_ID="incident_${INCIDENT_TYPE}_${TIMESTAMP}"
+
+    # Gather system information
+    SYSTEM_INFO=$(kubectl get nodes -o wide)
+    POD_INFO=$(kubectl get pods -l app.kubernetes.io/instance={{ include "maily.fullname" . }} -o wide)
+    RESOURCE_USAGE=$(kubectl top pods -l app.kubernetes.io/instance={{ include "maily.fullname" . }})
+    RECENT_LOGS=$(kubectl logs --tail=100 -l app.kubernetes.io/instance={{ include "maily.fullname" . }})
+
+    # Create report
+    echo "# Incident Report: $REPORT_ID" > /tmp/$REPORT_ID.md
+    echo "## Incident Type: $INCIDENT_TYPE" >> /tmp/$REPORT_ID.md
+    echo "## Timestamp: $TIMESTAMP" >> /tmp/$REPORT_ID.md
+    echo "## System Information" >> /tmp/$REPORT_ID.md
+    echo '```' >> /tmp/$REPORT_ID.md
+    echo "$SYSTEM_INFO" >> /tmp/$REPORT_ID.md
+    echo '```' >> /tmp/$REPORT_ID.md
+    echo "## Pod Information" >> /tmp/$REPORT_ID.md
+    echo '```' >> /tmp/$REPORT_ID.md
+    echo "$POD_INFO" >> /tmp/$REPORT_ID.md
+    echo '```' >> /tmp/$REPORT_ID.md
+    echo "## Resource Usage" >> /tmp/$REPORT_ID.md
+    echo '```' >> /tmp/$REPORT_ID.md
+    echo "$RESOURCE_USAGE" >> /tmp/$REPORT_ID.md
+    echo '```' >> /tmp/$REPORT_ID.md
+    echo "## Recent Logs" >> /tmp/$REPORT_ID.md
+    echo '```' >> /tmp/$REPORT_ID.md
+    echo "$RECENT_LOGS" >> /tmp/$REPORT_ID.md
+    echo '```' >> /tmp/$REPORT_ID.md
+
+    # Store report
+    kubectl create configmap incident-report-$REPORT_ID --from-file=/tmp/$REPORT_ID.md
+    echo "Incident report generated: $REPORT_ID"
+
+  identify-high-resource-services.sh: |
+    #!/bin/bash
+    # Script to identify services with high resource usage
+
+    THRESHOLD=80
+    if [[ "$1" == "--threshold" && -n "$2" ]]; then
+      THRESHOLD="$2"
+    fi
+
+    # Get services with high CPU usage
+    HIGH_CPU_SERVICES=$(kubectl top pods -l app.kubernetes.io/instance={{ include "maily.fullname" . }} | awk -v threshold=$THRESHOLD '$3+0 > threshold {print $1}')
+
+    if [[ -n "$HIGH_CPU_SERVICES" ]]; then
+      echo "Services with CPU usage above ${THRESHOLD}%:"
+      echo "$HIGH_CPU_SERVICES"
+    else
+      echo "No services found with CPU usage above ${THRESHOLD}%"
+    fi
+{{- end }}

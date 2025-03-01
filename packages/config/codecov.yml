@@ -1,0 +1,44 @@
+coverage:
+  status:
+    project:
+      default:
+        target: 80%
+        threshold: 1%
+      backend:
+        target: 85%
+        flags:
+          - backend
+      frontend:
+        target: 75%
+        flags:
+          - frontend
+    patch:
+      default:
+        target: 80%
+        threshold: 1%
+
+flags:
+  backend:
+    paths:
+      - backend/
+    carryforward: true
+  frontend:
+    paths:
+      - app/
+    carryforward: true
+
+comment:
+  layout: "reach, diff, flags, files"
+  behavior: default
+  require_changes: false
+  require_base: no
+  require_head: yes
+
+ignore:
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "**/*.spec.ts"
+  - "**/*.spec.tsx"
+  - "**/tests/**"
+  - "**/cypress/**"
+  - "**/__tests__/**"

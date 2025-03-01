@@ -1,0 +1,132 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audit-logging
+  labels:
+    app: maily
+    component: audit-logging
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: maily
+      component: audit-logging
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: maily
+        component: audit-logging
+    spec:
+      containers:
+      - name: fluentd
+        image: fluent/fluentd-kubernetes-daemonset:v1.14-debian-elasticsearch7-1
+        imagePullPolicy: Always
+        env:
+        - name: ENVIRONMENT
+          value: "production"
+        - name: ELASTICSEARCH_HOST
+          value: "elasticsearch"
+        - name: ELASTICSEARCH_PORT
+          value: "9200"
+        - name: FLUENT_ELASTICSEARCH_USER
+          valueFrom:
+            secretKeyRef:
+              name: elasticsearch-credentials
+              key: username
+        - name: FLUENT_ELASTICSEARCH_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: elasticsearch-credentials
+              key: password
+        ports:
+        - containerPort: 24224
+          name: forward
+        - containerPort: 24224
+          protocol: UDP
+          name: forward-udp
+        volumeMounts:
+        - name: audit-config
+          mountPath: /fluentd/etc
+        - name: log-storage
+          mountPath: /var/log/fluentd
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+          requests:
+            cpu: "200m"
+            memory: "256Mi"
+        livenessProbe:
+          tcpSocket:
+            port: 24224
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          tcpSocket:
+            port: 24224
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+      - name: audit-retention
+        image: ${DOCKER_REGISTRY}/maily-audit-retention:${IMAGE_TAG}
+        imagePullPolicy: Always
+        env:
+        - name: ELASTICSEARCH_HOST
+          value: "elasticsearch"
+        - name: ELASTICSEARCH_PORT
+          value: "9200"
+        - name: ELASTICSEARCH_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: elasticsearch-credentials
+              key: username
+        - name: ELASTICSEARCH_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: elasticsearch-credentials
+              key: password
+        volumeMounts:
+        - name: audit-config
+          mountPath: /app/config
+        resources:
+          limits:
+            cpu: "200m"
+            memory: "256Mi"
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+      volumes:
+      - name: audit-config
+        configMap:
+          name: audit-logging-config
+      - name: log-storage
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: audit-logging
+  labels:
+    app: maily
+    component: audit-logging
+spec:
+  selector:
+    app: maily
+    component: audit-logging
+  ports:
+  - port: 24224
+    targetPort: 24224
+    name: fluentd
+  - port: 24224
+    protocol: UDP
+    targetPort: 24224
+    name: fluentd-udp
+  type: ClusterIP

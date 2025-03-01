@@ -1,0 +1,212 @@
+apiVersion: helm.fluxcd.io/v1
+kind: HelmRelease
+metadata:
+  name: opentelemetry-collector
+  namespace: monitoring
+spec:
+  releaseName: opentelemetry-collector
+  chart:
+    repository: https://open-telemetry.github.io/opentelemetry-helm-charts
+    name: opentelemetry-collector
+    version: 0.40.0
+  values:
+    mode: deployment
+    replicaCount: 2
+    resources:
+      limits:
+        cpu: 1
+        memory: 2Gi
+      requests:
+        cpu: 200m
+        memory: 400Mi
+    config:
+      receivers:
+        otlp:
+          protocols:
+            grpc:
+              endpoint: 0.0.0.0:4317
+            http:
+              endpoint: 0.0.0.0:4318
+        jaeger:
+          protocols:
+            thrift_http:
+              endpoint: 0.0.0.0:14268
+            grpc:
+              endpoint: 0.0.0.0:14250
+            thrift_binary:
+              endpoint: 0.0.0.0:6832
+            thrift_compact:
+              endpoint: 0.0.0.0:6831
+        zipkin:
+          endpoint: 0.0.0.0:9411
+        prometheus:
+          config:
+            scrape_configs:
+              - job_name: 'otel-collector'
+                scrape_interval: 10s
+                static_configs:
+                  - targets: ['${MY_POD_IP}:8888']
+              - job_name: 'maily-api'
+                kubernetes_sd_configs:
+                  - role: pod
+                relabel_configs:
+                  - source_labels: [__meta_kubernetes_pod_label_app]
+                    action: keep
+                    regex: maily-api
+                  - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+                    action: keep
+                    regex: true
+                  - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+                    action: replace
+                    target_label: __metrics_path__
+                    regex: (.+)
+                  - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+                    action: replace
+                    regex: ([^:]+)(?::\d+)?;(\d+)
+                    replacement: $1:$2
+                    target_label: __address__
+                  - action: labelmap
+                    regex: __meta_kubernetes_pod_label_(.+)
+                  - source_labels: [__meta_kubernetes_namespace]
+                    action: replace
+                    target_label: kubernetes_namespace
+                  - source_labels: [__meta_kubernetes_pod_name]
+                    action: replace
+                    target_label: kubernetes_pod_name
+      processors:
+        batch:
+          send_batch_size: 10000
+          timeout: 10s
+        memory_limiter:
+          check_interval: 5s
+          limit_percentage: 80
+          spike_limit_percentage: 25
+        resource:
+          attributes:
+            - key: service.namespace
+              value: maily
+              action: upsert
+        k8s_tagger:
+          extract:
+            metadata:
+              - namespace
+              - pod
+              - node
+              - startTime
+            labels:
+              - app
+              - component
+              - service
+        filter:
+          metrics:
+            include:
+              match_type: regexp
+              metric_names:
+                - .*
+        tail_sampling:
+          decision_wait: 10s
+          num_traces: 100
+          expected_new_traces_per_sec: 10
+          policies:
+            - name: error-policy
+              type: status_code
+              status_code:
+                status_codes:
+                  - ERROR
+                  - UNSET
+            - name: latency-policy
+              type: latency
+              latency:
+                threshold_ms: 500
+            - name: rate-limiting-policy
+              type: rate_limiting
+              rate_limiting:
+                spans_per_second: 100
+      exporters:
+        prometheus:
+          endpoint: 0.0.0.0:8889
+        otlp:
+          endpoint: tempo:4317
+          tls:
+            insecure: true
+        otlp/metrics:
+          endpoint: prometheus-operator-prometheus:9090
+          tls:
+            insecure: true
+        logging:
+          loglevel: debug
+      extensions:
+        health_check:
+          endpoint: 0.0.0.0:13133
+        memory_ballast:
+          size_mib: 512
+        zpages:
+          endpoint: 0.0.0.0:55679
+      service:
+        extensions: [health_check, memory_ballast, zpages]
+        pipelines:
+          traces:
+            receivers: [otlp, jaeger, zipkin]
+            processors: [memory_limiter, batch, k8s_tagger, resource, tail_sampling]
+            exporters: [otlp, logging]
+          metrics:
+            receivers: [otlp, prometheus]
+            processors: [memory_limiter, batch, k8s_tagger, resource, filter]
+            exporters: [prometheus, logging]
+    service:
+      type: ClusterIP
+      ports:
+        otlp-grpc:
+          enabled: true
+          port: 4317
+          targetPort: 4317
+          protocol: TCP
+        otlp-http:
+          enabled: true
+          port: 4318
+          targetPort: 4318
+          protocol: TCP
+        jaeger-thrift-http:
+          enabled: true
+          port: 14268
+          targetPort: 14268
+          protocol: TCP
+        jaeger-grpc:
+          enabled: true
+          port: 14250
+          targetPort: 14250
+          protocol: TCP
+        jaeger-thrift-binary:
+          enabled: true
+          port: 6832
+          targetPort: 6832
+          protocol: UDP
+        jaeger-thrift-compact:
+          enabled: true
+          port: 6831
+          targetPort: 6831
+          protocol: UDP
+        zipkin:
+          enabled: true
+          port: 9411
+          targetPort: 9411
+          protocol: TCP
+        prometheus:
+          enabled: true
+          port: 8889
+          targetPort: 8889
+          protocol: TCP
+    serviceAccount:
+      create: true
+      annotations:
+        eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/maily-otel-collector
+      name: opentelemetry-collector
+    rbac:
+      create: true
+      rules:
+        - apiGroups: [""]
+          resources: ["pods", "namespaces", "nodes"]
+          verbs: ["get", "list", "watch"]
+    podAnnotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "8889"

@@ -1,0 +1,410 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pagerduty-integration
+  namespace: monitoring
+data:
+  pagerduty-config.json: |
+    {
+      "services": [
+        {
+          "name": "Maily API",
+          "description": "Maily API Service",
+          "escalation_policy_id": "P123456",
+          "alert_creation": "create_alerts_and_incidents",
+          "alert_grouping": "intelligent",
+          "alert_grouping_timeout": 900,
+          "auto_resolve_timeout": 14400,
+          "acknowledgement_timeout": 1800,
+          "service_key": "api_service_key"
+        },
+        {
+          "name": "Maily Frontend",
+          "description": "Maily Frontend Service",
+          "escalation_policy_id": "P123456",
+          "alert_creation": "create_alerts_and_incidents",
+          "alert_grouping": "intelligent",
+          "alert_grouping_timeout": 900,
+          "auto_resolve_timeout": 14400,
+          "acknowledgement_timeout": 1800,
+          "service_key": "frontend_service_key"
+        },
+        {
+          "name": "Maily Worker",
+          "description": "Maily Worker Service",
+          "escalation_policy_id": "P123456",
+          "alert_creation": "create_alerts_and_incidents",
+          "alert_grouping": "intelligent",
+          "alert_grouping_timeout": 900,
+          "auto_resolve_timeout": 14400,
+          "acknowledgement_timeout": 1800,
+          "service_key": "worker_service_key"
+        },
+        {
+          "name": "Maily Database",
+          "description": "Maily Database Service",
+          "escalation_policy_id": "P123457",
+          "alert_creation": "create_alerts_and_incidents",
+          "alert_grouping": "intelligent",
+          "alert_grouping_timeout": 900,
+          "auto_resolve_timeout": 14400,
+          "acknowledgement_timeout": 1800,
+          "service_key": "database_service_key"
+        },
+        {
+          "name": "Maily Infrastructure",
+          "description": "Maily Infrastructure Service",
+          "escalation_policy_id": "P123457",
+          "alert_creation": "create_alerts_and_incidents",
+          "alert_grouping": "intelligent",
+          "alert_grouping_timeout": 900,
+          "auto_resolve_timeout": 14400,
+          "acknowledgement_timeout": 1800,
+          "service_key": "infrastructure_service_key"
+        }
+      ],
+      "escalation_policies": [
+        {
+          "id": "P123456",
+          "name": "Application Team On-Call",
+          "description": "Escalation policy for application team",
+          "num_loops": 3,
+          "on_call_handoff_notifications": "if_has_services",
+          "escalation_rules": [
+            {
+              "escalation_delay_in_minutes": 30,
+              "targets": [
+                {
+                  "id": "PTARGET1",
+                  "type": "schedule_reference",
+                  "summary": "Application Team Primary"
+                }
+              ]
+            },
+            {
+              "escalation_delay_in_minutes": 30,
+              "targets": [
+                {
+                  "id": "PTARGET2",
+                  "type": "schedule_reference",
+                  "summary": "Application Team Secondary"
+                }
+              ]
+            },
+            {
+              "escalation_delay_in_minutes": 30,
+              "targets": [
+                {
+                  "id": "PTARGET3",
+                  "type": "user_reference",
+                  "summary": "Engineering Manager"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "P123457",
+          "name": "Infrastructure Team On-Call",
+          "description": "Escalation policy for infrastructure team",
+          "num_loops": 3,
+          "on_call_handoff_notifications": "if_has_services",
+          "escalation_rules": [
+            {
+              "escalation_delay_in_minutes": 30,
+              "targets": [
+                {
+                  "id": "PTARGET4",
+                  "type": "schedule_reference",
+                  "summary": "Infrastructure Team Primary"
+                }
+              ]
+            },
+            {
+              "escalation_delay_in_minutes": 30,
+              "targets": [
+                {
+                  "id": "PTARGET5",
+                  "type": "schedule_reference",
+                  "summary": "Infrastructure Team Secondary"
+                }
+              ]
+            },
+            {
+              "escalation_delay_in_minutes": 30,
+              "targets": [
+                {
+                  "id": "PTARGET6",
+                  "type": "user_reference",
+                  "summary": "DevOps Manager"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "schedules": [
+        {
+          "id": "PTARGET1",
+          "name": "Application Team Primary",
+          "description": "Primary on-call schedule for application team",
+          "time_zone": "UTC",
+          "schedule_layers": [
+            {
+              "name": "Weekly Rotation",
+              "rotation_virtual_start": "2025-01-01T00:00:00Z",
+              "rotation_turn_length_seconds": 604800,
+              "users": [
+                {
+                  "id": "PUSER1",
+                  "type": "user_reference",
+                  "summary": "John Doe"
+                },
+                {
+                  "id": "PUSER2",
+                  "type": "user_reference",
+                  "summary": "Jane Smith"
+                },
+                {
+                  "id": "PUSER3",
+                  "type": "user_reference",
+                  "summary": "Bob Johnson"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "PTARGET2",
+          "name": "Application Team Secondary",
+          "description": "Secondary on-call schedule for application team",
+          "time_zone": "UTC",
+          "schedule_layers": [
+            {
+              "name": "Weekly Rotation",
+              "rotation_virtual_start": "2025-01-01T00:00:00Z",
+              "rotation_turn_length_seconds": 604800,
+              "users": [
+                {
+                  "id": "PUSER4",
+                  "type": "user_reference",
+                  "summary": "Alice Williams"
+                },
+                {
+                  "id": "PUSER5",
+                  "type": "user_reference",
+                  "summary": "Charlie Brown"
+                },
+                {
+                  "id": "PUSER6",
+                  "type": "user_reference",
+                  "summary": "Diana Prince"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "PTARGET4",
+          "name": "Infrastructure Team Primary",
+          "description": "Primary on-call schedule for infrastructure team",
+          "time_zone": "UTC",
+          "schedule_layers": [
+            {
+              "name": "Weekly Rotation",
+              "rotation_virtual_start": "2025-01-01T00:00:00Z",
+              "rotation_turn_length_seconds": 604800,
+              "users": [
+                {
+                  "id": "PUSER7",
+                  "type": "user_reference",
+                  "summary": "Frank Castle"
+                },
+                {
+                  "id": "PUSER8",
+                  "type": "user_reference",
+                  "summary": "Grace Hopper"
+                },
+                {
+                  "id": "PUSER9",
+                  "type": "user_reference",
+                  "summary": "Hank Pym"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "PTARGET5",
+          "name": "Infrastructure Team Secondary",
+          "description": "Secondary on-call schedule for infrastructure team",
+          "time_zone": "UTC",
+          "schedule_layers": [
+            {
+              "name": "Weekly Rotation",
+              "rotation_virtual_start": "2025-01-01T00:00:00Z",
+              "rotation_turn_length_seconds": 604800,
+              "users": [
+                {
+                  "id": "PUSER10",
+                  "type": "user_reference",
+                  "summary": "Iris West"
+                },
+                {
+                  "id": "PUSER11",
+                  "type": "user_reference",
+                  "summary": "James Rhodes"
+                },
+                {
+                  "id": "PUSER12",
+                  "type": "user_reference",
+                  "summary": "Karen Page"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "event_rules": [
+        {
+          "condition": {
+            "operator": "and",
+            "subconditions": [
+              {
+                "operator": "contains",
+                "parameters": {
+                  "path": "summary",
+                  "value": "API"
+                }
+              }
+            ]
+          },
+          "actions": [
+            {
+              "type": "route",
+              "parameters": {
+                "value": "api_service_key"
+              }
+            },
+            {
+              "type": "severity",
+              "parameters": {
+                "value": "critical"
+              }
+            }
+          ]
+        },
+        {
+          "condition": {
+            "operator": "and",
+            "subconditions": [
+              {
+                "operator": "contains",
+                "parameters": {
+                  "path": "summary",
+                  "value": "Frontend"
+                }
+              }
+            ]
+          },
+          "actions": [
+            {
+              "type": "route",
+              "parameters": {
+                "value": "frontend_service_key"
+              }
+            },
+            {
+              "type": "severity",
+              "parameters": {
+                "value": "critical"
+              }
+            }
+          ]
+        },
+        {
+          "condition": {
+            "operator": "and",
+            "subconditions": [
+              {
+                "operator": "contains",
+                "parameters": {
+                  "path": "summary",
+                  "value": "Worker"
+                }
+              }
+            ]
+          },
+          "actions": [
+            {
+              "type": "route",
+              "parameters": {
+                "value": "worker_service_key"
+              }
+            },
+            {
+              "type": "severity",
+              "parameters": {
+                "value": "critical"
+              }
+            }
+          ]
+        },
+        {
+          "condition": {
+            "operator": "and",
+            "subconditions": [
+              {
+                "operator": "contains",
+                "parameters": {
+                  "path": "summary",
+                  "value": "Database"
+                }
+              }
+            ]
+          },
+          "actions": [
+            {
+              "type": "route",
+              "parameters": {
+                "value": "database_service_key"
+              }
+            },
+            {
+              "type": "severity",
+              "parameters": {
+                "value": "critical"
+              }
+            }
+          ]
+        },
+        {
+          "condition": {
+            "operator": "and",
+            "subconditions": [
+              {
+                "operator": "contains",
+                "parameters": {
+                  "path": "summary",
+                  "value": "Infrastructure"
+                }
+              }
+            ]
+          },
+          "actions": [
+            {
+              "type": "route",
+              "parameters": {
+                "value": "infrastructure_service_key"
+              }
+            },
+            {
+              "type": "severity",
+              "parameters": {
+                "value": "critical"
+              }
+            }
+          ]
+        }
+      ]
+    }

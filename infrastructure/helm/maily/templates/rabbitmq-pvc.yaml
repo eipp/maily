@@ -1,0 +1,18 @@
+{{- if and .Values.rabbitmq.enabled .Values.rabbitmq.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-rabbitmq
+  labels:
+    app.kubernetes.io/name: {{ .Release.Name }}-rabbitmq
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: message-queue
+    app.kubernetes.io/part-of: maily
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.global.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.rabbitmq.persistence.size }}
+{{- end }}

@@ -1,0 +1,204 @@
+# Email Campaign Metrics
+email_send_total:
+  type: counter
+  help: Total number of emails sent
+  labels:
+    - campaign_id
+    - template_id
+    - user_id
+
+email_delivery_total:
+  type: counter
+  help: Total number of emails delivered
+  labels:
+    - campaign_id
+    - template_id
+    - user_id
+
+email_bounce_total:
+  type: counter
+  help: Total number of emails bounced
+  labels:
+    - campaign_id
+    - template_id
+    - user_id
+    - bounce_type  # hard/soft
+
+email_open_total:
+  type: counter
+  help: Total number of emails opened
+  labels:
+    - campaign_id
+    - template_id
+    - user_id
+    - device_type
+    - client_type
+
+email_click_total:
+  type: counter
+  help: Total number of email link clicks
+  labels:
+    - campaign_id
+    - template_id
+    - user_id
+    - link_id
+    - device_type
+
+email_unsubscribe_total:
+  type: counter
+  help: Total number of unsubscribes
+  labels:
+    - campaign_id
+    - template_id
+    - user_id
+    - reason
+
+# Campaign Performance Metrics
+campaign_creation_duration_seconds:
+  type: histogram
+  help: Time taken to create a campaign
+  buckets: [0.1, 0.5, 1, 2, 5, 10]
+  labels:
+    - user_id
+    - template_type
+
+campaign_send_duration_seconds:
+  type: histogram
+  help: Time taken to send a campaign
+  buckets: [1, 5, 10, 30, 60, 120, 300]
+  labels:
+    - campaign_id
+    - batch_size
+
+# Engagement Metrics
+email_open_rate:
+  type: gauge
+  help: Email open rate percentage
+  labels:
+    - campaign_id
+    - template_id
+    - segment_id
+
+email_click_rate:
+  type: gauge
+  help: Email click-through rate percentage
+  labels:
+    - campaign_id
+    - template_id
+    - segment_id
+
+email_conversion_rate:
+  type: gauge
+  help: Email conversion rate percentage
+  labels:
+    - campaign_id
+    - template_id
+    - segment_id
+
+# AI Performance Metrics
+ai_generation_duration_seconds:
+  type: histogram
+  help: Time taken for AI content generation
+  buckets: [0.5, 1, 2, 5, 10, 20]
+  labels:
+    - model_name
+    - content_type
+    - user_id
+
+ai_suggestion_acceptance_rate:
+  type: gauge
+  help: AI suggestion acceptance rate percentage
+  labels:
+    - model_name
+    - content_type
+    - user_id
+
+# System Performance Metrics
+api_request_duration_seconds:
+  type: histogram
+  help: API request duration
+  buckets: [0.01, 0.05, 0.1, 0.5, 1, 2]
+  labels:
+    - endpoint
+    - method
+    - status_code
+
+api_request_total:
+  type: counter
+  help: Total API requests
+  labels:
+    - endpoint
+    - method
+    - status_code
+
+# Resource Usage Metrics
+subscriber_count:
+  type: gauge
+  help: Total number of subscribers
+  labels:
+    - user_id
+    - list_id
+    - segment_id
+
+storage_usage_bytes:
+  type: gauge
+  help: Storage usage in bytes
+  labels:
+    - user_id
+    - resource_type
+
+# Error Metrics
+error_total:
+  type: counter
+  help: Total number of errors
+  labels:
+    - error_type
+    - component
+    - severity
+
+rate_limit_exceeded_total:
+  type: counter
+  help: Total number of rate limit exceeded events
+  labels:
+    - endpoint
+    - user_id
+
+# Feature Usage Metrics
+feature_usage_total:
+  type: counter
+  help: Feature usage count
+  labels:
+    - feature_name
+    - user_id
+    - result  # success/failure
+
+ab_test_conversion_rate:
+  type: gauge
+  help: A/B test conversion rate percentage
+  labels:
+    - test_id
+    - variant
+    - campaign_id
+
+# Custom Business Metrics
+monthly_active_users:
+  type: gauge
+  help: Number of monthly active users
+  labels:
+    - plan_type
+    - region
+
+revenue_total:
+  type: counter
+  help: Total revenue in cents
+  labels:
+    - plan_type
+    - currency
+    - payment_method
+
+churn_rate:
+  type: gauge
+  help: Customer churn rate percentage
+  labels:
+    - plan_type
+    - reason

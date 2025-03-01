@@ -1,0 +1,86 @@
+apiVersion: helm.fluxcd.io/v1
+kind: HelmRelease
+metadata:
+  name: velero
+  namespace: velero
+spec:
+  releaseName: velero
+  chart:
+    repository: https://vmware-tanzu.github.io/helm-charts
+    name: velero
+    version: 2.29.7
+  values:
+    initContainers:
+      - name: velero-plugin-for-aws
+        image: velero/velero-plugin-for-aws:v1.4.0
+        imagePullPolicy: IfNotPresent
+        volumeMounts:
+          - mountPath: /target
+            name: plugins
+    configuration:
+      provider: aws
+      backupStorageLocation:
+        name: aws
+        provider: aws
+        bucket: maily-k8s-backups
+        config:
+          region: us-west-2
+      volumeSnapshotLocation:
+        name: aws
+        provider: aws
+        config:
+          region: us-west-2
+    credentials:
+      useSecret: true
+      secretContents:
+        cloud: |
+          [default]
+          aws_access_key_id = ${AWS_ACCESS_KEY_ID}
+          aws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}
+    schedules:
+      daily-backup:
+        schedule: "0 1 * * *"
+        template:
+          ttl: "240h"
+          includedNamespaces:
+            - maily
+          includedResources:
+            - "*"
+          excludedResources:
+            - events
+          includeClusterResources: true
+          storageLocation: aws
+          volumeSnapshotLocations:
+            - aws
+      hourly-backup:
+        schedule: "0 * * * *"
+        template:
+          ttl: "48h"
+          includedNamespaces:
+            - maily
+          includedResources:
+            - deployments
+            - statefulsets
+            - configmaps
+            - secrets
+          excludedResources:
+            - events
+          includeClusterResources: false
+          storageLocation: aws
+          volumeSnapshotLocations:
+            - aws
+    metrics:
+      enabled: true
+      serviceMonitor:
+        enabled: true
+    snapshotsEnabled: true
+    deployRestic: true
+    restic:
+      privileged: true
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1024Mi

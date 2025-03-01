@@ -1,0 +1,802 @@
+{{- if .Values.aiOperations.enabled }}
+---
+# Anomaly Detection Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "maily.fullname" . }}-anomaly-detection
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+    component: ai-operations
+    tier: anomaly-detection
+spec:
+  replicas: {{ .Values.aiOperations.anomalyDetection.replicas }}
+  selector:
+    matchLabels:
+      {{- include "maily.selectorLabels" . | nindent 6 }}
+      component: ai-operations
+      tier: anomaly-detection
+  template:
+    metadata:
+      labels:
+        {{- include "maily.selectorLabels" . | nindent 8 }}
+        component: ai-operations
+        tier: anomaly-detection
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "8080"
+    spec:
+      containers:
+        - name: anomaly-detection
+          image: "{{ .Values.aiOperations.anomalyDetection.image.repository }}:{{ .Values.aiOperations.anomalyDetection.image.tag }}"
+          imagePullPolicy: {{ .Values.aiOperations.anomalyDetection.image.pullPolicy }}
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: PROMETHEUS_URL
+              value: "http://{{ include "maily.fullname" . }}-prometheus:9090"
+            - name: MODEL_DIR
+              value: "/models"
+            - name: CONFIG_PATH
+              value: "/config/anomaly-detection-config.yaml"
+            - name: LOG_LEVEL
+              value: "{{ .Values.aiOperations.anomalyDetection.logLevel }}"
+          volumeMounts:
+            - name: anomaly-detection-config
+              mountPath: /config
+            - name: anomaly-detection-models
+              mountPath: /models
+          resources:
+            {{- toYaml .Values.aiOperations.anomalyDetection.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 10
+      volumes:
+        - name: anomaly-detection-config
+          configMap:
+            name: {{ include "maily.fullname" . }}-anomaly-detection-config
+        - name: anomaly-detection-models
+          {{- if .Values.aiOperations.anomalyDetection.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "maily.fullname" . }}-anomaly-detection-models
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+---
+# Predictive Scaling Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "maily.fullname" . }}-predictive-scaling
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+    component: ai-operations
+    tier: predictive-scaling
+spec:
+  replicas: {{ .Values.aiOperations.predictiveScaling.replicas }}
+  selector:
+    matchLabels:
+      {{- include "maily.selectorLabels" . | nindent 6 }}
+      component: ai-operations
+      tier: predictive-scaling
+  template:
+    metadata:
+      labels:
+        {{- include "maily.selectorLabels" . | nindent 8 }}
+        component: ai-operations
+        tier: predictive-scaling
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "8080"
+    spec:
+      serviceAccountName: {{ include "maily.fullname" . }}-predictive-scaling
+      containers:
+        - name: predictive-scaling
+          image: "{{ .Values.aiOperations.predictiveScaling.image.repository }}:{{ .Values.aiOperations.predictiveScaling.image.tag }}"
+          imagePullPolicy: {{ .Values.aiOperations.predictiveScaling.image.pullPolicy }}
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: PROMETHEUS_URL
+              value: "http://{{ include "maily.fullname" . }}-prometheus:9090"
+            - name: MODEL_DIR
+              value: "/models"
+            - name: CONFIG_PATH
+              value: "/config/predictive-scaling-config.yaml"
+            - name: KUBERNETES_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: LOG_LEVEL
+              value: "{{ .Values.aiOperations.predictiveScaling.logLevel }}"
+          volumeMounts:
+            - name: predictive-scaling-config
+              mountPath: /config
+            - name: predictive-scaling-models
+              mountPath: /models
+          resources:
+            {{- toYaml .Values.aiOperations.predictiveScaling.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 10
+      volumes:
+        - name: predictive-scaling-config
+          configMap:
+            name: {{ include "maily.fullname" . }}-predictive-scaling-config
+        - name: predictive-scaling-models
+          {{- if .Values.aiOperations.predictiveScaling.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "maily.fullname" . }}-predictive-scaling-models
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+---
+# Resource Optimization Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "maily.fullname" . }}-resource-optimization
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+    component: ai-operations
+    tier: resource-optimization
+spec:
+  replicas: {{ .Values.aiOperations.resourceOptimization.replicas }}
+  selector:
+    matchLabels:
+      {{- include "maily.selectorLabels" . | nindent 6 }}
+      component: ai-operations
+      tier: resource-optimization
+  template:
+    metadata:
+      labels:
+        {{- include "maily.selectorLabels" . | nindent 8 }}
+        component: ai-operations
+        tier: resource-optimization
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "8080"
+    spec:
+      serviceAccountName: {{ include "maily.fullname" . }}-resource-optimization
+      containers:
+        - name: resource-optimization
+          image: "{{ .Values.aiOperations.resourceOptimization.image.repository }}:{{ .Values.aiOperations.resourceOptimization.image.tag }}"
+          imagePullPolicy: {{ .Values.aiOperations.resourceOptimization.image.pullPolicy }}
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: PROMETHEUS_URL
+              value: "http://{{ include "maily.fullname" . }}-prometheus:9090"
+            - name: CONFIG_PATH
+              value: "/config/resource-optimization-config.yaml"
+            - name: KUBERNETES_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: LOG_LEVEL
+              value: "{{ .Values.aiOperations.resourceOptimization.logLevel }}"
+            - name: OPTIMIZATION_INTERVAL
+              value: "{{ .Values.aiOperations.resourceOptimization.optimizationInterval }}"
+          volumeMounts:
+            - name: resource-optimization-config
+              mountPath: /config
+          resources:
+            {{- toYaml .Values.aiOperations.resourceOptimization.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 10
+      volumes:
+        - name: resource-optimization-config
+          configMap:
+            name: {{ include "maily.fullname" . }}-resource-optimization-config
+---
+# Failure Prediction Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "maily.fullname" . }}-failure-prediction
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+    component: ai-operations
+    tier: failure-prediction
+spec:
+  replicas: {{ .Values.aiOperations.failurePrediction.replicas }}
+  selector:
+    matchLabels:
+      {{- include "maily.selectorLabels" . | nindent 6 }}
+      component: ai-operations
+      tier: failure-prediction
+  template:
+    metadata:
+      labels:
+        {{- include "maily.selectorLabels" . | nindent 8 }}
+        component: ai-operations
+        tier: failure-prediction
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "8080"
+    spec:
+      containers:
+        - name: failure-prediction
+          image: "{{ .Values.aiOperations.failurePrediction.image.repository }}:{{ .Values.aiOperations.failurePrediction.image.tag }}"
+          imagePullPolicy: {{ .Values.aiOperations.failurePrediction.image.pullPolicy }}
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: PROMETHEUS_URL
+              value: "http://{{ include "maily.fullname" . }}-prometheus:9090"
+            - name: ELASTICSEARCH_URL
+              value: "http://{{ include "maily.fullname" . }}-elk:9200"
+            - name: MODEL_DIR
+              value: "/models"
+            - name: CONFIG_PATH
+              value: "/config/failure-prediction-config.yaml"
+            - name: LOG_LEVEL
+              value: "{{ .Values.aiOperations.failurePrediction.logLevel }}"
+          volumeMounts:
+            - name: failure-prediction-config
+              mountPath: /config
+            - name: failure-prediction-models
+              mountPath: /models
+          resources:
+            {{- toYaml .Values.aiOperations.failurePrediction.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 10
+      volumes:
+        - name: failure-prediction-config
+          configMap:
+            name: {{ include "maily.fullname" . }}-failure-prediction-config
+        - name: failure-prediction-models
+          {{- if .Values.aiOperations.failurePrediction.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "maily.fullname" . }}-failure-prediction-models
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+---
+# ConfigMaps
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "maily.fullname" . }}-anomaly-detection-config
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+data:
+  anomaly-detection-config.yaml: |-
+    models:
+      - name: cpu_usage_anomaly
+        type: isolation_forest
+        metrics:
+          - name: container_cpu_usage_seconds_total
+            query: 'sum(rate(container_cpu_usage_seconds_total{namespace="{{ .Release.Namespace }}"}[5m])) by (pod)'
+            threshold: {{ .Values.aiOperations.anomalyDetection.thresholds.cpuUsage }}
+        training:
+          schedule: "0 1 * * *"  # Daily at 1:00 AM
+          dataPoints: 1000
+          lookbackPeriod: 7d
+        alerting:
+          name: AnomalousCpuUsage
+          severity: warning
+          description: "Anomalous CPU usage detected for pod {{ "{{" }} $labels.pod {{ "}}" }}"
+
+      - name: memory_usage_anomaly
+        type: isolation_forest
+        metrics:
+          - name: container_memory_usage_bytes
+            query: 'sum(container_memory_usage_bytes{namespace="{{ .Release.Namespace }}"}) by (pod)'
+            threshold: {{ .Values.aiOperations.anomalyDetection.thresholds.memoryUsage }}
+        training:
+          schedule: "0 2 * * *"  # Daily at 2:00 AM
+          dataPoints: 1000
+          lookbackPeriod: 7d
+        alerting:
+          name: AnomalousMemoryUsage
+          severity: warning
+          description: "Anomalous memory usage detected for pod {{ "{{" }} $labels.pod {{ "}}" }}"
+
+      - name: api_latency_anomaly
+        type: dbscan
+        metrics:
+          - name: http_request_duration_seconds
+            query: 'histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{namespace="{{ .Release.Namespace }}"}[5m])) by (le, handler))'
+            threshold: {{ .Values.aiOperations.anomalyDetection.thresholds.apiLatency }}
+        training:
+          schedule: "0 3 * * *"  # Daily at 3:00 AM
+          dataPoints: 2000
+          lookbackPeriod: 3d
+        alerting:
+          name: AnomalousApiLatency
+          severity: warning
+          description: "Anomalous API latency detected for endpoint {{ "{{" }} $labels.handler {{ "}}" }}"
+
+      - name: error_rate_anomaly
+        type: isolation_forest
+        metrics:
+          - name: http_requests_total
+            query: 'sum(rate(http_requests_total{status=~"5..",namespace="{{ .Release.Namespace }}"}[5m])) by (handler) / sum(rate(http_requests_total{namespace="{{ .Release.Namespace }}"}[5m])) by (handler)'
+            threshold: {{ .Values.aiOperations.anomalyDetection.thresholds.errorRate }}
+        training:
+          schedule: "0 4 * * *"  # Daily at 4:00 AM
+          dataPoints: 1000
+          lookbackPeriod: 7d
+        alerting:
+          name: AnomalousErrorRate
+          severity: critical
+          description: "Anomalous error rate detected for endpoint {{ "{{" }} $labels.handler {{ "}}" }}"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "maily.fullname" . }}-predictive-scaling-config
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+data:
+  predictive-scaling-config.yaml: |-
+    scaleTargets:
+      - name: backend
+        deployment: {{ include "maily.fullname" . }}-backend
+        metrics:
+          - name: http_requests_per_second
+            query: 'sum(rate(http_requests_total{job="maily-backend"}[5m]))'
+            prediction:
+              algorithm: prophet
+              forecast_horizon: 1h
+              training_period: 7d
+              retraining_schedule: "0 0 * * *"  # Daily at midnight
+        scaling:
+          min_replicas: {{ .Values.aiOperations.predictiveScaling.minReplicas.backend }}
+          max_replicas: {{ .Values.aiOperations.predictiveScaling.maxReplicas.backend }}
+          target_value: {{ .Values.aiOperations.predictiveScaling.targetRequestsPerReplica.backend }}
+          cool_down_period: 300s
+
+      - name: frontend
+        deployment: {{ include "maily.fullname" . }}-frontend
+        metrics:
+          - name: http_requests_per_second
+            query: 'sum(rate(http_requests_total{job="maily-frontend"}[5m]))'
+            prediction:
+              algorithm: arima
+              forecast_horizon: 1h
+              training_period: 7d
+              retraining_schedule: "0 0 * * *"  # Daily at midnight
+        scaling:
+          min_replicas: {{ .Values.aiOperations.predictiveScaling.minReplicas.frontend }}
+          max_replicas: {{ .Values.aiOperations.predictiveScaling.maxReplicas.frontend }}
+          target_value: {{ .Values.aiOperations.predictiveScaling.targetRequestsPerReplica.frontend }}
+          cool_down_period: 300s
+
+      - name: worker
+        deployment: {{ include "maily.fullname" . }}-worker
+        metrics:
+          - name: queue_depth
+            query: 'rabbitmq_queue_messages{queue=~"email.*", vhost="/"}'
+            prediction:
+              algorithm: prophet
+              forecast_horizon: 1h
+              training_period: 7d
+              retraining_schedule: "0 0 * * *"  # Daily at midnight
+        scaling:
+          min_replicas: {{ .Values.aiOperations.predictiveScaling.minReplicas.worker }}
+          max_replicas: {{ .Values.aiOperations.predictiveScaling.maxReplicas.worker }}
+          target_value: {{ .Values.aiOperations.predictiveScaling.targetQueueDepthPerReplica }}
+          cool_down_period: 300s
+
+    schedules:
+      - name: weekly_campaign_spike
+        days_of_week: [1, 2, 3, 4, 5]  # Monday to Friday
+        start_time: "09:00"
+        end_time: "17:00"
+        targets:
+          - name: backend
+            min_replicas: {{ .Values.aiOperations.predictiveScaling.schedules.weekday.backend }}
+          - name: worker
+            min_replicas: {{ .Values.aiOperations.predictiveScaling.schedules.weekday.worker }}
+
+      - name: weekend_reduced_load
+        days_of_week: [0, 6]  # Sunday, Saturday
+        start_time: "00:00"
+        end_time: "23:59"
+        targets:
+          - name: backend
+            min_replicas: {{ .Values.aiOperations.predictiveScaling.schedules.weekend.backend }}
+          - name: worker
+            min_replicas: {{ .Values.aiOperations.predictiveScaling.schedules.weekend.worker }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "maily.fullname" . }}-resource-optimization-config
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+data:
+  resource-optimization-config.yaml: |-
+    optimization:
+      targets:
+        - name: backend
+          deployment: {{ include "maily.fullname" . }}-backend
+          resources:
+            cpu:
+              min: 100m
+              max: 2000m
+              increment: 100m
+            memory:
+              min: 256Mi
+              max: 2Gi
+              increment: 128Mi
+          metrics:
+            - name: cpu_usage
+              query: 'sum(rate(container_cpu_usage_seconds_total{namespace="{{ .Release.Namespace }}",pod=~"{{ include "maily.fullname" . }}-backend.*"}[5m])) by (pod)'
+              target_utilization: {{ .Values.aiOperations.resourceOptimization.targetUtilization.cpu }}
+            - name: memory_usage
+              query: 'sum(container_memory_usage_bytes{namespace="{{ .Release.Namespace }}",pod=~"{{ include "maily.fullname" . }}-backend.*"}) by (pod)'
+              target_utilization: {{ .Values.aiOperations.resourceOptimization.targetUtilization.memory }}
+
+        - name: frontend
+          deployment: {{ include "maily.fullname" . }}-frontend
+          resources:
+            cpu:
+              min: 50m
+              max: 1000m
+              increment: 50m
+            memory:
+              min: 128Mi
+              max: 1Gi
+              increment: 64Mi
+          metrics:
+            - name: cpu_usage
+              query: 'sum(rate(container_cpu_usage_seconds_total{namespace="{{ .Release.Namespace }}",pod=~"{{ include "maily.fullname" . }}-frontend.*"}[5m])) by (pod)'
+              target_utilization: {{ .Values.aiOperations.resourceOptimization.targetUtilization.cpu }}
+            - name: memory_usage
+              query: 'sum(container_memory_usage_bytes{namespace="{{ .Release.Namespace }}",pod=~"{{ include "maily.fullname" . }}-frontend.*"}) by (pod)'
+              target_utilization: {{ .Values.aiOperations.resourceOptimization.targetUtilization.memory }}
+
+        - name: worker
+          deployment: {{ include "maily.fullname" . }}-worker
+          resources:
+            cpu:
+              min: 100m
+              max: 1000m
+              increment: 100m
+            memory:
+              min: 256Mi
+              max: 1Gi
+              increment: 128Mi
+          metrics:
+            - name: cpu_usage
+              query: 'sum(rate(container_cpu_usage_seconds_total{namespace="{{ .Release.Namespace }}",pod=~"{{ include "maily.fullname" . }}-worker.*"}[5m])) by (pod)'
+              target_utilization: {{ .Values.aiOperations.resourceOptimization.targetUtilization.cpu }}
+            - name: memory_usage
+              query: 'sum(container_memory_usage_bytes{namespace="{{ .Release.Namespace }}",pod=~"{{ include "maily.fullname" . }}-worker.*"}) by (pod)'
+              target_utilization: {{ .Values.aiOperations.resourceOptimization.targetUtilization.memory }}
+
+      settings:
+        history_window: 24h
+        change_cooldown: 6h
+        max_adjustment_percent: 20
+        recommendation_threshold: 3
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "maily.fullname" . }}-failure-prediction-config
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+data:
+  failure-prediction-config.yaml: |-
+    prediction:
+      models:
+        - name: node_failure_prediction
+          type: random_forest
+          metrics:
+            - name: node_load1
+              query: 'avg(node_load1) by (node)'
+            - name: node_memory_MemAvailable_bytes
+              query: 'avg(node_memory_MemAvailable_bytes) by (node)'
+            - name: node_filesystem_avail_bytes
+              query: 'min(node_filesystem_avail_bytes{mountpoint="/",fstype!="rootfs"}) by (node)'
+            - name: node_disk_io_time_seconds_total
+              query: 'sum(rate(node_disk_io_time_seconds_total[5m])) by (node)'
+          logs:
+            - index: "filebeat-*"
+              query: "system.syslog.message:*error* OR system.syslog.message:*fail*"
+          training:
+            schedule: "0 2 * * 0"  # Weekly on Sunday at 2:00 AM
+            lookback_period: 30d
+          prediction:
+            window: 24h
+            confidence_threshold: {{ .Values.aiOperations.failurePrediction.confidenceThreshold }}
+
+        - name: pod_failure_prediction
+          type: gradient_boosting
+          metrics:
+            - name: container_cpu_usage_seconds_total
+              query: 'sum(rate(container_cpu_usage_seconds_total{namespace="{{ .Release.Namespace }}"}[5m])) by (pod)'
+            - name: container_memory_usage_bytes
+              query: 'sum(container_memory_usage_bytes{namespace="{{ .Release.Namespace }}"}) by (pod)'
+            - name: container_restart_count
+              query: 'sum(kube_pod_container_status_restarts_total{namespace="{{ .Release.Namespace }}"}) by (pod)'
+          logs:
+            - index: "filebeat-*"
+              query: "kubernetes.pod.name:* AND message:(*exception* OR *error* OR *fail* OR *crash*)"
+          training:
+            schedule: "0 3 * * 0"  # Weekly on Sunday at 3:00 AM
+            lookback_period: 14d
+          prediction:
+            window: 6h
+            confidence_threshold: {{ .Values.aiOperations.failurePrediction.confidenceThreshold }}
+
+        - name: service_degradation_prediction
+          type: lstm
+          metrics:
+            - name: http_request_duration_seconds
+              query: 'histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{namespace="{{ .Release.Namespace }}"}[5m])) by (le, handler))'
+            - name: http_requests_total
+              query: 'sum(rate(http_requests_total{status=~"5..",namespace="{{ .Release.Namespace }}"}[5m])) by (handler) / sum(rate(http_requests_total{namespace="{{ .Release.Namespace }}"}[5m])) by (handler)'
+          logs:
+            - index: "filebeat-*"
+              query: "kubernetes.namespace:{{ .Release.Namespace }} AND message:(*timeout* OR *too slow* OR *unresponsive*)"
+          training:
+            schedule: "0 4 * * 0"  # Weekly on Sunday at 4:00 AM
+            lookback_period: 7d
+          prediction:
+            window: 1h
+            confidence_threshold: {{ .Values.aiOperations.failurePrediction.confidenceThreshold }}
+
+      alerting:
+        low_confidence:
+          name: PotentialSystemFailure
+          severity: warning
+          description: "Potential system failure detected for {{ "{{" }} $labels.component {{ "}}" }} with {{ "{{" }} $value {{ "}}" }}% confidence"
+          threshold: {{ .Values.aiOperations.failurePrediction.alertThresholds.lowConfidence }}
+        high_confidence:
+          name: ImminentSystemFailure
+          severity: critical
+          description: "Imminent system failure predicted for {{ "{{" }} $labels.component {{ "}}" }} with {{ "{{" }} $value {{ "}}" }}% confidence"
+          threshold: {{ .Values.aiOperations.failurePrediction.alertThresholds.highConfidence }}
+---
+# Services
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "maily.fullname" . }}-anomaly-detection
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+    component: ai-operations
+    tier: anomaly-detection
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "maily.selectorLabels" . | nindent 4 }}
+    component: ai-operations
+    tier: anomaly-detection
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "maily.fullname" . }}-predictive-scaling
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+    component: ai-operations
+    tier: predictive-scaling
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "maily.selectorLabels" . | nindent 4 }}
+    component: ai-operations
+    tier: predictive-scaling
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "maily.fullname" . }}-resource-optimization
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+    component: ai-operations
+    tier: resource-optimization
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "maily.selectorLabels" . | nindent 4 }}
+    component: ai-operations
+    tier: resource-optimization
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "maily.fullname" . }}-failure-prediction
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+    component: ai-operations
+    tier: failure-prediction
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "maily.selectorLabels" . | nindent 4 }}
+    component: ai-operations
+    tier: failure-prediction
+---
+# Service Accounts with appropriate RBAC permissions
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "maily.fullname" . }}-predictive-scaling
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "maily.fullname" . }}-predictive-scaling
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "maily.fullname" . }}-predictive-scaling
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "maily.fullname" . }}-predictive-scaling
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "maily.fullname" . }}-predictive-scaling
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "maily.fullname" . }}-resource-optimization
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "maily.fullname" . }}-resource-optimization
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "maily.fullname" . }}-resource-optimization
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "maily.fullname" . }}-resource-optimization
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "maily.fullname" . }}-resource-optimization
+    namespace: {{ .Release.Namespace }}
+---
+# PVCs if Persistence is Enabled
+{{- if .Values.aiOperations.anomalyDetection.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "maily.fullname" . }}-anomaly-detection-models
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.aiOperations.anomalyDetection.persistence.storageClass | default .Values.global.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.aiOperations.anomalyDetection.persistence.size }}
+{{- end }}
+{{- if .Values.aiOperations.predictiveScaling.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "maily.fullname" . }}-predictive-scaling-models
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.aiOperations.predictiveScaling.persistence.storageClass | default .Values.global.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.aiOperations.predictiveScaling.persistence.size }}
+{{- end }}
+{{- if .Values.aiOperations.failurePrediction.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "maily.fullname" . }}-failure-prediction-models
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.aiOperations.failurePrediction.persistence.storageClass | default .Values.global.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.aiOperations.failurePrediction.persistence.size }}
+{{- end }}
+{{- end }}

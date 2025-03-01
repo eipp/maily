@@ -1,0 +1,484 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gatekeeper-system
+  labels:
+    control-plane: controller-manager
+    admission.gatekeeper.sh/ignore: "no"
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: configs.config.gatekeeper.sh
+spec:
+  group: config.gatekeeper.sh
+  names:
+    kind: Config
+    listKind: ConfigList
+    plural: configs
+    singular: config
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              sync:
+                type: object
+                properties:
+                  syncOnly:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        group:
+                          type: string
+                        version:
+                          type: string
+                        kind:
+                          type: string
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: constrainttemplates.templates.gatekeeper.sh
+spec:
+  group: templates.gatekeeper.sh
+  names:
+    kind: ConstraintTemplate
+    listKind: ConstraintTemplateList
+    plural: constrainttemplates
+    singular: constrainttemplate
+  scope: Cluster
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              crd:
+                type: object
+                properties:
+                  spec:
+                    type: object
+                    properties:
+                      names:
+                        type: object
+                        properties:
+                          kind:
+                            type: string
+                      validation:
+                        type: object
+                        properties:
+                          openAPIV3Schema:
+                            type: object
+              targets:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    target:
+                      type: string
+                    rego:
+                      type: string
+---
+# Security Policy Template
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8ssecuritypolicy
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sSecurityPolicy
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            exemptNamespaces:
+              type: array
+              items:
+                type: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package kubernetes.security
+
+        # Deny containers with privileged mode
+        violation[{"msg": msg}] {
+            input.review.kind.kind == "Pod"
+            input.review.object.spec.containers[i].securityContext.privileged == true
+            msg := sprintf("Container %s in Pod %s is running in privileged mode", [input.review.object.spec.containers[i].name, input.review.object.metadata.name])
+        }
+
+        # Deny containers that run as root
+        violation[{"msg": msg}] {
+            input.review.kind.kind == "Pod"
+            not input.review.object.spec.securityContext.runAsNonRoot == true
+            not input.review.object.spec.containers[i].securityContext.runAsNonRoot == true
+            msg := sprintf("Container %s in Pod %s is running as root", [input.review.object.spec.containers[i].name, input.review.object.metadata.name])
+        }
+
+        # Deny containers without resource limits
+        violation[{"msg": msg}] {
+            input.review.kind.kind == "Pod"
+            container := input.review.object.spec.containers[i]
+            not container.resources.limits
+            msg := sprintf("Container %s in Pod %s does not have resource limits", [container.name, input.review.object.metadata.name])
+        }
+
+        # Deny containers with hostPath volumes
+        violation[{"msg": msg}] {
+            input.review.kind.kind == "Pod"
+            volume := input.review.object.spec.volumes[i]
+            volume.hostPath
+            msg := sprintf("Pod %s uses a hostPath volume %s", [input.review.object.metadata.name, volume.name])
+        }
+
+        # Deny containers with hostNetwork
+        violation[{"msg": msg}] {
+            input.review.kind.kind == "Pod"
+            input.review.object.spec.hostNetwork == true
+            msg := sprintf("Pod %s uses host network", [input.review.object.metadata.name])
+        }
+
+        # Deny containers with hostPID
+        violation[{"msg": msg}] {
+            input.review.kind.kind == "Pod"
+            input.review.object.spec.hostPID == true
+            msg := sprintf("Pod %s uses host PID", [input.review.object.metadata.name])
+        }
+
+        # Deny containers with hostIPC
+        violation[{"msg": msg}] {
+            input.review.kind.kind == "Pod"
+            input.review.object.spec.hostIPC == true
+            msg := sprintf("Pod %s uses host IPC", [input.review.object.metadata.name])
+        }
+
+        # Deny containers with capabilities beyond default
+        violation[{"msg": msg}] {
+            input.review.kind.kind == "Pod"
+            container := input.review.object.spec.containers[i]
+            container.securityContext.capabilities.add
+            msg := sprintf("Container %s in Pod %s has additional capabilities: %v", [container.name, input.review.object.metadata.name, container.securityContext.capabilities.add])
+        }
+
+        # Deny containers with allowPrivilegeEscalation
+        violation[{"msg": msg}] {
+            input.review.kind.kind == "Pod"
+            container := input.review.object.spec.containers[i]
+            container.securityContext.allowPrivilegeEscalation == true
+            msg := sprintf("Container %s in Pod %s allows privilege escalation", [container.name, input.review.object.metadata.name])
+        }
+---
+# GDPR Policy Template
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8sgdprpolicy
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sGdprPolicy
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            exemptNamespaces:
+              type: array
+              items:
+                type: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package kubernetes.gdpr
+
+        # Deny deployments without data protection labels
+        violation[{"msg": msg}] {
+            input.review.kind.kind == "Deployment"
+            input.review.object.metadata.labels["contains-pii"] == "true"
+            not input.review.object.metadata.labels["data-protection"]
+            msg := sprintf("Deployment %s in namespace %s contains PII but does not have a data-protection label", [input.review.object.metadata.name, input.review.object.metadata.namespace])
+        }
+
+        # Deny services exposing PII without proper protection
+        violation[{"msg": msg}] {
+            input.review.kind.kind == "Service"
+            input.review.object.metadata.labels["contains-pii"] == "true"
+            not input.review.object.metadata.labels["encryption"] == "enabled"
+            msg := sprintf("Service %s in namespace %s contains PII but does not have encryption enabled", [input.review.object.metadata.name, input.review.object.metadata.namespace])
+        }
+
+        # Deny persistent volumes without encryption for PII data
+        violation[{"msg": msg}] {
+            input.review.kind.kind == "PersistentVolumeClaim"
+            input.review.object.metadata.labels["contains-pii"] == "true"
+            not input.review.object.metadata.labels["encryption"] == "enabled"
+            msg := sprintf("PersistentVolumeClaim %s in namespace %s contains PII but does not have encryption enabled", [input.review.object.metadata.name, input.review.object.metadata.namespace])
+        }
+
+        # Deny deployments without data subject rights handling
+        violation[{"msg": msg}] {
+            input.review.kind.kind == "Deployment"
+            input.review.object.metadata.labels["contains-pii"] == "true"
+            not input.review.object.metadata.labels["data-subject-rights"]
+            msg := sprintf("Deployment %s in namespace %s contains PII but does not handle data subject rights", [input.review.object.metadata.name, input.review.object.metadata.namespace])
+        }
+
+        # Deny deployments without data breach notification mechanism
+        violation[{"msg": msg}] {
+            input.review.kind.kind == "Deployment"
+            input.review.object.metadata.labels["contains-pii"] == "true"
+            not input.review.object.metadata.labels["breach-notification"]
+            msg := sprintf("Deployment %s in namespace %s contains PII but does not have a breach notification mechanism", [input.review.object.metadata.name, input.review.object.metadata.namespace])
+        }
+---
+# CAN-SPAM Policy Template
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8scanspampolicy
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sCanSpamPolicy
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            exemptNamespaces:
+              type: array
+              items:
+                type: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package kubernetes.canspam
+
+        # Deny email services without required CAN-SPAM compliance labels
+        violation[{"msg": msg}] {
+            input.review.kind.kind == "Deployment"
+            input.review.object.metadata.labels["service-type"] == "email"
+            not input.review.object.metadata.labels["can-spam-compliant"] == "true"
+            msg := sprintf("Email service deployment %s in namespace %s is not marked as CAN-SPAM compliant", [input.review.object.metadata.name, input.review.object.metadata.namespace])
+        }
+
+        # Deny email services without unsubscribe mechanism
+        violation[{"msg": msg}] {
+            input.review.kind.kind == "Deployment"
+            input.review.object.metadata.labels["service-type"] == "email"
+            not input.review.object.metadata.labels["unsubscribe-mechanism"] == "implemented"
+            msg := sprintf("Email service deployment %s in namespace %s does not implement an unsubscribe mechanism", [input.review.object.metadata.name, input.review.object.metadata.namespace])
+        }
+
+        # Deny email services without physical address inclusion
+        violation[{"msg": msg}] {
+            input.review.kind.kind == "Deployment"
+            input.review.object.metadata.labels["service-type"] == "email"
+            not input.review.object.metadata.labels["physical-address-inclusion"] == "implemented"
+            msg := sprintf("Email service deployment %s in namespace %s does not implement physical address inclusion", [input.review.object.metadata.name, input.review.object.metadata.namespace])
+        }
+
+        # Deny email services without opt-out honor mechanism
+        violation[{"msg": msg}] {
+            input.review.kind.kind == "Deployment"
+            input.review.object.metadata.labels["service-type"] == "email"
+            not input.review.object.metadata.labels["opt-out-honor"] == "implemented"
+            msg := sprintf("Email service deployment %s in namespace %s does not implement opt-out honor mechanism", [input.review.object.metadata.name, input.review.object.metadata.namespace])
+        }
+---
+# Apply Security Policy
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sSecurityPolicy
+metadata:
+  name: security-policy
+spec:
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod"]
+    excludedNamespaces: ["kube-system", "gatekeeper-system"]
+---
+# Apply GDPR Policy
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sGdprPolicy
+metadata:
+  name: gdpr-policy
+spec:
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod", "Service", "PersistentVolumeClaim"]
+      - apiGroups: ["apps"]
+        kinds: ["Deployment"]
+    excludedNamespaces: ["kube-system", "gatekeeper-system"]
+---
+# Apply CAN-SPAM Policy
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sCanSpamPolicy
+metadata:
+  name: can-spam-policy
+spec:
+  match:
+    kinds:
+      - apiGroups: ["apps"]
+        kinds: ["Deployment"]
+    excludedNamespaces: ["kube-system", "gatekeeper-system"]
+---
+# Gatekeeper Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gatekeeper-controller-manager
+  namespace: gatekeeper-system
+  labels:
+    control-plane: controller-manager
+    gatekeeper.sh/system: "yes"
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      control-plane: controller-manager
+      gatekeeper.sh/system: "yes"
+  template:
+    metadata:
+      labels:
+        control-plane: controller-manager
+        gatekeeper.sh/system: "yes"
+    spec:
+      containers:
+      - name: manager
+        image: openpolicyagent/gatekeeper:v3.11.0
+        args:
+        - --port=8443
+        - --logtostderr
+        - --exempt-namespace=gatekeeper-system
+        - --operation=webhook
+        ports:
+        - containerPort: 8443
+          name: webhook-server
+          protocol: TCP
+        - containerPort: 8888
+          name: metrics
+          protocol: TCP
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+      serviceAccountName: gatekeeper-admin
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gatekeeper-admin
+  namespace: gatekeeper-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gatekeeper-manager-role
+rules:
+- apiGroups: ["*"]
+  resources: ["*"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["constraints.gatekeeper.sh"]
+  resources: ["*"]
+  verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+- apiGroups: ["templates.gatekeeper.sh"]
+  resources: ["constrainttemplates"]
+  verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+- apiGroups: ["config.gatekeeper.sh"]
+  resources: ["configs"]
+  verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+- apiGroups: ["admissionregistration.k8s.io"]
+  resources: ["validatingwebhookconfigurations"]
+  verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: gatekeeper-manager-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: gatekeeper-manager-role
+subjects:
+- kind: ServiceAccount
+  name: gatekeeper-admin
+  namespace: gatekeeper-system
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gatekeeper-webhook-service
+  namespace: gatekeeper-system
+spec:
+  ports:
+  - port: 443
+    targetPort: 8443
+  selector:
+    control-plane: controller-manager
+    gatekeeper.sh/system: "yes"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: gatekeeper-validating-webhook-configuration
+webhooks:
+- name: validation.gatekeeper.sh
+  clientConfig:
+    service:
+      name: gatekeeper-webhook-service
+      namespace: gatekeeper-system
+      path: /v1/admit
+  rules:
+  - apiGroups: ["*"]
+    apiVersions: ["*"]
+    operations: ["CREATE", "UPDATE"]
+    resources: ["*"]
+    scope: "*"
+  failurePolicy: Ignore
+  sideEffects: None
+  admissionReviewVersions: ["v1", "v1beta1"]
+  timeoutSeconds: 3
+- name: check.gatekeeper.sh
+  clientConfig:
+    service:
+      name: gatekeeper-webhook-service
+      namespace: gatekeeper-system
+      path: /v1/admitlabel
+  rules:
+  - apiGroups: ["*"]
+    apiVersions: ["*"]
+    operations: ["CREATE", "UPDATE"]
+    resources: ["*"]
+    scope: "*"
+  failurePolicy: Ignore
+  sideEffects: None
+  admissionReviewVersions: ["v1", "v1beta1"]
+  timeoutSeconds: 3

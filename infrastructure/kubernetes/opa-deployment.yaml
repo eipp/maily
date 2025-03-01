@@ -1,0 +1,273 @@
+odes and stuff like that which is not my code apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opa-default-policies
+  namespace: default
+  labels:
+    app.kubernetes.io/name: opa-default-policies
+    app.kubernetes.io/part-of: maily
+data:
+  maily-authz.rego: |
+    package maily.authz
+
+    # Default deny
+    default allow = false
+
+    # Allow access if the user has the required role
+    allow {
+        # Check if the user has the admin role
+        has_role(input.user, "admin")
+    }
+
+    # Allow access if the user is the owner of the resource
+    allow {
+        # Check if the resource has an owner field
+        input.context.resource_owner
+
+        # Check if the user is the owner
+        input.context.resource_owner == input.user.sub
+    }
+
+    # Allow access based on specific resource and action combinations
+    allow {
+        # Public resources that anyone can read
+        input.action == "read"
+        input.resource == "public_content"
+    }
+
+    # Allow users to read their own data
+    allow {
+        input.action == "read"
+        input.resource == "user_data"
+        input.resource_id == input.user.sub
+    }
+
+    # Allow users to update their own data
+    allow {
+        input.action == "update"
+        input.resource == "user_data"
+        input.resource_id == input.user.sub
+    }
+
+    # Allow users with the "editor" role to create and update content
+    allow {
+        has_role(input.user, "editor")
+        input.action in ["create", "update"]
+        input.resource in ["content", "campaign", "template"]
+    }
+
+    # Allow users with the "viewer" role to read content
+    allow {
+        has_role(input.user, "viewer")
+        input.action == "read"
+        input.resource in ["content", "campaign", "template", "analytics"]
+    }
+
+    # Allow users with the "analyst" role to read analytics
+    allow {
+        has_role(input.user, "analyst")
+        input.action == "read"
+        input.resource == "analytics"
+    }
+
+    # Helper function to check if a user has a specific role
+    has_role(user, role) {
+        # Check in the roles claim
+        user.roles[_] == role
+    }
+
+    has_role(user, role) {
+        # Check in the permissions claim
+        user.permissions[_] == role
+    }
+
+    has_role(user, role) {
+        # Check in the Auth0 custom namespace
+        user["https://maily.com/roles"][_] == role
+    }
+
+    # Endpoint for getting allowed resources
+    allowed_resources[resource_id] {
+        # Get all resources of the specified type
+        resource_id := data.resources[input.resource][_].id
+
+        # Check if the user has permission to access the resource
+        allow with input as {
+            "user": input.user,
+            "action": input.action,
+            "resource": input.resource,
+            "resource_id": resource_id,
+            "context": input.context
+        }
+    }
+
+    # Endpoint for bulk permission checking
+    decisions[key] = decision {
+        # For each permission in the input
+        permission := input.permissions[_]
+
+        # Create a key for the permission
+        key := concat(":", [permission.action, permission.resource, permission.resource_id])
+
+        # Check if the user has permission
+        decision := allow with input as {
+            "user": input.user,
+            "action": permission.action,
+            "resource": permission.resource,
+            "resource_id": permission.resource_id,
+            "context": input.context
+        }
+    }
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opa
+  namespace: default
+  labels:
+    app: opa
+    app.kubernetes.io/name: opa
+    app.kubernetes.io/part-of: maily
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: opa
+  template:
+    metadata:
+      labels:
+        app: opa
+    spec:
+      containers:
+        - name: opa
+          image: openpolicyagent/opa:0.57.0
+          args:
+            - "run"
+            - "--server"
+            - "--addr=:8181"
+            - "--log-level=info"
+            - "--log-format=json"
+            - "--set=decision_logs.console=true"
+            - "/policies/maily-authz.rego"
+          ports:
+            - containerPort: 8181
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8181
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8181
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          volumeMounts:
+            - name: opa-policies
+              mountPath: /policies
+      volumes:
+        - name: opa-policies
+          configMap:
+            name: opa-default-policies
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opa
+  namespace: default
+  labels:
+    app: opa
+    app.kubernetes.io/name: opa
+    app.kubernetes.io/part-of: maily
+spec:
+  selector:
+    app: opa
+  ports:
+    - port: 8181
+      targetPort: 8181
+      name: http
+  type: ClusterIP
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: opa-network-policy
+  namespace: default
+  labels:
+    app.kubernetes.io/name: opa-network-policy
+    app.kubernetes.io/part-of: maily
+spec:
+  podSelector:
+    matchLabels:
+      app: opa
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: maily
+      ports:
+        - protocol: TCP
+          port: 8181
+  egress:
+    - {}
+  policyTypes:
+    - Ingress
+    - Egress
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: opa-hpa
+  namespace: default
+  labels:
+    app.kubernetes.io/name: opa-hpa
+    app.kubernetes.io/part-of: maily
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: opa
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 4
+          periodSeconds: 15
+      selectPolicy: Max

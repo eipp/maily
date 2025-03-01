@@ -1,0 +1,92 @@
+{
+  "caching": {
+    "enabled": true,
+    "strategies": {
+      "npm": {
+        "enabled": true,
+        "paths": [
+          "**/node_modules",
+          "~/.npm",
+          ".next/cache"
+        ],
+        "key": "${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}",
+        "restore-keys": [
+          "${{ runner.os }}-npm-"
+        ]
+      },
+      "next": {
+        "enabled": true,
+        "paths": [
+          ".next/cache",
+          ".turbo"
+        ],
+        "key": "${{ runner.os }}-nextjs-${{ hashFiles('apps/web/pages/**', 'apps/web/components/**', 'apps/web/styles/**', 'packages/**') }}",
+        "restore-keys": [
+          "${{ runner.os }}-nextjs-"
+        ]
+      },
+      "playwright": {
+        "enabled": true,
+        "paths": [
+          "~/.cache/ms-playwright"
+        ],
+        "key": "${{ runner.os }}-playwright-${{ hashFiles('**/package-lock.json') }}"
+      },
+      "turbo": {
+        "enabled": true,
+        "paths": [
+          ".turbo",
+          "node_modules/.cache/turbo"
+        ],
+        "key": "${{ runner.os }}-turbo-${{ github.sha }}"
+      }
+    },
+    "compression": {
+      "enabled": true,
+      "algorithm": "gzip"
+    },
+    "retention": {
+      "days": 7
+    }
+  },
+
+  "build": {
+    "optimization": {
+      "parallel": true,
+      "chunks": true,
+      "minify": true,
+      "sourcemaps": {
+        "development": true,
+        "production": false
+      }
+    },
+    "dependencies": {
+      "prune": true,
+      "dedupe": true
+    }
+  },
+
+  "artifact": {
+    "compression": true,
+    "retention": 14,
+    "metadata": [
+      "buildId",
+      "commitSha",
+      "timestamp",
+      "branch"
+    ]
+  },
+
+  "monitoring": {
+    "metrics": [
+      "build_duration",
+      "test_duration",
+      "cache_hit_ratio",
+      "artifact_size"
+    ],
+    "notifications": {
+      "slack": true,
+      "email": false
+    }
+  }
+}

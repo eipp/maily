@@ -1,0 +1,18 @@
+# Logstash configuration for Maily application
+http.host: "0.0.0.0"
+monitoring.elasticsearch.hosts: ["http://elasticsearch:9200"]
+
+# Centralized pipeline management disabled - using local pipeline configuration
+xpack.monitoring.enabled: true
+config.reload.automatic: true
+config.reload.interval: 10s
+
+# Queue settings for better performance
+queue.type: persisted
+queue.max_bytes: 1gb
+
+# JVM heap size is set via environment variables (LS_JAVA_OPTS) in docker-compose
+
+# Logging settings
+log.level: info
+path.logs: /var/log/logstash

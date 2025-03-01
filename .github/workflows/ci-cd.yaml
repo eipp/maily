@@ -1,0 +1,182 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  DOCKER_REGISTRY: ghcr.io
+  BACKEND_IMAGE: ghcr.io/${{ github.repository }}/maily-backend
+  FRONTEND_IMAGE: ghcr.io/${{ github.repository }}/maily-frontend
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: maily_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Install backend dependencies
+      run: |
+        cd backend
+        pip install -r requirements.txt
+        pip install pytest pytest-cov
+
+    - name: Run backend tests
+      run: |
+        cd backend
+        pytest --cov=. --cov-report=xml
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: app/package-lock.json
+
+    - name: Install frontend dependencies
+      run: |
+        cd app
+        npm ci
+
+    - name: Run frontend tests
+      run: |
+        cd app
+        npm test -- --coverage
+
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      with:
+        files: ./backend/coverage.xml,./app/coverage/coverage-final.json
+
+  build:
+    name: Build and Push
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v2
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v4
+      with:
+        images: |
+          ${{ env.BACKEND_IMAGE }}
+          ${{ env.FRONTEND_IMAGE }}
+        tags: |
+          type=sha,format=short
+          type=ref,event=branch
+          latest
+
+    - name: Build and push backend image
+      uses: docker/build-push-action@v4
+      with:
+        context: ./backend
+        push: true
+        tags: ${{ env.BACKEND_IMAGE }}:${{ steps.meta.outputs.version }}, ${{ env.BACKEND_IMAGE }}:latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Build and push frontend image
+      uses: docker/build-push-action@v4
+      with:
+        context: ./app
+        push: true
+        tags: ${{ env.FRONTEND_IMAGE }}:${{ steps.meta.outputs.version }}, ${{ env.FRONTEND_IMAGE }}:latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to Kubernetes
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'latest'
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-west-2
+
+    - name: Update kubeconfig
+      run: aws eks update-kubeconfig --name maily-cluster --region us-west-2
+
+    - name: Set image tag
+      run: |
+        echo "IMAGE_TAG=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_ENV
+
+    - name: Deploy to Kubernetes
+      run: |
+        # Replace placeholders in Kubernetes manifests
+        find k8s -type f -name "*.yaml" -exec sed -i "s|\${DOCKER_REGISTRY}|${{ env.DOCKER_REGISTRY }}|g" {} \;
+        find k8s -type f -name "*.yaml" -exec sed -i "s|\${IMAGE_TAG}|${{ env.IMAGE_TAG }}|g" {} \;
+
+        # Apply Kubernetes manifests
+        kubectl apply -f k8s/secrets.yaml
+        kubectl apply -f k8s/database-deployment.yaml
+        kubectl apply -f k8s/redis-deployment.yaml
+        kubectl apply -f k8s/backend-deployment.yaml
+        kubectl apply -f k8s/frontend-deployment.yaml
+        kubectl apply -f k8s/ingress.yaml
+
+        # Wait for deployments to be ready
+        kubectl rollout status deployment/maily-backend
+        kubectl rollout status deployment/maily-frontend
+
+    - name: Verify deployment
+      run: |
+        kubectl get pods -l app=maily
+        echo "Deployment completed successfully!"

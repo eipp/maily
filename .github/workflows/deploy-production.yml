@@ -1,0 +1,425 @@
+name: Deploy Maily Production
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+  workflow_dispatch:
+    inputs:
+      deploy_frontend:
+        description: 'Deploy Frontend'
+        type: boolean
+        default: true
+      deploy_api:
+        description: 'Deploy API Functions'
+        type: boolean
+        default: true
+      deploy_kubernetes:
+        description: 'Deploy Kubernetes Components'
+        type: boolean
+        default: true
+      deploy_database:
+        description: 'Run Database Migrations'
+        type: boolean
+        default: true
+
+env:
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+  SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+  REGISTRY: ghcr.io
+  REGISTRY_USERNAME: ${{ github.actor }}
+  REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare Deployment
+    runs-on: ubuntu-latest
+    environment: production
+    outputs:
+      deploy_id: ${{ steps.set-deploy-id.outputs.deploy_id }}
+    steps:
+      - name: Generate Deployment ID
+        id: set-deploy-id
+        run: echo "deploy_id=production-$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Validate Environment Variables
+        run: |
+          chmod +x ./scripts/validate-env-vars.sh
+          ./scripts/validate-env-vars.sh production
+        env:
+          # Add all required environment variables from your secrets
+          DATABASE_HOST: ${{ secrets.DATABASE_HOST }}
+          DATABASE_USER: ${{ secrets.DATABASE_USER }}
+          DATABASE_PASSWORD: ${{ secrets.DATABASE_PASSWORD }}
+          DATABASE_NAME: ${{ secrets.DATABASE_NAME }}
+          REDIS_HOST: ${{ secrets.REDIS_HOST }}
+          REDIS_PORT: ${{ secrets.REDIS_PORT }}
+          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GOOGLE_AI_API_KEY: ${{ secrets.GOOGLE_AI_API_KEY }}
+          # Add other required variables
+
+      - name: Notify Deployment Start
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "🚀 Production deployment started: ${{ steps.set-deploy-id.outputs.deploy_id }}",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "🚀 Production Deployment Started"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Deployment ID:*\n${{ steps.set-deploy-id.outputs.deploy_id }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Triggered by:*\n${{ github.actor }}"
+                    }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+  infrastructure:
+    name: Deploy Infrastructure
+    needs: prepare
+    runs-on: ubuntu-latest
+    environment: production
+    if: inputs.deploy_kubernetes != false
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.7
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Terraform Init
+        run: |
+          cd infrastructure/terraform
+          terraform init \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -backend-config="key=state/terraform.tfstate" \
+            -backend-config="region=${{ secrets.AWS_REGION }}"
+
+      - name: Terraform Plan
+        run: |
+          cd infrastructure/terraform
+          terraform plan -var-file=environments/production.tfvars -out=production.tfplan
+
+      - name: Terraform Apply
+        run: |
+          cd infrastructure/terraform
+          terraform apply production.tfplan
+
+  database:
+    name: Database Migrations
+    needs: [prepare, infrastructure]
+    runs-on: ubuntu-latest
+    environment: production
+    if: ${{ inputs.deploy_database != false }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install Supabase CLI
+        run: npm install -g supabase
+
+      - name: Create Backup
+        run: |
+          echo "Creating database backup..."
+          BACKUP_FILE="db_backup_production_$(date +%Y%m%d_%H%M%S).sql"
+          pg_dump -d "$SUPABASE_DB_URL" -f $BACKUP_FILE
+
+          # Upload backup to S3
+          aws s3 cp $BACKUP_FILE s3://${{ secrets.BACKUP_BUCKET }}/databases/$BACKUP_FILE
+        env:
+          PGPASSWORD: ${{ secrets.DATABASE_PASSWORD }}
+
+      - name: Run Migrations
+        run: |
+          echo "Running database migrations..."
+          supabase db push --db-url "$SUPABASE_DB_URL"
+
+      - name: Verify Migrations
+        run: |
+          echo "Verifying migrations..."
+          supabase migration list --db-url "$SUPABASE_DB_URL"
+
+  kubernetes:
+    name: Deploy Kubernetes Components
+    needs: [prepare, infrastructure, database]
+    runs-on: ubuntu-latest
+    environment: production
+    if: ${{ inputs.deploy_kubernetes != false }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ env.REGISTRY_USERNAME }}
+          password: ${{ env.REGISTRY_PASSWORD }}
+
+      - name: Set up Kubernetes CLI
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Configure Kubernetes Credentials
+        run: |
+          aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }} --region ${{ secrets.AWS_REGION }}
+
+      - name: Build and Push Blockchain Service
+        uses: docker/build-push-action@v4
+        with:
+          context: ./docker/blockchain-service
+          push: true
+          tags: ${{ env.REGISTRY }}/maily/blockchain-service:${{ github.sha }}, ${{ env.REGISTRY }}/maily/blockchain-service:latest
+
+      - name: Build and Push Stateful Services
+        uses: docker/build-push-action@v4
+        with:
+          context: ./docker
+          file: ./docker/stateful-services.dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/maily/stateful-services:${{ github.sha }}, ${{ env.REGISTRY }}/maily/stateful-services:latest
+
+      - name: Update Kubernetes Manifests
+        run: |
+          # Update image tags in manifests
+          find kubernetes/deployments -type f -name "*.yaml" -exec sed -i "s|image: ${REGISTRY}/maily/.*|image: ${REGISTRY}/maily/blockchain-service:${GITHUB_SHA}|g" {} \;
+
+      - name: Apply Kubernetes Manifests
+        run: |
+          # Apply namespaces and ConfigMaps
+          kubectl apply -f kubernetes/namespaces/production.yaml
+
+          # Apply secrets from GitHub Secrets
+          kubectl create secret generic maily-secrets \
+            --namespace maily-production \
+            --from-literal=postgres-password=${{ secrets.DATABASE_PASSWORD }} \
+            --from-literal=redis-password=${{ secrets.REDIS_PASSWORD }} \
+            --from-literal=openai-api-key=${{ secrets.OPENAI_API_KEY }} \
+            --from-literal=anthropic-api-key=${{ secrets.ANTHROPIC_API_KEY }} \
+            --from-literal=google-api-key=${{ secrets.GOOGLE_AI_API_KEY }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          # Apply deployments and services
+          kubectl apply -f kubernetes/deployments/ -n maily-production
+          kubectl apply -f kubernetes/services/ -n maily-production
+
+      - name: Verify Deployments
+        run: |
+          # Wait for deployments to be ready
+          kubectl wait --for=condition=available deployment --all -n maily-production --timeout=300s
+
+      - name: Deploy AI Services
+        run: |
+          chmod +x ./scripts/deploy-ai-services.sh
+          ./scripts/deploy-ai-services.sh production
+        env:
+          # Add all required environment variables
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GOOGLE_AI_API_KEY: ${{ secrets.GOOGLE_AI_API_KEY }}
+
+  frontend:
+    name: Deploy Frontend to Vercel
+    needs: [prepare, infrastructure, database]
+    runs-on: ubuntu-latest
+    environment: production
+    if: ${{ inputs.deploy_frontend != false }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel
+
+      - name: Pull Vercel Environment Variables
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build Project Artifacts
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy to Vercel
+        id: vercel-deploy
+        run: |
+          DEPLOYMENT_URL=$(vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }})
+          echo "::set-output name=url::$DEPLOYMENT_URL"
+
+      - name: Verify Deployment
+        run: |
+          echo "Verifying frontend deployment..."
+          curl -sSf ${{ steps.vercel-deploy.outputs.url }} > /dev/null
+
+  api_functions:
+    name: Deploy API Functions to Vercel
+    needs: [prepare, infrastructure, database]
+    runs-on: ubuntu-latest
+    environment: production
+    if: ${{ inputs.deploy_api != false }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel
+
+      - name: Pull Vercel Environment Variables
+        run: |
+          cd apps/api
+          vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build Project Artifacts
+        run: |
+          cd apps/api
+          vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy to Vercel
+        id: vercel-deploy-api
+        run: |
+          cd apps/api
+          DEPLOYMENT_URL=$(vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }})
+          echo "::set-output name=url::$DEPLOYMENT_URL"
+
+      - name: Verify API Deployment
+        run: |
+          echo "Verifying API deployment..."
+          curl -sSf ${{ steps.vercel-deploy-api.outputs.url }}/health > /dev/null
+
+  smoke_tests:
+    name: Run Smoke Tests
+    needs: [kubernetes, frontend, api_functions]
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Smoke Tests
+        run: |
+          chmod +x ./scripts/smoke-test.js
+          node ./scripts/smoke-test.js production
+        env:
+          API_URL: ${{ needs.api_functions.outputs.url || secrets.API_URL }}
+          FRONTEND_URL: ${{ needs.frontend.outputs.url || secrets.FRONTEND_URL }}
+          TEST_API_KEY: ${{ secrets.TEST_API_KEY }}
+          ETHEREUM_RPC_URL: ${{ secrets.ETHEREUM_RPC_URL }}
+          POLYGON_RPC_URL: ${{ secrets.POLYGON_RPC_URL }}
+          VERIFICATION_CONTRACT_ADDRESS: ${{ secrets.VERIFICATION_CONTRACT_ADDRESS }}
+
+      - name: Upload Test Results
+        uses: actions/upload-artifact@v3
+        with:
+          name: smoke-test-results
+          path: smoke-test-results-*.json
+
+  notify:
+    name: Send Deployment Notification
+    needs: [prepare, smoke_tests]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Set Deployment Status
+        id: deployment-status
+        run: |
+          if [ "${{ needs.smoke_tests.result }}" == "success" ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "icon=✅" >> $GITHUB_OUTPUT
+            echo "message=Deployment completed successfully" >> $GITHUB_OUTPUT
+          else
+            echo "status=failure" >> $GITHUB_OUTPUT
+            echo "icon=❌" >> $GITHUB_OUTPUT
+            echo "message=Deployment failed" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Send Slack Notification
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "${{ steps.deployment-status.outputs.icon }} Production deployment ${{ steps.deployment-status.outputs.status }}: ${{ needs.prepare.outputs.deploy_id }}",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "${{ steps.deployment-status.outputs.icon }} Production Deployment ${{ steps.deployment-status.outputs.status }}"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Deployment ID:*\n${{ needs.prepare.outputs.deploy_id }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Message:*\n${{ steps.deployment-status.outputs.message }}"
+                    }
+                  ]
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Deployment Details>*"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK

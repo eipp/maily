@@ -1,0 +1,439 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-config
+  namespace: default
+data:
+  postgresql.conf: |
+    listen_addresses = '*'
+    max_connections = 500
+    shared_buffers = 2GB
+    effective_cache_size = 6GB
+    maintenance_work_mem = 512MB
+    checkpoint_completion_target = 0.9
+    wal_buffers = 16MB
+    default_statistics_target = 100
+    random_page_cost = 1.1
+    effective_io_concurrency = 200
+    work_mem = 4MB
+    min_wal_size = 1GB
+    max_wal_size = 4GB
+    max_worker_processes = 8
+    max_parallel_workers_per_gather = 4
+    max_parallel_workers = 8
+    max_parallel_maintenance_workers = 4
+    wal_level = logical
+    max_wal_senders = 10
+    max_replication_slots = 10
+    hot_standby = on
+    hot_standby_feedback = on
+    synchronous_commit = off
+    log_min_duration_statement = 1000
+    log_checkpoints = on
+    log_connections = on
+    log_disconnections = on
+    log_lock_waits = on
+    log_temp_files = 0
+    log_autovacuum_min_duration = 0
+    log_error_verbosity = default
+    log_line_prefix = '%m [%p] %q%u@%d '
+    log_statement = 'ddl'
+    autovacuum = on
+    track_io_timing = on
+    track_functions = all
+    track_activity_query_size = 2048
+
+  primary.sh: |
+    #!/bin/bash
+    set -e
+
+    echo "Setting up primary PostgreSQL server"
+
+    # Create replication user
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
+      CREATE USER replicator WITH REPLICATION ENCRYPTED PASSWORD '$REPLICATION_PASSWORD';
+
+      -- Create application user and database
+      CREATE USER maily_user WITH ENCRYPTED PASSWORD '$MAILY_PASSWORD';
+      CREATE DATABASE maily OWNER maily_user;
+
+      -- Grant privileges
+      \c maily
+      GRANT ALL PRIVILEGES ON DATABASE maily TO maily_user;
+      GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO maily_user;
+      GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO maily_user;
+      GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO maily_user;
+
+      -- Create read-only user for replicas
+      CREATE USER maily_readonly WITH ENCRYPTED PASSWORD '$MAILY_READONLY_PASSWORD';
+      GRANT CONNECT ON DATABASE maily TO maily_readonly;
+      GRANT USAGE ON SCHEMA public TO maily_readonly;
+      GRANT SELECT ON ALL TABLES IN SCHEMA public TO maily_readonly;
+      GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO maily_readonly;
+      ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO maily_readonly;
+      ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON SEQUENCES TO maily_readonly;
+    EOSQL
+
+    # Configure pg_hba.conf for replication
+    cat >> "$PGDATA/pg_hba.conf" <<EOF
+    # Allow replication connections
+    host replication replicator all md5
+    host all maily_readonly all md5
+    EOF
+
+  replica.sh: |
+    #!/bin/bash
+    set -e
+
+    echo "Setting up replica PostgreSQL server"
+
+    # Stop PostgreSQL service if running
+    pg_ctl -D "$PGDATA" -m fast -w stop || true
+
+    # Clear data directory
+    rm -rf "$PGDATA"/*
+
+    # Use pg_basebackup to clone the primary
+    pg_basebackup -h postgres-primary -p 5432 -U replicator -D "$PGDATA" -Fp -Xs -P -R
+
+    # Create recovery.conf file (for PostgreSQL < 12)
+    if [ $(pg_config --version | cut -d " " -f 2 | cut -d "." -f 1) -lt 12 ]; then
+      cat > "$PGDATA/recovery.conf" <<EOF
+    standby_mode = 'on'
+    primary_conninfo = 'host=postgres-primary port=5432 user=replicator password=$REPLICATION_PASSWORD'
+    trigger_file = '/tmp/promote_to_primary'
+    EOF
+    else
+      # For PostgreSQL 12+
+      touch "$PGDATA/standby.signal"
+      cat >> "$PGDATA/postgresql.conf" <<EOF
+    primary_conninfo = 'host=postgres-primary port=5432 user=replicator password=$REPLICATION_PASSWORD'
+    promote_trigger_file = '/tmp/promote_to_primary'
+    EOF
+    fi
+
+    # Set proper permissions
+    chmod 0700 "$PGDATA"
+
+    # Start PostgreSQL in replica mode
+    pg_ctl -D "$PGDATA" -o "-c listen_addresses='*'" -w start
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-secrets
+  namespace: default
+type: Opaque
+data:
+  postgres-password: cG9zdGdyZXNwYXNzd29yZA==  # postgrespassword
+  replication-password: cmVwbGljYXRpb25wYXNzd29yZA==  # replicationpassword
+  maily-password: bWFpbHlwYXNzd29yZA==  # mailypassword
+  maily-readonly-password: bWFpbHlyZWFkb25seXBhc3N3b3Jk  # mailyreadonlypassword
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-primary
+  namespace: default
+  labels:
+    app: postgres
+    role: primary
+spec:
+  selector:
+    app: postgres
+    role: primary
+  ports:
+  - port: 5432
+    targetPort: 5432
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-replica
+  namespace: default
+  labels:
+    app: postgres
+    role: replica
+spec:
+  selector:
+    app: postgres
+    role: replica
+  ports:
+  - port: 5432
+    targetPort: 5432
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-read
+  namespace: default
+  labels:
+    app: postgres
+    role: read
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb
+    service.beta.kubernetes.io/aws-load-balancer-internal: "true"
+spec:
+  selector:
+    app: postgres
+    role: replica
+  ports:
+  - port: 5432
+    targetPort: 5432
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-primary
+  namespace: default
+spec:
+  serviceName: postgres-primary
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+      role: primary
+  template:
+    metadata:
+      labels:
+        app: postgres
+        role: primary
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+      - name: postgres
+        image: postgres:15.3
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 5432
+          name: postgres
+        env:
+        - name: POSTGRES_USER
+          value: postgres
+        - name: POSTGRES_DB
+          value: postgres
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secrets
+              key: postgres-password
+        - name: REPLICATION_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secrets
+              key: replication-password
+        - name: MAILY_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secrets
+              key: maily-password
+        - name: MAILY_READONLY_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secrets
+              key: maily-readonly-password
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        volumeMounts:
+        - name: postgres-data
+          mountPath: /var/lib/postgresql/data
+        - name: postgres-config
+          mountPath: /docker-entrypoint-initdb.d/primary.sh
+          subPath: primary.sh
+        - name: postgres-config
+          mountPath: /etc/postgresql/postgresql.conf
+          subPath: postgresql.conf
+        args:
+        - -c
+        - config_file=/etc/postgresql/postgresql.conf
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 2Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+        livenessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - postgres
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - postgres
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 3
+      volumes:
+      - name: postgres-config
+        configMap:
+          name: postgres-config
+          defaultMode: 0755
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: gp2
+      resources:
+        requests:
+          storage: 100Gi
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-replica
+  namespace: default
+spec:
+  serviceName: postgres-replica
+  replicas: 3
+  selector:
+    matchLabels:
+      app: postgres
+      role: replica
+  template:
+    metadata:
+      labels:
+        app: postgres
+        role: replica
+    spec:
+      terminationGracePeriodSeconds: 60
+      initContainers:
+      - name: wait-for-primary
+        image: busybox:1.34
+        command: ['sh', '-c', 'until nslookup postgres-primary.default.svc.cluster.local; do echo waiting for postgres-primary; sleep 2; done;']
+      containers:
+      - name: postgres
+        image: postgres:15.3
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 5432
+          name: postgres
+        env:
+        - name: POSTGRES_USER
+          value: postgres
+        - name: POSTGRES_DB
+          value: postgres
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secrets
+              key: postgres-password
+        - name: REPLICATION_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secrets
+              key: replication-password
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        volumeMounts:
+        - name: postgres-data
+          mountPath: /var/lib/postgresql/data
+        - name: postgres-config
+          mountPath: /docker-entrypoint-initdb.d/replica.sh
+          subPath: replica.sh
+        - name: postgres-config
+          mountPath: /etc/postgresql/postgresql.conf
+          subPath: postgresql.conf
+        args:
+        - -c
+        - config_file=/etc/postgresql/postgresql.conf
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 1000m
+            memory: 2Gi
+        livenessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - postgres
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - postgres
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 3
+      volumes:
+      - name: postgres-config
+        configMap:
+          name: postgres-config
+          defaultMode: 0755
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: gp2
+      resources:
+        requests:
+          storage: 100Gi
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: postgres-primary-pdb
+  namespace: default
+spec:
+  maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: postgres
+      role: primary
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: postgres-replica-pdb
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: postgres
+      role: replica
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: postgres-monitor
+  namespace: monitoring
+spec:
+  selector:
+    matchLabels:
+      app: postgres
+  endpoints:
+  - port: postgres
+    interval: 30s
+    scrapeTimeout: 10s
+    metricRelabelings:
+    - sourceLabels: [__name__]
+      regex: 'pg_.*'
+      action: keep

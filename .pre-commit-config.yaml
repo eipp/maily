@@ -1,0 +1,87 @@
+repos:
+  # Python code formatting
+  - repo: https://github.com/psf/black
+    rev: 24.1.1
+    hooks:
+      - id: black
+        language_version: python3
+        types: [python]
+        files: ^backend/
+
+  # Python import sorting
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        args: ["--profile", "black"]
+        files: ^backend/
+
+  # Python linting
+  - repo: https://github.com/pycqa/flake8
+    rev: 7.0.0
+    hooks:
+      - id: flake8
+        additional_dependencies: [flake8-docstrings]
+        files: ^backend/
+
+  # Python type checking
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.8.0
+    hooks:
+      - id: mypy
+        files: ^backend/
+        additional_dependencies:
+          - types-redis
+          - types-requests
+          - types-PyYAML
+          - types-python-dateutil
+          - types-setuptools
+
+  # Frontend formatting and linting
+  - repo: local
+    hooks:
+      - id: eslint
+        name: eslint
+        entry: bash -c 'cd app && npm run lint'
+        language: system
+        files: \.(js|jsx|ts|tsx)$
+        pass_filenames: false
+
+      - id: prettier
+        name: prettier
+        entry: bash -c 'cd app && npm run format'
+        language: system
+        files: \.(js|jsx|ts|tsx|css|scss|json|md)$
+        pass_filenames: false
+
+      - id: typescript-check
+        name: typescript-check
+        entry: bash -c 'cd app && npm run type-check'
+        language: system
+        files: \.(ts|tsx)$
+        pass_filenames: false
+
+      - id: test-frontend
+        name: test-frontend
+        entry: bash -c 'cd app && npm run test:ci'
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: test-backend
+        name: test-backend
+        entry: bash -c 'cd backend && pytest'
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+
+  # General checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-added-large-files
+      - id: check-merge-conflict

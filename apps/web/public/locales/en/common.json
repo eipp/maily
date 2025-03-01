@@ -1,0 +1,44 @@
+{
+  "navigation": {
+    "home": "Home",
+    "campaigns": "Campaigns",
+    "analytics": "Analytics",
+    "settings": "Settings"
+  },
+  "auth": {
+    "login": "Log In",
+    "signup": "Sign Up",
+    "logout": "Log Out",
+    "email": "Email",
+    "password": "Password",
+    "forgotPassword": "Forgot Password?",
+    "resetPassword": "Reset Password"
+  },
+  "campaigns": {
+    "create": "Create Campaign",
+    "edit": "Edit Campaign",
+    "delete": "Delete Campaign",
+    "name": "Campaign Name",
+    "subject": "Subject Line",
+    "recipients": "Recipients",
+    "schedule": "Schedule",
+    "send": "Send Campaign",
+    "test": "Send Test Email",
+    "preview": "Preview",
+    "save": "Save Changes",
+    "cancel": "Cancel"
+  },
+  "errors": {
+    "required": "This field is required",
+    "invalidEmail": "Invalid email address",
+    "passwordLength": "Password must be at least 8 characters",
+    "networkError": "Network error. Please try again.",
+    "unauthorized": "Unauthorized access"
+  },
+  "success": {
+    "campaignCreated": "Campaign created successfully",
+    "campaignUpdated": "Campaign updated successfully",
+    "campaignDeleted": "Campaign deleted successfully",
+    "testEmailSent": "Test email sent successfully"
+  }
+}

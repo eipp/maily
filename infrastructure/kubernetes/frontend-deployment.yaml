@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: maily-frontend
+  labels:
+    app: maily
+    component: frontend
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: maily
+      component: frontend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: maily
+        component: frontend
+    spec:
+      containers:
+      - name: frontend
+        image: ${DOCKER_REGISTRY}/maily-frontend:${IMAGE_TAG}
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 3000
+        env:
+        - name: NEXT_PUBLIC_API_URL
+          value: "https://api-edge.justmaily.com"
+        - name: NEXT_PUBLIC_CDN_URL
+          value: "https://static.justmaily.com"
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+          requests:
+            cpu: "200m"
+            memory: "256Mi"
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: maily-frontend
+  labels:
+    app: maily
+    component: frontend
+spec:
+  selector:
+    app: maily
+    component: frontend
+  ports:
+  - port: 80
+    targetPort: 3000
+  type: ClusterIP

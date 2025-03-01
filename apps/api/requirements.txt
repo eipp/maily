@@ -1,0 +1,48 @@
+# Maily API Requirements
+# Generated on 2025-02-25 20:20:49
+
+# API Dependencies
+-r ../../requirements.txt
+
+
+# API-specific AI Dependencies
+pyautogen==0.7.5
+google-generativeai==0.3.2
+replicate==0.22.0
+together==0.2.8
+huggingface-hub==0.21.3
+fireworks-ai==0.12.0
+ray==2.9.3
+
+# AI Optimization
+onnxruntime-gpu==1.17.0  # For NVIDIA GPU support
+
+# OpenTelemetry Specific
+opentelemetry-instrumentation-fastapi==0.44b0
+opentelemetry-exporter-prometheus==1.23.0
+opentelemetry-api==1.23.0
+opentelemetry-sdk==1.23.0
+opentelemetry-exporter-otlp==1.23.0
+opentelemetry-instrumentation-requests==0.44b0
+opentelemetry-instrumentation-sqlalchemy==0.44b0
+opentelemetry-instrumentation-redis==0.44b0
+
+# Content Processing
+python-docx==0.8.11
+python-pptx==0.6.21
+openpyxl==3.1.0
+reportlab==4.0.0
+aiofiles==23.1.0
+
+# Email Providers
+resend==0.5.0
+sendgrid==6.10.0
+
+# OctoTools Integration
+octotools==1.0.0
+
+# GraphQL Implementation
+strawberry-graphql==0.219.1
+strawberry-graphql-fastapi==0.17.0
+aiohttp==3.8.5
+graphql-core==3.2.3

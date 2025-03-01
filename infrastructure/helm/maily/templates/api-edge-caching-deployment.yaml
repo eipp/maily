@@ -1,0 +1,78 @@
+{{- if .Values.apiEdgeCaching.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "maily.fullname" . }}-api-edge-cache
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+    component: api-edge-cache
+spec:
+  replicas: {{ .Values.apiEdgeCaching.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "maily.selectorLabels" . | nindent 6 }}
+      component: api-edge-cache
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        {{- include "maily.selectorLabels" . | nindent 8 }}
+        component: api-edge-cache
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+      - name: nginx
+        image: "{{ .Values.apiEdgeCaching.image.repository }}:{{ .Values.apiEdgeCaching.image.tag }}"
+        imagePullPolicy: {{ .Values.apiEdgeCaching.image.pullPolicy }}
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: nginx-config
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+        - name: cache-volume
+          mountPath: /var/cache/nginx
+        resources:
+          {{- toYaml .Values.apiEdgeCaching.resources | nindent 10 }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+      volumes:
+      - name: nginx-config
+        configMap:
+          name: {{ include "maily.fullname" . }}-api-edge-config
+      - name: cache-volume
+        emptyDir: {}
+      {{- with .Values.apiEdgeCaching.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.apiEdgeCaching.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.apiEdgeCaching.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

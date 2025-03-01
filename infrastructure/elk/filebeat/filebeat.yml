@@ -1,0 +1,132 @@
+# Filebeat configuration for Maily application
+# This configuration collects logs from Docker containers and files
+
+filebeat.config:
+  modules:
+    path: ${path.config}/modules.d/*.yml
+    reload.enabled: true
+
+# Filebeat autodiscover for Docker containers
+filebeat.autodiscover:
+  providers:
+    - type: docker
+      hints.enabled: true
+      templates:
+        - condition:
+            contains:
+              docker.container.image: "*"
+          config:
+            - type: container
+              paths:
+                - /var/lib/docker/containers/${data.docker.container.id}/*.log
+              exclude_lines: ['^\s*$']
+              multiline:
+                pattern: '^[[:space:]]+(at|\.{3})[[:space:]]+\b|^Caused by:'
+                negate: false
+                match: after
+              processors:
+                - add_docker_metadata:
+                    host: unix:///var/run/docker.sock
+                - add_kubernetes_metadata:
+                    host: ${NODE_NAME}
+                    default_indexers.enabled: false
+                    default_matchers.enabled: false
+                    indexers:
+                      - container:
+                    matchers:
+                      - fields:
+                          lookup_fields: ['container.id']
+
+# Specific log paths for Maily applications
+filebeat.inputs:
+  # API logs
+  - type: log
+    enabled: true
+    paths:
+      - /var/log/maily/api/*.log
+      - /app/logs/*.log
+    tags: ["api"]
+    fields:
+      service: maily-api
+    fields_under_root: true
+    json.keys_under_root: true
+    json.add_error_key: true
+    json.message_key: message
+
+  # Web logs
+  - type: log
+    enabled: true
+    paths:
+      - /var/log/maily/web/*.log
+    tags: ["web"]
+    fields:
+      service: maily-web
+    fields_under_root: true
+    json.keys_under_root: true
+    json.add_error_key: true
+    json.message_key: message
+
+  # Worker logs
+  - type: log
+    enabled: true
+    paths:
+      - /var/log/maily/workers/*.log
+    tags: ["workers"]
+    fields:
+      service: maily-workers
+    fields_under_root: true
+    json.keys_under_root: true
+    json.add_error_key: true
+    json.message_key: message
+
+# Processors for all events
+processors:
+  - add_host_metadata:
+      when.not.contains.tags: forwarded
+  - add_cloud_metadata: ~
+  - add_docker_metadata: ~
+  - add_kubernetes_metadata: ~
+  - rename:
+      fields:
+        - from: "host"
+          to: "host_info"
+      ignore_missing: true
+  # Rename conflicting fields
+  - rename:
+      fields:
+        - from: "log.file.path"
+          to: "source_log_path"
+      ignore_missing: true
+  # Drop specific fields that might be problematic or redundant
+  - drop_fields:
+      fields: ["agent.ephemeral_id", "agent.hostname", "agent.id", "agent.version", "ecs.version"]
+      ignore_missing: true
+  # Add environment information
+  - add_fields:
+      target: ""
+      fields:
+        environment: ${ENVIRONMENT:production}
+
+# Output configuration - send to Logstash
+output.logstash:
+  hosts: ["logstash:5044"]
+  ssl.enabled: false
+  # For production, enable TLS
+  # ssl.certificate_authorities: ["/etc/ca.crt"]
+  # ssl.certificate: "/etc/client.crt"
+  # ssl.key: "/etc/client.key"
+
+# Monitoring
+monitoring:
+  enabled: true
+  elasticsearch:
+    hosts: ["elasticsearch:9200"]
+
+# Logging
+logging.level: info
+logging.to_files: true
+logging.files:
+  path: /var/log/filebeat
+  name: filebeat
+  keepfiles: 7
+  permissions: 0644

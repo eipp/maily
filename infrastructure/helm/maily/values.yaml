@@ -1,0 +1,770 @@
+# Global values
+global:
+  environment: production
+  imageRegistry: ghcr.io/maily
+  imagePullSecrets: []
+  storageClass: standard
+
+# Frontend configuration
+frontend:
+  enabled: true
+  replicaCount: 3
+  image:
+    repository: maily-frontend
+    tag: latest
+    pullPolicy: Always
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 3000
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 200m
+      memory: 256Mi
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: 80
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  env:
+    NEXT_PUBLIC_API_URL: https://api-edge.justmaily.com
+    NEXT_PUBLIC_CDN_URL: https://static.justmaily.com
+
+# Backend API configuration
+backend:
+  enabled: true
+  replicaCount: 3
+  image:
+    repository: maily-backend
+    tag: latest
+    pullPolicy: Always
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8000
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 500m
+      memory: 512Mi
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: 80
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8000
+    initialDelaySeconds: 30
+    periodSeconds: 10
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 8000
+    initialDelaySeconds: 5
+    periodSeconds: 10
+
+# Worker configuration
+worker:
+  enabled: true
+  replicaCount: 3
+  image:
+    repository: maily-backend
+    tag: latest
+    pullPolicy: Always
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 200m
+      memory: 256Mi
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: 80
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  command: ["python", "-m", "workers.email_worker"]
+
+# PostgreSQL configuration
+postgresql:
+  enabled: true
+  image:
+    repository: postgres
+    tag: 15-alpine
+    pullPolicy: IfNotPresent
+  service:
+    port: 5432
+  persistence:
+    enabled: true
+    size: 10Gi
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+    requests:
+      cpu: 500m
+      memory: 1Gi
+  env:
+    POSTGRES_DB: maily
+    POSTGRES_USER: postgres
+  existingSecret: maily-secrets
+  existingSecretKey: postgres-password
+
+# Redis configuration
+redis:
+  enabled: true
+  image:
+    repository: redis
+    tag: 7-alpine
+    pullPolicy: IfNotPresent
+  service:
+    port: 6379
+  persistence:
+    enabled: true
+    size: 5Gi
+  resources:
+    limits:
+      cpu: 500m
+      memory: 1Gi
+    requests:
+      cpu: 200m
+      memory: 512Mi
+
+# RabbitMQ configuration
+rabbitmq:
+  enabled: true
+  image:
+    repository: rabbitmq
+    tag: 3.12-management-alpine
+    pullPolicy: IfNotPresent
+  service:
+    port: 5672
+    managementPort: 15672
+  persistence:
+    enabled: true
+    size: 5Gi
+  resources:
+    limits:
+      cpu: 500m
+      memory: 1Gi
+    requests:
+      cpu: 200m
+      memory: 512Mi
+  env:
+    RABBITMQ_DEFAULT_USER: maily
+  existingSecret: maily-secrets
+  existingSecretKey: rabbitmq-password
+
+# Ingress configuration
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "8k"
+  hosts:
+    - host: justmaily.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: frontend
+          port: 80
+    - host: app.justmaily.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: frontend
+          port: 80
+    - host: api.justmaily.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: backend
+          port: 80
+    - host: api-edge.justmaily.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: api-edge-caching
+          port: 80
+    - host: static.justmaily.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: frontend
+          port: 80
+  tls:
+    - secretName: maily-tls
+      hosts:
+        - justmaily.com
+        - app.justmaily.com
+        - api.justmaily.com
+        - api-edge.justmaily.com
+        - static.justmaily.com
+
+# Secrets configuration
+secrets:
+  create: true
+  name: maily-secrets
+  data:
+    # These will be base64 encoded automatically
+    database-url: postgresql://postgres:postgres@maily-postgresql:5432/maily
+    redis-url: redis://maily-redis:6379/0
+    rabbitmq-url: amqp://maily:password@maily-rabbitmq:5672/
+    jwt-secret: changeme_in_production
+    postgres-user: postgres
+    postgres-password: postgres
+    rabbitmq-user: maily
+    rabbitmq-password: password
+    sendgrid-api-key: ""
+    mailgun-api-key: ""
+    mailgun-domain: ""
+
+# CDN configuration
+cdn:
+  enabled: true
+  provider: cloudfront
+  mainDomain: assets.justmaily.com
+  assetsDomain: static.justmaily.com
+  imagesDomain: images.justmaily.com
+  ttl:
+    static: 86400      # 24 hours
+    images: 604800     # 1 week
+    templates: 3600    # 1 hour
+    userUploads: 7200  # 2 hours
+  corsAllowedOrigins:
+    - https://justmaily.com
+    - https://app.justmaily.com
+    - https://api.justmaily.com
+  customDomain: static.justmaily.com
+  certificateArn: ""
+  s3:
+    bucketName: justmaily-static-assets
+    region: us-east-1
+  cloudfront:
+    priceClass: PriceClass_100
+    defaultTTL: 86400
+    maxTTL: 31536000
+    minTTL: 0
+    geoRestriction: none
+    enableCompression: true
+    enableIPv6: true
+
+# API Edge Caching configuration
+apiEdgeCaching:
+  enabled: true
+  replicaCount: 3
+  image:
+    repository: nginx
+    tag: 1.23-alpine
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 80
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 200m
+      memory: 256Mi
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 70
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  caching:
+    keyZoneSize: "10m"
+    maxCacheSize: "1g"
+    inactiveTimeout: "60m"
+    validityPeriods:
+      default: "10m"
+      content: "1h"
+      analytics: "5m"
+      templates: "15m"
+      notFound: "1m"
+    contentTypes:
+      - type: "content"
+        max_age: 3600
+      - type: "analytics"
+        max_age: 300
+      - type: "templates"
+        max_age: 900
+  rateLimit:
+    zone: "10m"
+    rate: "100r/s"
+    apiBurst: 20
+    apiConn: 10
+    authZone: "10m"
+    authRate: "10r/s"
+    authBurst: 5
+    authConn: 5
+    connZone: "10m"
+
+# Security configuration
+security:
+  enabled: true
+  waf:
+    enabled: true
+    replicaCount: 3
+    image:
+      repository: owasp/modsecurity-crs
+      tag: nginx-alpine
+      pullPolicy: IfNotPresent
+    service:
+      type: ClusterIP
+      port: 80
+      targetPort: 80
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 200m
+        memory: 256Mi
+  auditLogging:
+    enabled: true
+    replicaCount: 2
+    image:
+      repository: fluent/fluentd-kubernetes-daemonset
+      tag: v1.14-debian-elasticsearch7-1
+      pullPolicy: IfNotPresent
+    retentionPeriods:
+      app: 30
+      security: 365
+      audit: 730
+      gdpr: 1095
+  networkPolicies:
+    enabled: true
+  securityHeaders:
+    enabled: true
+    contentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.justmaily.com; style-src 'self' 'unsafe-inline' https://cdn.justmaily.com; img-src 'self' data: https://cdn.justmaily.com; font-src 'self' https://cdn.justmaily.com; connect-src 'self' https://*.justmaily.com; frame-ancestors 'self'; form-action 'self'"
+    strictTransportSecurity: "max-age=31536000; includeSubDomains; preload"
+    xFrameOptions: "SAMEORIGIN"
+    xContentTypeOptions: "nosniff"
+    xXssProtection: "1; mode=block"
+    referrerPolicy: "strict-origin-when-cross-origin"
+    permissionsPolicy: "camera=(), microphone=(), geolocation=(), payment=()"
+  monitoring:
+    enabled: true
+    replicaCount: 2
+    image:
+      repository: maily-security-monitor
+      tag: latest
+      pullPolicy: Always
+    vulnerabilityScan:
+      schedule: "0 0 * * 0"  # Weekly on Sunday
+      scanContainers: true
+      scanDependencies: true
+      failOnSeverity: "high"
+
+# Compliance configuration
+compliance:
+  enabled: true
+  gdpr:
+    enabled: true
+    consentManagement:
+      enabled: true
+      doubleOptIn: true
+      explicitConsent: true
+      granularChoices: true
+    dataDeletion:
+      enabled: true
+      retentionPeriods:
+        userData: 730
+        trackingData: 90
+        consentRecords: 1825
+        emailActivity: 365
+    dataPortability:
+      enabled: true
+  canSpam:
+    enabled: true
+    physicalAddressRequired: true
+    unsubscribeMechanism:
+      required: true
+      maxProcessingDays: 10
+    deceptiveSubjectLines:
+      prohibited: true
+  ipWarming:
+    enabled: true
+    maxSendVolume:
+      day1: 50
+      day2: 100
+      day3: 500
+      day7: 1000
+      day14: 5000
+      day21: 10000
+      day30: 50000
+    monitorThresholds:
+      bounceRate: 5
+      complaintRate: 0.1
+      deliveryRate: 95
+
+# Circuit Breaker configuration for external dependencies
+circuitBreaker:
+  enabled: true
+  maxConnections: 100
+  connectTimeout: "1s"
+  maxRequestsPerConnection: 10
+  http1MaxPendingRequests: 100
+  maxRetries: 3
+  consecutiveErrors: 5
+  interval: "30s"
+  baseEjectionTime: "30s"
+  maxEjectionPercent: 100
+  services:
+    sendgrid:
+      enabled: true
+      maxConnections: 50
+      connectTimeout: "2s"
+      maxRequestsPerConnection: 10
+      http1MaxPendingRequests: 50
+      maxRetries: 3
+      consecutiveErrors: 5
+      interval: "10s"
+      baseEjectionTime: "30s"
+      maxEjectionPercent: 100
+    mailgun:
+      enabled: true
+      maxConnections: 50
+      connectTimeout: "2s"
+      maxRequestsPerConnection: 10
+      http1MaxPendingRequests: 50
+      maxRetries: 3
+      consecutiveErrors: 5
+      interval: "10s"
+      baseEjectionTime: "30s"
+      maxEjectionPercent: 100
+    smtp:
+      enabled: true
+      maxConnections: 25
+      connectTimeout: "5s"
+      maxRequestsPerConnection: 5
+      http1MaxPendingRequests: 25
+      maxRetries: 2
+      consecutiveErrors: 3
+      interval: "10s"
+      baseEjectionTime: "1m"
+      maxEjectionPercent: 100
+    analytics:
+      enabled: true
+      maxConnections: 20
+      connectTimeout: "3s"
+      maxRequestsPerConnection: 5
+      http1MaxPendingRequests: 20
+      maxRetries: 2
+      consecutiveErrors: 5
+      interval: "10s"
+      baseEjectionTime: "1m"
+      maxEjectionPercent: 100
+  fallbacks:
+    enabled: true
+    sendgrid:
+      action: "queue"
+    mailgun:
+      action: "queue"
+    smtp:
+      action: "queue"
+    analytics:
+      action: "log"
+
+# Incident Response Automation configuration
+incidentResponse:
+  enabled: true
+  thresholds:
+    emailDeliveryRate: 95
+    highBounceRate: 5
+    highCpuUsage: 80
+    highMemoryUsage: 80
+    securityBreachScore: 70
+    dbQueryTime: 500
+    dbConnections: 100
+    networkErrors: 50
+  actions:
+    emailProviderStatusUrl: "https://status.sendgrid.com/api/v2/status.json"
+    resourceType: "deployment"
+    resourceName: "{{ include 'maily.fullname' . }}-backend"
+    scaleTo: 5
+    nodeName: "{{ .Release.Name }}-worker-node"
+    dbResourceIncrease: "1Gi"
+    connectionPoolIncrease: 10
+  notifications:
+    slackWebhook: "https://hooks.slack.com/services/XXXXX/YYYYY/ZZZZZ"
+    pagerDutyServiceKey: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    emailNotifications: "ops@justmaily.com"
+    cloudSupportEmail: "support@cloud-provider.com"
+
+# Monitoring configuration
+monitoring:
+  enabled: true
+  elk:
+    replicas: 1
+    elasticsearch:
+      image:
+        repository: docker.elastic.co/elasticsearch/elasticsearch
+        tag: 7.17.0
+        pullPolicy: IfNotPresent
+      heapSize: 1g
+      resources:
+        limits:
+          cpu: 2000m
+          memory: 2Gi
+        requests:
+          cpu: 500m
+          memory: 1Gi
+      persistence:
+        enabled: true
+        size: 20Gi
+    logstash:
+      image:
+        repository: docker.elastic.co/logstash/logstash
+        tag: 7.17.0
+        pullPolicy: IfNotPresent
+      heapSize: 512m
+      resources:
+        limits:
+          cpu: 1000m
+          memory: 1Gi
+        requests:
+          cpu: 300m
+          memory: 512Mi
+    kibana:
+      image:
+        repository: docker.elastic.co/kibana/kibana
+        tag: 7.17.0
+        pullPolicy: IfNotPresent
+      resources:
+        limits:
+          cpu: 1000m
+          memory: 1Gi
+        requests:
+          cpu: 200m
+          memory: 512Mi
+  prometheus:
+    replicas: 1
+    image:
+      repository: prom/prometheus
+      tag: v2.42.0
+      pullPolicy: IfNotPresent
+    retention: 15d
+    scrapeInterval: 15s
+    evaluationInterval: 15s
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+      requests:
+        cpu: 300m
+        memory: 1Gi
+    persistence:
+      enabled: true
+      size: 20Gi
+  alertmanager:
+    image:
+      repository: prom/alertmanager
+      tag: v0.25.0
+      pullPolicy: IfNotPresent
+    resources:
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    persistence:
+      enabled: true
+      size: 2Gi
+    smtp:
+      from: alerts@justmaily.com
+      smarthost: smtp.example.com:587
+      username: alerts@justmaily.com
+      password: password
+    receivers:
+      email: alerts@justmaily.com
+      slack: https://hooks.slack.com/services/XXX/YYY/ZZZ
+      pagerduty: xxxxxxxxxxxxxxxxxxxxxxxx
+  grafana:
+    replicas: 1
+    image:
+      repository: grafana/grafana
+      tag: 9.4.3
+      pullPolicy: IfNotPresent
+    adminUser: admin
+    adminPassword: admin
+    plugins: grafana-piechart-panel,grafana-worldmap-panel
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    persistence:
+      enabled: true
+      size: 5Gi
+  filebeat:
+    image:
+      repository: docker.elastic.co/beats/filebeat
+      tag: 7.17.0
+      pullPolicy: IfNotPresent
+    resources:
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+  slo:
+    replicas: 1
+    image:
+      repository: ${DOCKER_REGISTRY}/maily-slo-monitor
+      tag: ${IMAGE_TAG}
+      pullPolicy: Always
+    resources:
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+# AI Operations Configuration
+aiOperations:
+  enabled: true
+
+  # Anomaly Detection
+  anomalyDetection:
+    replicas: 1
+    image:
+      repository: maily/anomaly-detection
+      tag: latest
+      pullPolicy: IfNotPresent
+    logLevel: "info"
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+      requests:
+        cpu: 500m
+        memory: 1Gi
+    persistence:
+      enabled: true
+      storageClass: ""
+      size: 10Gi
+    thresholds:
+      cpuUsage: 0.95  # 95% confidence interval
+      memoryUsage: 0.95
+      apiLatency: 0.95
+      errorRate: 0.75
+
+  # Predictive Scaling
+  predictiveScaling:
+    replicas: 1
+    image:
+      repository: maily/predictive-scaling
+      tag: latest
+      pullPolicy: IfNotPresent
+    logLevel: "info"
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+      requests:
+        cpu: 300m
+        memory: 512Mi
+    persistence:
+      enabled: true
+      storageClass: ""
+      size: 8Gi
+    minReplicas:
+      backend: 2
+      frontend: 2
+      worker: 2
+    maxReplicas:
+      backend: 10
+      frontend: 8
+      worker: 12
+    targetRequestsPerReplica:
+      backend: 100
+      frontend: 200
+    targetQueueDepthPerReplica: 500
+    schedules:
+      weekday:
+        backend: 3
+        worker: 4
+      weekend:
+        backend: 1
+        worker: 2
+
+  # Resource Optimization
+  resourceOptimization:
+    replicas: 1
+    image:
+      repository: maily/resource-optimization
+      tag: latest
+      pullPolicy: IfNotPresent
+    logLevel: "info"
+    optimizationInterval: "30m"
+    resources:
+      limits:
+        cpu: 500m
+        memory: 1Gi
+      requests:
+        cpu: 200m
+        memory: 512Mi
+    targetUtilization:
+      cpu: 0.7  # 70% target utilization
+      memory: 0.8  # 80% target utilization
+
+  # Failure Prediction
+  failurePrediction:
+    replicas: 1
+    image:
+      repository: maily/failure-prediction
+      tag: latest
+      pullPolicy: IfNotPresent
+    logLevel: "info"
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+      requests:
+        cpu: 500m
+        memory: 1Gi
+    persistence:
+      enabled: true
+      storageClass: ""
+      size: 10Gi
+    confidenceThreshold: 0.8  # 80% confidence threshold
+    alertThresholds:
+      lowConfidence: 60  # 60% confidence for warning
+      highConfidence: 85  # 85% confidence for critical alert
+
+# ... existing code ...

@@ -1,0 +1,220 @@
+name: Production Deployment
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      deploy_frontend:
+        description: 'Deploy Frontend'
+        type: boolean
+        default: true
+      deploy_api:
+        description: 'Deploy API'
+        type: boolean
+        default: true
+      deploy_ai:
+        description: 'Deploy AI Services'
+        type: boolean
+        default: true
+      run_tests:
+        description: 'Run Tests'
+        type: boolean
+        default: true
+
+env:
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+  VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+jobs:
+  validate:
+    name: Validate Environment
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate environment variables
+        env:
+          DATABASE_HOST: ${{ secrets.DATABASE_HOST }}
+          DATABASE_USER: ${{ secrets.DATABASE_USER }}
+          DATABASE_PASSWORD: ${{ secrets.DATABASE_PASSWORD }}
+          DATABASE_NAME: ${{ secrets.DATABASE_NAME }}
+          REDIS_HOST: ${{ secrets.REDIS_HOST }}
+          REDIS_PORT: ${{ secrets.REDIS_PORT }}
+          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GOOGLE_AI_API_KEY: ${{ secrets.GOOGLE_AI_API_KEY }}
+        run: |
+          chmod +x scripts/validate-env-vars.sh
+          ./scripts/validate-env-vars.sh production
+
+  deploy_frontend:
+    name: Deploy Frontend to Vercel
+    needs: validate
+    if: ${{ github.event.inputs.deploy_frontend != 'false' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          cd apps/web
+          npm ci
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Deploy to Vercel
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          cd apps/web
+          vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+          vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+          vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+          vercel alias set $(vercel ls --prod --token=${{ secrets.VERCEL_TOKEN }} | grep apps/web | head -n 1 | awk '{print $2}') justmaily.com --token=${{ secrets.VERCEL_TOKEN }}
+
+  deploy_api:
+    name: Deploy API to Vercel
+    needs: validate
+    if: ${{ github.event.inputs.deploy_api != 'false' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          cd apps/api
+          npm ci
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Deploy to Vercel
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_API_PROJECT_ID }}
+        run: |
+          cd apps/api
+          vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+          vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+          vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+          vercel alias set $(vercel ls --prod --token=${{ secrets.VERCEL_TOKEN }} | grep apps/api | head -n 1 | awk '{print $2}') api.justmaily.com --token=${{ secrets.VERCEL_TOKEN }}
+
+  deploy_ai_services:
+    name: Deploy AI Services
+    needs: [deploy_frontend, deploy_api]
+    if: ${{ github.event.inputs.deploy_ai != 'false' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Environment
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GOOGLE_AI_API_KEY: ${{ secrets.GOOGLE_AI_API_KEY }}
+          ETHEREUM_RPC_URL: ${{ secrets.ETHEREUM_RPC_URL }}
+          POLYGON_RPC_URL: ${{ secrets.POLYGON_RPC_URL }}
+        run: |
+          mkdir -p deployment_logs
+          chmod +x scripts/deploy-ai-services.sh
+          ./scripts/deploy-ai-services.sh production
+
+  run_tests:
+    name: Run Verification Tests
+    needs: [deploy_frontend, deploy_api, deploy_ai_services]
+    if: ${{ github.event.inputs.run_tests != 'false' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run smoke tests
+        run: |
+          chmod +x scripts/smoke-test.js
+          node scripts/smoke-test.js production
+        env:
+          API_URL: https://api.justmaily.com
+          FRONTEND_URL: https://justmaily.com
+          TEST_API_KEY: ${{ secrets.TEST_API_KEY }}
+          ETHEREUM_RPC_URL: ${{ secrets.ETHEREUM_RPC_URL }}
+          POLYGON_RPC_URL: ${{ secrets.POLYGON_RPC_URL }}
+
+  notify:
+    name: Send Deployment Notification
+    needs: [run_tests]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set Deployment Status
+        id: deployment-status
+        run: |
+          if [ "${{ needs.run_tests.result }}" == "success" ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "icon=✅" >> $GITHUB_OUTPUT
+            echo "message=Deployment completed successfully" >> $GITHUB_OUTPUT
+          else
+            echo "status=failure" >> $GITHUB_OUTPUT
+            echo "icon=❌" >> $GITHUB_OUTPUT
+            echo "message=Deployment failed" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Send Email Notification
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.resend.com
+          server_port: 587
+          username: ${{ secrets.RESEND_API_KEY }}
+          password: ${{ secrets.RESEND_API_KEY }}
+          subject: "${{ steps.deployment-status.outputs.icon }} Maily Production Deployment ${{ steps.deployment-status.outputs.status }}"
+          to: admin@justmaily.com
+          from: Maily Deployment <deployment@justmaily.com>
+          body: |
+            Deployment Status: ${{ steps.deployment-status.outputs.status }}
+
+            ${{ steps.deployment-status.outputs.message }}
+
+            Timestamp: ${{ github.event.head_commit.timestamp }}
+            Commit: ${{ github.event.head_commit.id }}
+            Author: ${{ github.event.head_commit.author.name }}
+
+            View the deployment workflow: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}

@@ -1,0 +1,46 @@
+groups:
+- name: vault_alerts
+  rules:
+  - alert: VaultSealed
+    expr: vault_core_unsealed{} == 0
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Vault instance sealed"
+      description: "Vault has been sealed on {{ $labels.instance }} and needs to be unsealed manually."
+
+  - alert: VaultHighLatency
+    expr: rate(vault_core_handle_request_mean{quantile="0.99"}[5m]) > 0.5
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Vault high API latency"
+      description: "Vault 99th percentile request latency is high on {{ $labels.instance }}. This may indicate performance issues or resource constraints."
+
+  - alert: VaultUnhealthy
+    expr: vault_core_health_status != 1
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Vault unhealthy"
+      description: "Vault health check is failing on {{ $labels.instance }}. This indicates a critical issue with the Vault server."
+
+  - alert: VaultLeadershipLost
+    expr: changes(vault_core_leadership_lost_count[1h]) > 0
+    labels:
+      severity: critical
+    annotations:
+      summary: "Vault leadership lost"
+      description: "Vault has lost leadership {{ $value }} time(s) in the last hour on {{ $labels.instance }}. This may indicate network issues or stability problems."
+
+  - alert: VaultLowTokenCount
+    expr: vault_token_count_token < 10
+    for: 15m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Low token count in Vault"
+      description: "Vault has a low token count ({{ $value }}) on {{ $labels.instance }}. This might indicate improper token lifecycle management."

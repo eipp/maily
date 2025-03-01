@@ -1,0 +1,419 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kyverno
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-security-context
+  annotations:
+    policies.kyverno.io/title: Require Security Context
+    policies.kyverno.io/category: Security
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      This policy ensures that all containers have a security context defined with
+      appropriate security settings.
+spec:
+  validationFailureAction: enforce
+  background: true
+  rules:
+  - name: validate-security-context
+    match:
+      resources:
+        kinds:
+        - Pod
+    validate:
+      message: "Container must have a security context with runAsNonRoot set to true, allowPrivilegeEscalation set to false, and capabilities.drop set to ALL."
+      pattern:
+        spec:
+          containers:
+          - securityContext:
+              runAsNonRoot: true
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop: ["ALL"]
+              readOnlyRootFilesystem: true
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-resource-limits
+  annotations:
+    policies.kyverno.io/title: Require Resource Limits
+    policies.kyverno.io/category: Resource Management
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      This policy ensures that all containers have resource limits defined to prevent
+      resource exhaustion.
+spec:
+  validationFailureAction: enforce
+  background: true
+  rules:
+  - name: validate-resource-limits
+    match:
+      resources:
+        kinds:
+        - Pod
+    validate:
+      message: "Container must have resource limits defined for CPU and memory."
+      pattern:
+        spec:
+          containers:
+          - resources:
+              limits:
+                memory: "?*"
+                cpu: "?*"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-probes
+  annotations:
+    policies.kyverno.io/title: Require Probes
+    policies.kyverno.io/category: Health
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      This policy ensures that all containers have liveness and readiness probes defined
+      for better health monitoring.
+spec:
+  validationFailureAction: enforce
+  background: true
+  rules:
+  - name: validate-probes
+    match:
+      resources:
+        kinds:
+        - Pod
+    validate:
+      message: "Container must have liveness and readiness probes defined."
+      pattern:
+        spec:
+          containers:
+          - livenessProbe:
+              {}
+            readinessProbe:
+              {}
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-host-namespaces
+  annotations:
+    policies.kyverno.io/title: Disallow Host Namespaces
+    policies.kyverno.io/category: Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      This policy ensures that pods do not use host namespaces, which can be a security risk.
+spec:
+  validationFailureAction: enforce
+  background: true
+  rules:
+  - name: validate-host-namespaces
+    match:
+      resources:
+        kinds:
+        - Pod
+    validate:
+      message: "Pod must not use host namespaces (hostNetwork, hostPID, hostIPC)."
+      pattern:
+        spec:
+          =(hostNetwork): false
+          =(hostPID): false
+          =(hostIPC): false
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-privileged-containers
+  annotations:
+    policies.kyverno.io/title: Disallow Privileged Containers
+    policies.kyverno.io/category: Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      This policy ensures that containers are not running in privileged mode, which
+      gives all capabilities to the container and can be a security risk.
+spec:
+  validationFailureAction: enforce
+  background: true
+  rules:
+  - name: validate-privileged
+    match:
+      resources:
+        kinds:
+        - Pod
+    validate:
+      message: "Privileged containers are not allowed."
+      pattern:
+        spec:
+          containers:
+          - securityContext:
+              =(privileged): false
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-host-path
+  annotations:
+    policies.kyverno.io/title: Disallow Host Path
+    policies.kyverno.io/category: Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      This policy ensures that pods do not use host paths, which can be a security risk.
+spec:
+  validationFailureAction: enforce
+  background: true
+  rules:
+  - name: validate-host-path
+    match:
+      resources:
+        kinds:
+        - Pod
+    validate:
+      message: "Host path volumes are not allowed."
+      pattern:
+        spec:
+          =(volumes):
+          - =(hostPath): null
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-labels
+  annotations:
+    policies.kyverno.io/title: Require Labels
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: low
+    policies.kyverno.io/subject: Pod, Deployment, Service
+    policies.kyverno.io/description: >-
+      This policy ensures that all resources have required labels for better organization.
+spec:
+  validationFailureAction: enforce
+  background: true
+  rules:
+  - name: validate-labels
+    match:
+      resources:
+        kinds:
+        - Pod
+        - Deployment
+        - Service
+    validate:
+      message: "Resource must have app, environment, and owner labels."
+      pattern:
+        metadata:
+          labels:
+            app: "?*"
+            environment: "?*"
+            owner: "?*"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-gdpr-labels
+  annotations:
+    policies.kyverno.io/title: Require GDPR Labels
+    policies.kyverno.io/category: Compliance
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Deployment, Service, PersistentVolumeClaim
+    policies.kyverno.io/description: >-
+      This policy ensures that resources handling PII data have appropriate GDPR compliance labels.
+spec:
+  validationFailureAction: enforce
+  background: true
+  rules:
+  - name: validate-gdpr-labels
+    match:
+      resources:
+        kinds:
+        - Deployment
+        - Service
+        - PersistentVolumeClaim
+    validate:
+      message: "Resources with PII data must have appropriate GDPR compliance labels."
+      pattern:
+        metadata:
+          labels:
+            contains-pii: "true"
+            data-protection: "?*"
+            data-retention-policy: "?*"
+            data-subject-rights: "?*"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-can-spam-labels
+  annotations:
+    policies.kyverno.io/title: Require CAN-SPAM Labels
+    policies.kyverno.io/category: Compliance
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Deployment
+    policies.kyverno.io/description: >-
+      This policy ensures that email services have appropriate CAN-SPAM compliance labels.
+spec:
+  validationFailureAction: enforce
+  background: true
+  rules:
+  - name: validate-can-spam-labels
+    match:
+      resources:
+        kinds:
+        - Deployment
+    validate:
+      message: "Email services must have appropriate CAN-SPAM compliance labels."
+      pattern:
+        metadata:
+          labels:
+            service-type: "email"
+            can-spam-compliant: "true"
+            unsubscribe-mechanism: "implemented"
+            physical-address-inclusion: "implemented"
+            opt-out-honor: "implemented"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: generate-network-policy
+  annotations:
+    policies.kyverno.io/title: Generate Network Policy
+    policies.kyverno.io/category: Security
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Namespace
+    policies.kyverno.io/description: >-
+      This policy automatically generates a default network policy for new namespaces
+      to enforce network segmentation.
+spec:
+  background: true
+  rules:
+  - name: generate-default-network-policy
+    match:
+      resources:
+        kinds:
+        - Namespace
+    exclude:
+      resources:
+        namespaces:
+        - kube-system
+        - kube-public
+        - kube-node-lease
+        - kyverno
+    generate:
+      kind: NetworkPolicy
+      name: default-deny-all
+      namespace: "{{request.object.metadata.name}}"
+      data:
+        spec:
+          podSelector: {}
+          policyTypes:
+          - Ingress
+          - Egress
+          ingress:
+          - from:
+            - namespaceSelector:
+                matchLabels:
+                  name: "{{request.object.metadata.name}}"
+          egress:
+          - to:
+            - namespaceSelector:
+                matchLabels:
+                  name: kube-system
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: add-default-labels
+  annotations:
+    policies.kyverno.io/title: Add Default Labels
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: low
+    policies.kyverno.io/subject: Namespace
+    policies.kyverno.io/description: >-
+      This policy automatically adds default labels to new namespaces.
+spec:
+  background: true
+  rules:
+  - name: add-name-label
+    match:
+      resources:
+        kinds:
+        - Namespace
+    mutate:
+      patchStrategicMerge:
+        metadata:
+          labels:
+            name: "{{request.object.metadata.name}}"
+            environment: "{{request.object.metadata.labels.environment || 'default'}}"
+            managed-by: "kyverno"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-image-registries
+  annotations:
+    policies.kyverno.io/title: Restrict Image Registries
+    policies.kyverno.io/category: Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      This policy ensures that container images are pulled only from approved registries.
+spec:
+  validationFailureAction: enforce
+  background: true
+  rules:
+  - name: validate-registries
+    match:
+      resources:
+        kinds:
+        - Pod
+    validate:
+      message: "Container images must be pulled from approved registries only."
+      pattern:
+        spec:
+          containers:
+          - image: "docker.io/* | gcr.io/* | registry.k8s.io/* | quay.io/*"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-pod-disruption-budget
+  annotations:
+    policies.kyverno.io/title: Require Pod Disruption Budget
+    policies.kyverno.io/category: Availability
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Deployment
+    policies.kyverno.io/description: >-
+      This policy automatically generates a PodDisruptionBudget for Deployments with
+      multiple replicas to ensure high availability during voluntary disruptions.
+spec:
+  background: true
+  rules:
+  - name: generate-pdb
+    match:
+      resources:
+        kinds:
+        - Deployment
+    context:
+    - name: replicas
+      variable:
+        value: "{{ request.object.spec.replicas || 1 }}"
+    preconditions:
+      all:
+      - key: "{{ replicas }}"
+        operator: GreaterThan
+        value: 1
+    generate:
+      kind: PodDisruptionBudget
+      name: "{{ request.object.metadata.name }}-pdb"
+      namespace: "{{ request.object.metadata.namespace }}"
+      data:
+        spec:
+          minAvailable: 1
+          selector:
+            matchLabels:
+              app: "{{ request.object.metadata.labels.app }}"

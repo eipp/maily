@@ -1,0 +1,196 @@
+version: '3.8'
+
+x-common-frontend: &common-frontend
+  build:
+    context: ./maily-frontend
+  volumes:
+    - /app/node_modules
+    - /app/.next
+  depends_on:
+    - backend
+
+x-common-backend: &common-backend
+  build:
+    context: ./backend
+  volumes:
+    - ./backend:/app
+  depends_on:
+    - db
+    - redis
+
+x-common-db: &common-db
+  image: postgres:13
+  volumes:
+    - postgres_data:/var/lib/postgresql/data
+
+x-common-redis: &common-redis
+  image: redis:6
+  volumes:
+    - redis_data:/data
+
+services:
+  # Development Environment
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+    volumes:
+      - ./app:/app/app
+      - ./public:/app/public
+    networks:
+      - maily-network
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/maily
+      - REDIS_URL=redis://redis:6379/0
+      - RABBITMQ_URL=amqp://maily:password@rabbitmq:5672/
+      - JWT_SECRET=dev_jwt_secret
+      - SENDGRID_API_KEY=
+      - MAILGUN_API_KEY=
+      - MAILGUN_DOMAIN=
+      - ENVIRONMENT=development
+    depends_on:
+      - postgres
+      - redis
+      - rabbitmq
+    volumes:
+      - ./backend:/app/backend
+    networks:
+      - maily-network
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    command: python -m workers.email_worker
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/maily
+      - REDIS_URL=redis://redis:6379/0
+      - RABBITMQ_URL=amqp://maily:password@rabbitmq:5672/
+      - SENDGRID_API_KEY=
+      - MAILGUN_API_KEY=
+      - MAILGUN_DOMAIN=
+      - ENVIRONMENT=development
+    depends_on:
+      - postgres
+      - redis
+      - rabbitmq
+    volumes:
+      - ./backend:/app/backend
+      - ./workers:/app/workers
+    networks:
+      - maily-network
+
+  postgres:
+    image: postgres:15-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=maily
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - maily-network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - maily-network
+
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=maily
+      - RABBITMQ_DEFAULT_PASS=password
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - maily-network
+
+  # Staging Environment
+  frontend-staging:
+    <<: *common-frontend
+    target: production
+    ports:
+      - "3010:3000"
+    environment:
+      - NODE_ENV=staging
+      - NEXT_PUBLIC_API_URL=http://localhost:8010
+    command: npm run start
+
+  backend-staging:
+    <<: *common-backend
+    ports:
+      - "8010:8000"
+    environment:
+      - POSTGRES_USER=maily_staging
+      - POSTGRES_PASSWORD=maily_staging
+      - POSTGRES_DB=maily_staging
+      - POSTGRES_HOST=db-staging
+      - REDIS_HOST=redis-staging
+      - DEBUG=0
+
+  db-staging:
+    <<: *common-db
+    ports:
+      - "5433:5432"
+    environment:
+      - POSTGRES_USER=maily_staging
+      - POSTGRES_PASSWORD=maily_staging
+      - POSTGRES_DB=maily_staging
+
+  redis-staging:
+    <<: *common-redis
+    ports:
+      - "6380:6379"
+
+  prometheus:
+    image: prom/prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+
+volumes:
+  postgres-data:
+  redis-data:
+  prometheus_data:
+  grafana_data:
+  rabbitmq-data:
+
+networks:
+  maily-network:
+    driver: bridge

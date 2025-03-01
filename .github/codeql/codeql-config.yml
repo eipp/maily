@@ -1,0 +1,19 @@
+name: "Maily CodeQL config"
+
+queries:
+  - uses: security-and-quality
+
+languages:
+  - javascript
+  - python
+
+paths:
+  - maily-frontend
+  - backend
+paths-ignore:
+  - '**/node_modules'
+  - '**/tests'
+  - '**/*.test.ts'
+  - '**/*.test.tsx'
+  - '**/*.spec.ts'
+  - '**/*.spec.tsx'

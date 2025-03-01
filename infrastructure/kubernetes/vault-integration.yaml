@@ -1,0 +1,356 @@
+# Vault Authentication Service Account
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault-auth
+  namespace: default
+  labels:
+    app.kubernetes.io/name: vault-auth
+    app.kubernetes.io/part-of: maily
+    app.kubernetes.io/component: auth
+---
+# Vault Auth Cluster Role Binding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: vault-auth-binding
+  labels:
+    app.kubernetes.io/name: vault-auth-binding
+    app.kubernetes.io/part-of: maily
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+- kind: ServiceAccount
+  name: vault-auth
+  namespace: default
+---
+# Vault Agent ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-agent-config
+  namespace: default
+  labels:
+    app.kubernetes.io/name: vault-agent-config
+    app.kubernetes.io/part-of: maily
+data:
+  vault-agent-config.hcl: |
+    # Vault Agent Configuration
+    exit_after_auth = false
+    pid_file = "/home/vault/pidfile"
+
+    auto_auth {
+      method "kubernetes" {
+        mount_path = "auth/kubernetes"
+        config = {
+          role = "maily"
+          token_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+        }
+      }
+
+      sink "file" {
+        config = {
+          path = "/vault/token"
+        }
+      }
+    }
+
+    # Vault Agent Template Configuration
+    template {
+      source      = "/vault/templates/db-creds.tpl"
+      destination = "/vault/secrets/db-creds.json"
+      perms       = 0400
+      command     = "sh -c 'kill -SIGUSR1 $(cat /home/vault/pidfile)'"
+    }
+
+    template {
+      source      = "/vault/templates/api-keys.tpl"
+      destination = "/vault/secrets/api-keys.json"
+      perms       = 0400
+      command     = "sh -c 'kill -SIGUSR1 $(cat /home/vault/pidfile)'"
+    }
+
+    # Add template for JWT secret
+    template {
+      source      = "/vault/templates/jwt-secret.tpl"
+      destination = "/vault/secrets/jwt-secret.json"
+      perms       = 0400
+      command     = "sh -c 'kill -SIGUSR1 $(cat /home/vault/pidfile)'"
+    }
+---
+# Vault Templates ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-templates
+  namespace: default
+  labels:
+    app.kubernetes.io/name: vault-templates
+    app.kubernetes.io/part-of: maily
+data:
+  db-creds.tpl: |
+    {{- with secret "database/creds/maily" -}}
+    {
+      "username": "{{ .Data.username }}",
+      "password": "{{ .Data.password }}"
+    }
+    {{- end -}}
+
+  api-keys.tpl: |
+    {{- with secret "secret/data/maily/api-keys" -}}
+    {
+      "openai_api_key": "{{ .Data.data.openai_api_key }}",
+      "anthropic_api_key": "{{ .Data.data.anthropic_api_key }}",
+      "google_api_key": "{{ .Data.data.google_api_key }}",
+      "resend_api_key": "{{ .Data.data.resend_api_key }}",
+      "sendgrid_api_key": "{{ .Data.data.sendgrid_api_key }}",
+      "mailgun_api_key": "{{ .Data.data.mailgun_api_key }}"
+    }
+    {{- end -}}
+
+  jwt-secret.tpl: |
+    {{- with secret "secret/data/maily/jwt" -}}
+    {
+      "secret": "{{ .Data.data.secret }}"
+    }
+    {{- end -}}
+---
+# Maily Backend Deployment with Vault Integration
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: maily-backend
+  labels:
+    app: maily
+    component: backend
+    app.kubernetes.io/name: maily-backend
+    app.kubernetes.io/part-of: maily
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: maily
+      component: backend
+  template:
+    metadata:
+      labels:
+        app: maily
+        component: backend
+      annotations:
+        # Vault Agent Injector annotations
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/agent-inject-status: "update"
+        vault.hashicorp.com/agent-pre-populate-only: "false"
+        vault.hashicorp.com/agent-run-as-user: "1000"
+        vault.hashicorp.com/role: "maily"
+        vault.hashicorp.com/agent-limits-cpu: "100m"
+        vault.hashicorp.com/agent-limits-mem: "128Mi"
+        vault.hashicorp.com/agent-requests-cpu: "50m"
+        vault.hashicorp.com/agent-requests-mem: "64Mi"
+        vault.hashicorp.com/log-level: "info"
+        vault.hashicorp.com/preserve-secret-case: "true"
+
+        # Database credentials template
+        vault.hashicorp.com/agent-inject-secret-db-creds.json: "database/creds/maily"
+        vault.hashicorp.com/agent-inject-template-db-creds.json: |
+          {{- with secret "database/creds/maily" -}}
+          {
+            "username": "{{ .Data.username }}",
+            "password": "{{ .Data.password }}"
+          }
+          {{- end -}}
+
+        # API keys template
+        vault.hashicorp.com/agent-inject-secret-api-keys.json: "secret/data/maily/api-keys"
+        vault.hashicorp.com/agent-inject-template-api-keys.json: |
+          {{- with secret "secret/data/maily/api-keys" -}}
+          {
+            "openai_api_key": "{{ .Data.data.openai_api_key }}",
+            "anthropic_api_key": "{{ .Data.data.anthropic_api_key }}",
+            "google_api_key": "{{ .Data.data.google_api_key }}",
+            "resend_api_key": "{{ .Data.data.resend_api_key }}",
+            "sendgrid_api_key": "{{ .Data.data.sendgrid_api_key }}",
+            "mailgun_api_key": "{{ .Data.data.mailgun_api_key }}"
+          }
+          {{- end -}}
+
+        # JWT secret template
+        vault.hashicorp.com/agent-inject-secret-jwt-secret.json: "secret/data/maily/jwt"
+        vault.hashicorp.com/agent-inject-template-jwt-secret.json: |
+          {{- with secret "secret/data/maily/jwt" -}}
+          {
+            "secret": "{{ .Data.data.secret }}"
+          }
+          {{- end -}}
+    spec:
+      serviceAccountName: maily-backend
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: backend
+        image: ${DOCKER_REGISTRY}/maily-backend:${IMAGE_TAG}
+        imagePullPolicy: Always
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          capabilities:
+            drop:
+            - ALL
+        ports:
+        - name: http
+          containerPort: 8000
+          protocol: TCP
+        env:
+        - name: VAULT_SECRETS_PATH
+          value: "/vault/secrets"
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: maily-secrets
+              key: redis-url
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: ENVIRONMENT
+          value: "production"
+        volumeMounts:
+        - name: vault-secrets
+          mountPath: /vault/secrets
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+        resources:
+          limits:
+            cpu: "1"
+            memory: "1Gi"
+          requests:
+            cpu: "500m"
+            memory: "512Mi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /health
+            port: http
+          failureThreshold: 30
+          periodSeconds: 10
+      volumes:
+      - name: vault-secrets
+        emptyDir:
+          medium: Memory
+      - name: tmp
+        emptyDir: {}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - maily
+                - key: component
+                  operator: In
+                  values:
+                  - backend
+              topologyKey: "kubernetes.io/hostname"
+---
+# Maily Backend Service Account
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: maily-backend
+  namespace: default
+  labels:
+    app.kubernetes.io/name: maily-backend
+    app.kubernetes.io/part-of: maily
+---
+# Maily Backend Role
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: maily-backend
+  namespace: default
+  labels:
+    app.kubernetes.io/name: maily-backend
+    app.kubernetes.io/part-of: maily
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get"]
+---
+# Maily Backend Role Binding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: maily-backend
+  namespace: default
+  labels:
+    app.kubernetes.io/name: maily-backend
+    app.kubernetes.io/part-of: maily
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: maily-backend
+subjects:
+- kind: ServiceAccount
+  name: maily-backend
+  namespace: default
+---
+# Vault Policy ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-policies
+  namespace: default
+  labels:
+    app.kubernetes.io/name: vault-policies
+    app.kubernetes.io/part-of: maily
+data:
+  maily-policy.hcl: |
+    # Allow reading database credentials
+    path "database/creds/maily" {
+      capabilities = ["read"]
+    }
+
+    # Allow reading API keys
+    path "secret/data/maily/api-keys" {
+      capabilities = ["read"]
+    }
+
+    # Allow reading JWT secret
+    path "secret/data/maily/jwt" {
+      capabilities = ["read"]
+    }
+
+    # Allow token renewal
+    path "auth/token/renew" {
+      capabilities = ["update"]
+    }
+
+    path "auth/token/renew-self" {
+      capabilities = ["update"]
+    }

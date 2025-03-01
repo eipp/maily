@@ -1,0 +1,223 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-config
+  namespace: monitoring
+data:
+  alertmanager.yml: |
+    global:
+      resolve_timeout: 5m
+      smtp_smarthost: 'smtp.example.com:587'
+      smtp_from: 'alertmanager@maily.com'
+      smtp_auth_username: 'alertmanager'
+      smtp_auth_password: 'password'
+      smtp_require_tls: true
+      pagerduty_url: 'https://events.pagerduty.com/v2/enqueue'
+      slack_api_url: 'https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX'
+
+    templates:
+      - '/etc/alertmanager/templates/*.tmpl'
+
+    route:
+      receiver: 'slack-notifications'
+      group_by: ['alertname', 'job', 'severity']
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+
+      routes:
+      # Critical alerts go to PagerDuty
+      - match:
+          severity: critical
+        receiver: 'pagerduty-critical'
+        continue: true
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 1h
+
+      # High severity alerts go to Slack and email
+      - match:
+          severity: high
+        receiver: 'slack-notifications'
+        continue: true
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 2h
+
+      # Medium severity alerts go to Slack
+      - match:
+          severity: medium
+        receiver: 'slack-notifications'
+        continue: true
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 4h
+
+      # Low severity alerts go to Slack
+      - match:
+          severity: low
+        receiver: 'slack-notifications'
+        continue: true
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 12h
+
+      # Infrastructure alerts
+      - match_re:
+          job: 'node-exporter|kube-state-metrics|prometheus|alertmanager'
+        receiver: 'infrastructure-alerts'
+        continue: true
+
+      # Database alerts
+      - match_re:
+          job: 'postgres-exporter|pgbouncer-exporter'
+        receiver: 'database-alerts'
+        continue: true
+
+      # API alerts
+      - match_re:
+          job: 'maily-api'
+        receiver: 'api-alerts'
+        continue: true
+
+      # Frontend alerts
+      - match_re:
+          job: 'maily-frontend'
+        receiver: 'frontend-alerts'
+        continue: true
+
+      # Worker alerts
+      - match_re:
+          job: 'maily-worker'
+        receiver: 'worker-alerts'
+        continue: true
+
+    inhibit_rules:
+      # Inhibit warning alerts if there's a critical alert for the same service
+      - source_match:
+          severity: 'critical'
+        target_match:
+          severity: 'warning'
+        equal: ['job', 'instance']
+
+    receivers:
+    - name: 'pagerduty-critical'
+      pagerduty_configs:
+      - service_key: '{{ .GroupLabels.service_key }}'
+        send_resolved: true
+        severity: 'critical'
+        description: '{{ .CommonAnnotations.summary }}'
+        details:
+          firing: '{{ template "pagerduty.default.instances" .Alerts.Firing }}'
+          resolved: '{{ template "pagerduty.default.instances" .Alerts.Resolved }}'
+          system: 'Maily'
+          environment: '{{ .CommonLabels.environment }}'
+
+    - name: 'slack-notifications'
+      slack_configs:
+      - channel: '#maily-alerts'
+        send_resolved: true
+        icon_url: 'https://avatars3.githubusercontent.com/u/3380462'
+        title: '{{ template "slack.default.title" . }}'
+        title_link: '{{ template "slack.default.titlelink" . }}'
+        text: '{{ template "slack.default.text" . }}'
+        actions:
+        - type: button
+          text: 'Runbook :green_book:'
+          url: '{{ .CommonAnnotations.runbook_url }}'
+        - type: button
+          text: 'Dashboard :chart_with_upwards_trend:'
+          url: '{{ .CommonAnnotations.dashboard_url }}'
+        - type: button
+          text: 'Silence :no_bell:'
+          url: '{{ template "slack.default.silencelink" . }}'
+
+    - name: 'infrastructure-alerts'
+      slack_configs:
+      - channel: '#maily-infrastructure'
+        send_resolved: true
+        icon_url: 'https://avatars3.githubusercontent.com/u/3380462'
+        title: '{{ template "slack.default.title" . }}'
+        title_link: '{{ template "slack.default.titlelink" . }}'
+        text: '{{ template "slack.default.text" . }}'
+
+    - name: 'database-alerts'
+      slack_configs:
+      - channel: '#maily-database'
+        send_resolved: true
+        icon_url: 'https://avatars3.githubusercontent.com/u/3380462'
+        title: '{{ template "slack.default.title" . }}'
+        title_link: '{{ template "slack.default.titlelink" . }}'
+        text: '{{ template "slack.default.text" . }}'
+
+    - name: 'api-alerts'
+      slack_configs:
+      - channel: '#maily-api'
+        send_resolved: true
+        icon_url: 'https://avatars3.githubusercontent.com/u/3380462'
+        title: '{{ template "slack.default.title" . }}'
+        title_link: '{{ template "slack.default.titlelink" . }}'
+        text: '{{ template "slack.default.text" . }}'
+
+    - name: 'frontend-alerts'
+      slack_configs:
+      - channel: '#maily-frontend'
+        send_resolved: true
+        icon_url: 'https://avatars3.githubusercontent.com/u/3380462'
+        title: '{{ template "slack.default.title" . }}'
+        title_link: '{{ template "slack.default.titlelink" . }}'
+        text: '{{ template "slack.default.text" . }}'
+
+    - name: 'worker-alerts'
+      slack_configs:
+      - channel: '#maily-worker'
+        send_resolved: true
+        icon_url: 'https://avatars3.githubusercontent.com/u/3380462'
+        title: '{{ template "slack.default.title" . }}'
+        title_link: '{{ template "slack.default.titlelink" . }}'
+        text: '{{ template "slack.default.text" . }}'
+
+  templates.tmpl: |
+    {{ define "slack.default.title" }}
+      [{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }}
+    {{ end }}
+
+    {{ define "slack.default.titlelink" }}
+      {{ .ExternalURL }}/#/alerts?receiver={{ .Receiver }}
+    {{ end }}
+
+    {{ define "slack.default.text" }}
+      {{ range .Alerts }}
+        *Alert:* {{ .Annotations.summary }}{{ if .Annotations.description }} - {{ .Annotations.description }}{{ end }}
+        *Severity:* {{ .Labels.severity }}
+        *Started:* {{ .StartsAt | since }}
+        {{ if .Labels.instance }}*Instance:* {{ .Labels.instance }}{{ end }}
+        {{ if .Labels.job }}*Job:* {{ .Labels.job }}{{ end }}
+        {{ if .Labels.environment }}*Environment:* {{ .Labels.environment }}{{ end }}
+        {{ if .Labels.service }}*Service:* {{ .Labels.service }}{{ end }}
+        {{ if .Labels.namespace }}*Namespace:* {{ .Labels.namespace }}{{ end }}
+        {{ if .Labels.pod }}*Pod:* {{ .Labels.pod }}{{ end }}
+        {{ if .Labels.container }}*Container:* {{ .Labels.container }}{{ end }}
+      {{ end }}
+    {{ end }}
+
+    {{ define "slack.default.silencelink" }}
+      {{ .ExternalURL }}/#/silences/new?filter=%7B
+      {{- range .CommonLabels.SortedPairs -}}
+        {{- if ne .Name "alertname" -}}
+          {{- .Name }}%3D%22{{- .Value -}}%22%2C%20
+        {{- end -}}
+      {{- end -}}
+      alertname%3D%22{{ .CommonLabels.alertname }}%22
+      {{- end -}}
+    {{ end }}
+
+    {{ define "pagerduty.default.instances" }}
+      {{ range . }}
+        {{ .Annotations.summary }}
+        {{ if .Annotations.description }}{{ .Annotations.description }}{{ end }}
+        Severity: {{ .Labels.severity }}
+        {{ if .Labels.instance }}Instance: {{ .Labels.instance }}{{ end }}
+        {{ if .Labels.job }}Job: {{ .Labels.job }}{{ end }}
+      {{ end }}
+    {{ end }}

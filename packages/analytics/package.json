@@ -1,0 +1,30 @@
+{
+  "name": "@maily/analytics",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "license": "MIT",
+  "files": [
+    "dist/**"
+  ],
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@amplitude/analytics-browser": "2.11.12",
+    "chart.js": "4.4.8",
+    "react-chartjs-2": "5.3.0"
+  },
+  "author": "Maily Team",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/maily/maily.git"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  }
+}

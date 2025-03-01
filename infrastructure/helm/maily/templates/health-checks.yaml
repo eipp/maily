@@ -1,0 +1,105 @@
+{{- define "maily.healthCheck" }}
+livenessProbe:
+  {{- if eq .type "http" }}
+  httpGet:
+    path: {{ .path }}
+    port: {{ .port }}
+  {{- else if eq .type "exec" }}
+  exec:
+    command: {{ .command }}
+  {{- else if eq .type "tcp" }}
+  tcpSocket:
+    port: {{ .port }}
+  {{- end }}
+  initialDelaySeconds: {{ .initialDelaySeconds | default 30 }}
+  periodSeconds: {{ .periodSeconds | default 10 }}
+  timeoutSeconds: {{ .timeoutSeconds | default 5 }}
+  failureThreshold: {{ .failureThreshold | default 3 }}
+readinessProbe:
+  {{- if eq .type "http" }}
+  httpGet:
+    path: {{ .path }}
+    port: {{ .port }}
+  {{- else if eq .type "exec" }}
+  exec:
+    command: {{ .command }}
+  {{- else if eq .type "tcp" }}
+  tcpSocket:
+    port: {{ .port }}
+  {{- end }}
+  initialDelaySeconds: {{ .initialDelaySeconds | default 5 }}
+  periodSeconds: {{ .periodSeconds | default 10 }}
+  timeoutSeconds: {{ .timeoutSeconds | default 5 }}
+  failureThreshold: {{ .failureThreshold | default 3 }}
+startupProbe:
+  {{- if eq .type "http" }}
+  httpGet:
+    path: {{ .path }}
+    port: {{ .port }}
+  {{- else if eq .type "exec" }}
+  exec:
+    command: {{ .command }}
+  {{- else if eq .type "tcp" }}
+  tcpSocket:
+    port: {{ .port }}
+  {{- end }}
+  initialDelaySeconds: {{ .initialDelaySeconds | default 10 }}
+  periodSeconds: {{ .periodSeconds | default 5 }}
+  timeoutSeconds: {{ .timeoutSeconds | default 5 }}
+  failureThreshold: {{ .failureThreshold | default 30 }}
+{{- end }}
+
+# Backend health check configuration
+{{- define "maily.backendHealthCheck" }}
+{{- include "maily.healthCheck" (dict "type" "http" "path" "/health" "port" 8000 "initialDelaySeconds" 30 "periodSeconds" 10 "timeoutSeconds" 5 "failureThreshold" 3) }}
+{{- end }}
+
+# Frontend health check configuration
+{{- define "maily.frontendHealthCheck" }}
+{{- include "maily.healthCheck" (dict "type" "http" "path" "/api/health" "port" 3000 "initialDelaySeconds" 30 "periodSeconds" 10 "timeoutSeconds" 5 "failureThreshold" 3) }}
+{{- end }}
+
+# Worker health check configuration
+{{- define "maily.workerHealthCheck" }}
+{{- include "maily.healthCheck" (dict "type" "exec" "command" (list "/bin/sh" "-c" "pgrep -f 'python -m workers'") "initialDelaySeconds" 30 "periodSeconds" 10 "timeoutSeconds" 5 "failureThreshold" 3) }}
+{{- end }}
+
+# Database health check configuration
+{{- define "maily.postgresHealthCheck" }}
+{{- include "maily.healthCheck" (dict "type" "exec" "command" (list "/bin/sh" "-c" "pg_isready -U postgres -h 127.0.0.1") "initialDelaySeconds" 30 "periodSeconds" 10 "timeoutSeconds" 5 "failureThreshold" 3) }}
+{{- end }}
+
+# Redis health check configuration
+{{- define "maily.redisHealthCheck" }}
+{{- include "maily.healthCheck" (dict "type" "exec" "command" (list "/bin/sh" "-c" "redis-cli ping") "initialDelaySeconds" 30 "periodSeconds" 10 "timeoutSeconds" 5 "failureThreshold" 3) }}
+{{- end }}
+
+# RabbitMQ health check configuration
+{{- define "maily.rabbitmqHealthCheck" }}
+{{- include "maily.healthCheck" (dict "type" "exec" "command" (list "/bin/sh" "-c" "rabbitmqctl status") "initialDelaySeconds" 30 "periodSeconds" 10 "timeoutSeconds" 5 "failureThreshold" 3) }}
+{{- end }}
+
+# WAF health check configuration
+{{- define "maily.wafHealthCheck" }}
+{{- include "maily.healthCheck" (dict "type" "http" "path" "/health" "port" 80 "initialDelaySeconds" 30 "periodSeconds" 10 "timeoutSeconds" 5 "failureThreshold" 3) }}
+{{- end }}
+
+# API Edge Caching health check configuration
+{{- define "maily.apiEdgeCachingHealthCheck" }}
+{{- include "maily.healthCheck" (dict "type" "http" "path" "/health" "port" 80 "initialDelaySeconds" 30 "periodSeconds" 10 "timeoutSeconds" 5 "failureThreshold" 3) }}
+{{- end }}
+
+# Security Monitoring health check configuration
+{{- define "maily.securityMonitoringHealthCheck" }}
+{{- include "maily.healthCheck" (dict "type" "http" "path" "/health" "port" 8080 "initialDelaySeconds" 30 "periodSeconds" 10 "timeoutSeconds" 5 "failureThreshold" 3) }}
+{{- end }}
+
+# Audit Logging health check configuration
+{{- define "maily.auditLoggingHealthCheck" }}
+{{- include "maily.healthCheck" (dict "type" "tcp" "port" 24224 "initialDelaySeconds" 30 "periodSeconds" 10 "timeoutSeconds" 5 "failureThreshold" 3) }}
+{{- end }}
+
+# IP Warming health check configuration
+{{- define "maily.ipWarmingHealthCheck" }}
+{{- include "maily.healthCheck" (dict "type" "http" "path" "/health" "port" 8080 "initialDelaySeconds" 30 "periodSeconds" 10 "timeoutSeconds" 5 "failureThreshold" 3) }}
+{{- end }}

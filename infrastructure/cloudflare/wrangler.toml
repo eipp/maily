@@ -1,0 +1,79 @@
+# Wrangler configuration for Maily Cloudflare Workers
+
+# Global configuration
+name = "maily"
+type = "javascript"
+account_id = "your-account-id" # Replace with your Cloudflare account ID
+compatibility_date = "2023-10-30"
+compatibility_flags = ["nodejs_compat"]
+
+# KV Namespaces
+kv_namespaces = [
+  { binding = "MAILY_TEMPLATES", id = "your-kv-id-1", preview_id = "your-preview-kv-id-1" },
+  { binding = "MAILY_USER_PREFS", id = "your-kv-id-2", preview_id = "your-preview-kv-id-2" },
+  { binding = "MAILY_EXPERIMENTS", id = "your-kv-id-3", preview_id = "your-preview-kv-id-3" },
+  { binding = "MAILY_GEO_CONTENT", id = "your-kv-id-4", preview_id = "your-preview-kv-id-4" }
+]
+
+# Environment variables
+[vars]
+ENVIRONMENT = "production"
+DEBUG = "false"
+API_VERSION = "v1"
+
+# API Edge Cache Worker
+[env.api-edge-cache]
+name = "maily-api-edge-cache"
+main = "workers/api-edge-cache.js"
+usage_model = "bundled"
+route = { pattern = "api.maily.com/*", zone_name = "maily.com" }
+
+[env.api-edge-cache.vars]
+CACHE_TTL = "60"
+ORIGIN_URL = "https://api-origin.maily.com"
+ENVIRONMENT = "production"
+
+# Dynamic Content Worker
+[env.dynamic-content]
+name = "maily-dynamic-content"
+main = "workers/dynamic-content.js"
+usage_model = "bundled"
+route = { pattern = "content.maily.com/*", zone_name = "maily.com" }
+
+[env.dynamic-content.vars]
+ENVIRONMENT = "production"
+CONTENT_VERSION = "v1"
+
+# Development environment configuration
+[env.development]
+name = "maily-dev"
+vars = { ENVIRONMENT = "development", DEBUG = "true" }
+kv_namespaces = [
+  { binding = "MAILY_TEMPLATES", id = "your-dev-kv-id-1", preview_id = "your-dev-preview-kv-id-1" },
+  { binding = "MAILY_USER_PREFS", id = "your-dev-kv-id-2", preview_id = "your-dev-preview-kv-id-2" },
+  { binding = "MAILY_EXPERIMENTS", id = "your-dev-kv-id-3", preview_id = "your-dev-preview-kv-id-3" },
+  { binding = "MAILY_GEO_CONTENT", id = "your-dev-kv-id-4", preview_id = "your-dev-preview-kv-id-4" }
+]
+
+# Staging environment configuration
+[env.staging]
+name = "maily-staging"
+vars = { ENVIRONMENT = "staging", DEBUG = "true" }
+kv_namespaces = [
+  { binding = "MAILY_TEMPLATES", id = "your-staging-kv-id-1", preview_id = "your-staging-preview-kv-id-1" },
+  { binding = "MAILY_USER_PREFS", id = "your-staging-kv-id-2", preview_id = "your-staging-preview-kv-id-2" },
+  { binding = "MAILY_EXPERIMENTS", id = "your-staging-kv-id-3", preview_id = "your-staging-preview-kv-id-3" },
+  { binding = "MAILY_GEO_CONTENT", id = "your-staging-kv-id-4", preview_id = "your-staging-preview-kv-id-4" }
+]
+
+# Build configuration
+[build]
+command = "npm run build"
+watch_dir = "workers"
+
+# Miniflare configuration for local development
+[miniflare]
+kv_persist = true
+cache_persist = true
+port = 8787
+host = "localhost"

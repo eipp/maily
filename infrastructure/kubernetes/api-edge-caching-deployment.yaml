@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-edge-caching
+  labels:
+    app: maily
+    component: api-edge-cache
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: maily
+      component: api-edge-cache
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: maily
+        component: api-edge-cache
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.23-alpine
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: nginx-config
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+        - name: cache-volume
+          mountPath: /var/cache/nginx
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+          requests:
+            cpu: "200m"
+            memory: "256Mi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+      volumes:
+      - name: nginx-config
+        configMap:
+          name: api-edge-caching-config
+      - name: cache-volume
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-edge-caching
+  labels:
+    app: maily
+    component: api-edge-cache
+spec:
+  selector:
+    app: maily
+    component: api-edge-cache
+  ports:
+  - port: 80
+    targetPort: 80
+  type: ClusterIP

@@ -1,0 +1,92 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fluentd-config
+  namespace: maily-production
+data:
+  fluent.conf: |
+    # Input sources - collect logs from all services
+    <source>
+      @type tail
+      path /var/log/containers/*.log
+      pos_file /var/log/fluentd-containers.log.pos
+      tag kubernetes.*
+      read_from_head true
+      <parse>
+        @type json
+        time_format %Y-%m-%dT%H:%M:%S.%NZ
+      </parse>
+    </source>
+
+    # Configure Kubernetes metadata
+    <filter kubernetes.**>
+      @type kubernetes_metadata
+      kubernetes_url https://kubernetes.default.svc
+      bearer_token_file /var/run/secrets/kubernetes.io/serviceaccount/token
+      ca_file /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+      skip_labels false
+      skip_container_metadata false
+      skip_namespace_metadata false
+      skip_master_url false
+    </filter>
+
+    # Add timestamps, severity, and host information
+    <filter kubernetes.**>
+      @type record_transformer
+      <record>
+        timestamp ${time.strftime('%Y-%m-%dT%H:%M:%S.%NZ')}
+        severity ${record["stream"] == "stderr" ? "ERROR" : "INFO"}
+        hostname ${hostname}
+        environment production
+      </record>
+    </filter>
+
+    # Filter logs by namespace for maily services
+    <match kubernetes.var.log.containers.**maily-production**.log>
+      @type elasticsearch
+      host elasticsearch.monitoring
+      port 9200
+      logstash_format true
+      logstash_prefix maily-logs
+      logstash_dateformat %Y%m%d
+      include_tag_key true
+      tag_key @log_name
+      <buffer>
+        @type file
+        path /var/log/fluentd-buffers/kubernetes.maily.buffer
+        flush_mode interval
+        retry_type exponential_backoff
+        flush_thread_count 2
+        flush_interval 5s
+        retry_forever true
+        retry_max_interval 30
+        chunk_limit_size 2M
+        queue_limit_length 8
+        overflow_action block
+      </buffer>
+    </match>
+
+    # Catch all logs not handled by above configurations
+    <match **>
+      @type elasticsearch
+      host elasticsearch.monitoring
+      port 9200
+      logstash_format true
+      logstash_prefix system-logs
+      logstash_dateformat %Y%m%d
+      include_tag_key true
+      tag_key @log_name
+      <buffer>
+        @type file
+        path /var/log/fluentd-buffers/other.buffer
+        flush_mode interval
+        retry_type exponential_backoff
+        flush_thread_count 2
+        flush_interval 5s
+        retry_forever true
+        retry_max_interval 30
+        chunk_limit_size 2M
+        queue_limit_length 8
+        overflow_action block
+      </buffer>
+    </match>

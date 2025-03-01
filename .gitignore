@@ -1,0 +1,107 @@
+# Dependencies
+node_modules/
+.venv/
+venv/
+env/
+ENV/
+maily-env-py310/
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.pytest_cache/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.coverage
+htmlcov/
+coverage_html/
+# Environment variables
+.env
+.env.local
+.env.*.local
+env.local
+.env.development
+.env.test
+.env.staging
+.env.production
+!.env.example
+# Build and cache
+.cache/
+.next/
+out/
+build/
+dist/
+coverage/
+*.tsbuildinfo
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.cursor/
+# OS
+.DS_Store
+Thumbs.db
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+# Next.js
+next-env.d.ts
+.vercel
+*.pem
+# Database
+*.sqlite
+*.sqlite3
+*.db
+# Jupyter Notebooks
+.ipynb_checkpoints
+# Testing
+.coverage.*
+# Security scanning
+.zap/
+# Temporary files
+*.tmp
+*.bak
+*~
+# Local development
+.aws/
+# Vault data and backups
+dev/vault/
+backups/
+# Enhanced patterns added by update-gitignore.sh on Sat Mar  1 14:48:47 EET 2025
+*.7z
+*.rar
+*.sublime-project
+*.sublime-workspace
+*.tar.gz
+*.temp
+*.zip
+.pnp.js
+.pnp/
+.project
+.settings/
+backup_archives/
+diagnostic_reports/
+diagnostics/
+docker-compose.debug.yml
+docker-compose.dev.yml
+docker-compose.local.yml
+docker-compose.test.yml
+env.bak/
+logs/
+test-reports/
+test_report_*.html
+test_report_*.json
+venv.bak/
+# Enhanced patterns added by update-gitignore.sh on Sat Mar  1 14:51:20 EET 2025

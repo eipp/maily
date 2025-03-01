@@ -1,0 +1,15 @@
+[Unit]
+Description=Vault Maintenance Service
+After=network.target
+
+[Service]
+Type=oneshot
+User=vault
+Group=vault
+Environment="VAULT_ADDR=https://vault.maily.internal:8200"
+Environment="VAULT_TOKEN_FILE=/etc/vault/token"
+ExecStart=/bin/bash -c 'VAULT_TOKEN=$(cat $VAULT_TOKEN_FILE) /vault/scripts/vault-maintenance.sh'
+StandardOutput=journal
+
+[Install]
+WantedBy=multi-user.target

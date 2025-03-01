@@ -1,0 +1,106 @@
+# Quality gate configuration for automated testing
+# Used by CI/CD pipelines to enforce quality standards
+
+quality_gates:
+  test_coverage:
+    - type: overall
+      threshold: 80
+      description: "Overall code coverage across the entire codebase"
+    - type: new_code
+      threshold: 90
+      description: "Coverage requirement for new or modified code"
+    - type: critical_paths
+      threshold: 95
+      description: "Coverage requirement for critical business logic paths"
+      paths:
+        - "apps/api/services/campaign_service.py"
+        - "apps/api/services/email_service.py"
+        - "apps/api/services/user_service.py"
+        - "apps/web/components/Campaign/**/*"
+
+  code_quality:
+    - type: maintainability
+      threshold: B
+      description: "Code Climate maintainability grade"
+    - type: reliability
+      threshold: B
+      description: "Code Climate reliability grade"
+    - type: security
+      threshold: A
+      description: "Code Climate security grade"
+
+  performance:
+    - type: api_response_time_p95
+      threshold: 300ms
+      description: "95th percentile API response time"
+      endpoints:
+        - "/api/campaigns"
+        - "/api/auth/*"
+        - "/api/analytics/*"
+    - type: page_load_time
+      threshold: 2s
+      description: "Maximum page load time (Time to Interactive)"
+      pages:
+        - "/dashboard"
+        - "/campaigns/*"
+        - "/analytics"
+    - type: first_contentful_paint
+      threshold: 1.2s
+      description: "Maximum time to First Contentful Paint"
+
+  test_success:
+    - type: unit_tests
+      threshold: 100%
+      description: "All unit tests must pass"
+    - type: integration_tests
+      threshold: 100%
+      description: "All integration tests must pass"
+    - type: e2e_tests
+      threshold: 95%
+      description: "At least 95% of end-to-end tests must pass"
+
+  accessibility:
+    - type: wcag_level
+      threshold: "AA"
+      description: "WCAG 2.1 Level AA compliance"
+    - type: critical_violations
+      threshold: 0
+      description: "No critical accessibility violations allowed"
+    - type: serious_violations
+      threshold: 2
+      description: "Maximum number of serious accessibility violations"
+
+  dependencies:
+    - type: security_vulnerabilities
+      threshold: 0
+      severity: "critical,high"
+      description: "No critical or high security vulnerabilities in dependencies"
+    - type: outdated_dependencies
+      threshold: 5%
+      description: "Maximum percentage of outdated major dependencies"
+
+# Enforcement settings
+enforcement:
+  pull_requests:
+    block_on_failure:
+      - test_coverage.new_code
+      - test_success.unit_tests
+      - test_success.integration_tests
+      - code_quality.security
+      - dependencies.security_vulnerabilities
+    warn_on_failure:
+      - test_coverage.overall
+      - code_quality.maintainability
+      - code_quality.reliability
+      - accessibility.critical_violations
+
+  main_branch:
+    block_deployment_on_failure:
+      - test_coverage.overall
+      - test_coverage.critical_paths
+      - test_success.unit_tests
+      - test_success.integration_tests
+      - test_success.e2e_tests
+      - performance.api_response_time_p95
+      - accessibility.critical_violations
+      - dependencies.security_vulnerabilities

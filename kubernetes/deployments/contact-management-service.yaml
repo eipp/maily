@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: contact-management-service
+  namespace: maily-production
+  labels:
+    app: contact-management-service
+    service: contacts
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: contact-management-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: contact-management-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: contact-management-service
+        image: ${REGISTRY}/contact-management-service:${TAG}
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8000
+          name: http
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        env:
+        - name: POSTGRES_URI
+          valueFrom:
+            secretKeyRef:
+              name: database-credentials
+              key: contact-management-db-url
+        - name: EMAIL_VALIDATION_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: external-api-credentials
+              key: email-validation-api-key
+        - name: DATA_ENRICHMENT_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: external-api-credentials
+              key: data-enrichment-api-key
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 2
+          successThreshold: 1
+          failureThreshold: 3
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      imagePullSecrets:
+      - name: registry-credentials

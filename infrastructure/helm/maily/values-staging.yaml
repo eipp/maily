@@ -1,0 +1,154 @@
+# Maily Staging Environment Configuration
+
+global:
+  environment: staging
+  domain: staging.maily.io
+
+image:
+  repository: ghcr.io/maily/maily
+  tag: latest
+  pullPolicy: Always
+
+replicaCount:
+  api: 2
+  frontend: 2
+  worker: 2
+
+resources:
+  api:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  frontend:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 300m
+      memory: 512Mi
+  worker:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+autoscaling:
+  api:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  frontend:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  worker:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+ingress:
+  enabled: true
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-staging
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+  hosts:
+    - host: staging.maily.io
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: maily-staging-tls
+      hosts:
+        - staging.maily.io
+
+database:
+  host: ${DATABASE_HOST}
+  port: 5432
+  name: maily
+  user: ${DATABASE_USER}
+  existingSecret: maily-secrets
+  existingSecretPasswordKey: postgres-password
+
+redis:
+  host: ${REDIS_HOST}
+  port: 6379
+  existingSecret: maily-secrets
+  existingSecretPasswordKey: redis-password
+
+rabbitmq:
+  host: ${RABBITMQ_HOST}
+  port: 5672
+  user: ${RABBITMQ_USER}
+  existingSecret: maily-secrets
+  existingSecretPasswordKey: rabbitmq-password
+
+ai:
+  enabled: true
+  providers:
+    - name: openai
+      enabled: true
+      existingSecret: maily-secrets
+      existingSecretKeyKey: openai-api-key
+    - name: anthropic
+      enabled: true
+      existingSecret: maily-secrets
+      existingSecretKeyKey: anthropic-api-key
+    - name: google
+      enabled: true
+      existingSecret: maily-secrets
+      existingSecretKeyKey: google-api-key
+
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+  prometheusRule:
+    enabled: true
+  grafanaDashboards:
+    enabled: true
+
+security:
+  networkPolicies:
+    enabled: true
+  podSecurityPolicies:
+    enabled: true
+  securityContext:
+    enabled: true
+    runAsNonRoot: true
+    runAsUser: 1000
+  containerSecurityContext:
+    enabled: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - maily-api
+                  - maily-frontend
+                  - maily-worker
+          topologyKey: kubernetes.io/hostname
