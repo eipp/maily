@@ -98,7 +98,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: lint-and-typecheck
     if: ${{ github.event.inputs.skip_tests != 'true' }}
-    
+
     services:
       postgres:
         image: postgres:14
@@ -282,7 +282,7 @@ jobs:
     if: |
       (github.event_name == 'push' && github.ref == 'refs/heads/develop') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
-  
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -317,7 +317,7 @@ jobs:
     if: |
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
-  
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -328,32 +328,53 @@ jobs:
           name: build-artifacts
           path: artifacts
 
-      - name: Configure DNS
+      - name: Install Terraform
         run: |
-          echo "To manually configure DNS records after deployment:"
-          echo "1. Log into your domain registrar"
-          echo "2. Create A record for justmaily.com pointing to Vercel's IP address"
-          echo "3. Create A record for api.justmaily.com pointing to Vercel's IP address"
-          echo "Note: This step may require manual intervention. Consult with DevOps team if needed."
+          brew install terraform || echo "Terraform already installed or install failed"
 
-      - name: Execute terraform
+      - name: Setup AWS CLI
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Execute Terraform
         run: |
-          echo "To create AWS EKS cluster:"
-          echo "cd infrastructure/terraform/eks"
-          echo "terraform init"
-          echo "terraform apply -auto-approve"
-          echo "Note: This step may require manual intervention with proper AWS credentials."
+          cd infrastructure/terraform/eks
+          terraform init
+          terraform apply -auto-approve
 
       - name: Configure kubectl
         run: |
-          echo "To configure kubectl with new EKS cluster:"
-          echo "aws eks update-kubeconfig --region us-east-1 --name maily-production-cluster"
-          echo "Note: This step may require manual intervention with proper AWS credentials."
+          aws eks update-kubeconfig --region us-east-1 --name maily-production-cluster
 
-      - name: Run deployment script
+      - name: Create Kubernetes namespaces
+        run: |
+          kubectl apply -f kubernetes/namespaces/production.yaml
+
+      - name: Setup Kubernetes secrets
+        run: |
+          ./scripts/create-k8s-secrets.sh
+
+      - name: Deploy to Kubernetes
+        run: |
+          kubectl apply -f kubernetes/deployments/ --recursive
+
+      - name: Setup Vercel CLI
+        run: |
+          npm install -g vercel
+          vercel login -t ${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy to Vercel
+        run: |
+          cd apps/web
+          vercel --prod
+
+      - name: Run master deployment script
         run: |
           chmod +x ./scripts/master-deploy.sh
-          ./scripts/master-deploy.sh production || echo "Deployment encountered issues but continuing"
+          ./scripts/master-deploy.sh production
 
       - name: Run smoke tests
         run: |
@@ -366,11 +387,3 @@ jobs:
           name: production-verification-report
           path: ./deployment-reports/
           retention-days: 30
-
-      - name: Final verification
-        run: |
-          echo "Deployment completed. Please verify the following manually:"
-          echo "1. DNS propagation (can take up to 48 hours)"
-          echo "2. EKS cluster is running properly"
-          echo "3. Vercel deployments are successful"
-          echo "4. Manually run: node scripts/smoke-test.js production"
