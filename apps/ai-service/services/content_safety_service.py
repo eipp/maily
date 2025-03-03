@@ -17,6 +17,7 @@ from fastapi import HTTPException, status
 
 from ai_service.utils.logger import get_logger
 from ai_service.utils.retry import retry_with_backoff
+from ai_service.utils.resilience import async_circuit_breaker
 from ai_service.models.content_safety import (
     ContentSafetyCheck,
     ContentSafetyResult,
@@ -61,6 +62,22 @@ class ContentSafetyService:
         
         # Initialize HTTP client
         self.client = httpx.AsyncClient(timeout=self.timeout)
+        
+        # Define problematic keywords for simple content filtering
+        self.problematic_keywords = [
+            # Violence
+            "kill", "murder", "attack", "bomb", "terrorist", "shooting", "weapon",
+            # Hate speech
+            "racist", "nazi", "supremacist", "bigot", "hate group",
+            # Self-harm
+            "suicide", "self-harm", "cutting", "overdose",
+            # Sexual content
+            "pornography", "explicit content", "sexual abuse",
+            # Child exploitation
+            "child abuse", "child exploitation", "minor exploitation",
+            # Illegal activities
+            "illegal drugs", "drug trafficking", "hack into", "ddos"
+        ]
         
         logger.info(f"Content Safety Service initialized (enabled={self.enabled})")
     
@@ -317,6 +334,59 @@ class ContentSafetyService:
                 )
         
         return filtered_content, result
+        
+    @async_circuit_breaker(
+        name="content_safety",
+        failure_threshold=3,
+        recovery_timeout=60.0,
+        fallback_function=lambda content, *args, **kwargs: (content, False, {"fallback": True, "reason": "Safety service unavailable"})
+    )
+    async def filter_unsafe_content(self, content: str) -> Tuple[str, bool, Dict[str, Any]]:
+        """
+        Filter unsafe content using content safety checks.
+        
+        This method is a wrapper around filter_content that returns a more structured
+        response with the filtered content, a flag indicating if filtering was applied,
+        and detailed safety information.
+        
+        Args:
+            content (str): The content to filter
+            
+        Returns:
+            Tuple[str, bool, Dict[str, Any]]: 
+                - The filtered content
+                - Boolean indicating if content was filtered
+                - Dictionary with safety information
+        """
+        if not self.enabled:
+            # If content safety is disabled, return the original content
+            return content, False, {"enabled": False}
+            
+        # Simple keyword-based pre-filtering to avoid unnecessary API calls
+        lower_content = content.lower()
+        for keyword in self.problematic_keywords:
+            if keyword.lower() in lower_content:
+                # If a problematic keyword is found, proceed with full safety check
+                try:
+                    filtered_content, result = await self.filter_content(content)
+                    was_filtered = filtered_content != content
+                    
+                    # Convert safety results to a dict
+                    safety_info = {
+                        "was_filtered": was_filtered,
+                        "safety_level": result.safety_level.value,
+                        "categories": [c.dict() for c in result.categories if c.flagged],
+                        "action": result.recommended_action.value
+                    }
+                    
+                    return filtered_content, was_filtered, safety_info
+                except Exception as e:
+                    logger.error(f"Error during content filtering: {str(e)}")
+                    # On error, return original content with warning about possible issues
+                    return content, False, {"error": str(e), "fallback": True}
+        
+        # If no problematic keywords are found, return the content unchanged
+        return content, False, {"safe": True}
     
     async def _store_safety_check(self, content: str, result: ContentSafetyResult):
         """
@@ -450,3 +520,8 @@ class ContentSafetyService:
 
 # Create a singleton instance
 content_safety_service = ContentSafetyService()
+
+# Function to get the singleton instance
+def get_content_safety_service() -> ContentSafetyService:
+    """Get the singleton instance of the content safety service."""
+    return content_safety_service

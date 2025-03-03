@@ -34,7 +34,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Use absolute imports that work both when imported as a module and when run directly
-from ai_service.routers import generation, conversation, tools
+from ai_service.routers import generation, conversation, tools, content_safety
 from ai_service.routers.agent_coordinator_router import router as agent_coordinator_router
 from ai_service.utils.database import init_db, close_db
 from ai_service.utils.redis_client import init_redis, close_redis
@@ -92,6 +92,7 @@ app.mount("/metrics", metrics_app)
 app.include_router(generation.router, prefix="/api/v1/generation", tags=["Generation"])
 app.include_router(conversation.router, prefix="/api/v1/conversation", tags=["Conversation"])
 app.include_router(tools.router, prefix="/api/v1/tools", tags=["Tools"])
+app.include_router(content_safety.router, prefix="/api/v1/content-safety", tags=["Content Safety"])
 app.include_router(agent_coordinator_router.router, prefix="/api", tags=["AI Mesh Network"])
 
 # Root endpoint

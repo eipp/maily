@@ -4,12 +4,16 @@ Implements caching for improved performance.
 """
 from typing import Dict, Any, Optional, List
 import logging
+import os
+import httpx
+import json
 from fastapi import Depends, HTTPException
 
 from apps.api.services.base_service import BaseService, handle_common_exceptions
 from apps.api.ai.adapters.base import ModelRequest, ModelResponse
 from apps.api.ai.adapters.factory import get_adapter
 from apps.api.ai.adapters.caching import AdapterCache, cached_response
+from apps.api.utils.resilience import circuit_breaker, CircuitBreakerOpenError
 from apps.api.db.session import get_db
 from apps.api.core.config import get_settings
 from apps.api.schemas.ai import AIModelRequest, AIModelResponse
@@ -21,6 +25,8 @@ class AIService(BaseService):
 
     This service provides methods for generating AI responses, managing
     model configurations, and optimizing performance through caching.
+    It also integrates with the content safety service to ensure generated
+    content meets safety standards.
     """
 
     def __init__(self, db=None, settings=None):
@@ -31,11 +37,22 @@ class AIService(BaseService):
             max_size=self.settings.AI_CACHE_MAX_SIZE
         )
         self.logger = logging.getLogger("ai_service")
+        
+        # Initialize HTTP client for content safety service
+        self.content_safety_url = os.getenv("CONTENT_SAFETY_URL", "http://ai-service:8000/content-safety")
+        self.content_safety_enabled = os.getenv("CONTENT_SAFETY_ENABLED", "true").lower() == "true"
+        self.content_safety_timeout = int(os.getenv("CONTENT_SAFETY_TIMEOUT", "3"))
+        self.http_client = httpx.AsyncClient(timeout=self.content_safety_timeout)
 
     async def initialize(self):
         """Initialize the service."""
         await super().initialize()
-        self.logger.info("AI service initialized with caching enabled")
+        self.logger.info(f"AI service initialized with caching enabled, content safety: {self.content_safety_enabled}")
+        
+    async def close(self):
+        """Clean up resources."""
+        await self.http_client.aclose()
+        self.logger.info("AI service resources cleaned up")
 
     async def get_cache_stats(self) -> Dict[str, Any]:
         """Get cache statistics."""
@@ -58,6 +75,52 @@ class AIService(BaseService):
         count = await self.cache.invalidate(key_pattern)
         self.logger.info(f"Invalidated {count} cache entries")
         return count
+        
+    @circuit_breaker(
+        name="content_safety",
+        failure_threshold=3,
+        recovery_timeout=60.0,
+        fallback_function=lambda content, *args, **kwargs: (content, False, {"fallback": True})
+    )
+    async def check_content_safety(self, content: str) -> tuple[str, bool, Dict[str, Any]]:
+        """
+        Check content for safety issues and filter if necessary.
+        
+        Args:
+            content: The content to check
+            
+        Returns:
+            Tuple of (filtered_content, was_filtered, safety_details)
+        """
+        if not self.content_safety_enabled:
+            return content, False, {"enabled": False}
+            
+        try:
+            response = await self.http_client.post(
+                self.content_safety_url + "/filter",
+                json={"content": content},
+                headers={"Content-Type": "application/json"}
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                filtered_content = result.get("filtered_content", content)
+                was_filtered = result.get("was_filtered", False)
+                safety_details = result.get("safety_details", {})
+                
+                if was_filtered:
+                    self.logger.warning(
+                        f"Content filtered for safety reasons: {json.dumps(safety_details)}"
+                    )
+                
+                return filtered_content, was_filtered, safety_details
+            else:
+                self.logger.error(f"Content safety service error: {response.status_code} {response.text}")
+                return content, False, {"error": f"Status code: {response.status_code}"}
+                
+        except Exception as e:
+            self.logger.error(f"Content safety check failed: {str(e)}")
+            return content, False, {"error": str(e)}
 
     @handle_common_exceptions
     async def generate_response(
@@ -65,7 +128,8 @@ class AIService(BaseService):
         request: AIModelRequest
     ) -> AIModelResponse:
         """
-        Generate a response from an AI model with caching support.
+        Generate a response from an AI model with caching support
+        and content safety filtering.
 
         Args:
             request: The AI model request
@@ -89,6 +153,28 @@ class AIService(BaseService):
         # The cached_response decorator is applied at the adapter level
         response = await adapter.generate(model_request)
 
+        # Apply content safety filtering
+        original_content = response.content
+        filtered_content, was_filtered, safety_details = await self.check_content_safety(original_content)
+        
+        # Update response with filtered content if necessary
+        if was_filtered:
+            response.content = filtered_content
+            
+            # Add safety details to metadata
+            if not response.metadata:
+                response.metadata = {}
+            response.metadata["safety_filtered"] = True
+            response.metadata["safety_details"] = safety_details
+            
+            self.logger.info(
+                f"Content safety filter applied to response from {request.model_name}",
+                extra={
+                    "safety_details": safety_details,
+                    "model": request.model_name
+                }
+            )
+
         # Log success with latency
         latency = response.metadata.get("latency", 0)
         is_cached = response.metadata.get("cached", False)
@@ -100,7 +186,8 @@ class AIService(BaseService):
             context={
                 "model": request.model_name,
                 "cache_status": cache_status,
-                "tokens": response.usage.get("total_tokens", 0)
+                "tokens": response.usage.get("total_tokens", 0),
+                "safety_filtered": was_filtered
             }
         )
 
@@ -109,7 +196,11 @@ class AIService(BaseService):
             model=response.model_name,
             usage=response.usage,
             finish_reason=response.finish_reason,
-            cached=is_cached
+            cached=is_cached,
+            metadata={
+                "safety_filtered": was_filtered,
+                "safety_details": safety_details if was_filtered else {}
+            }
         )
 
     @handle_common_exceptions
