@@ -1,0 +1,276 @@
+## Maily Datadog Monitoring Configuration
+## This is a minimal configuration focused on essential metrics for initial release
+
+# API and App keys from Datadog
+datadog:
+  apiKey: "${DATADOG_API_KEY}"
+  appKey: "${DATADOG_APP_KEY}"
+  # We'll use the EU site for this deployment
+  site: datadoghq.eu
+  clusterName: maily-production
+
+# Deploy APM and trace collection agent
+agents:
+  enabled: true
+  image:
+    tag: "7-jmx"
+
+  # Pod security context
+  podSecurity:
+    securityContextEnabled: true
+
+  # Allow auto-instrumentation for tracing
+  apm:
+    enabled: true
+    portEnabled: true
+
+# Enable log collection
+logs:
+  enabled: true
+  containerCollectAll: true
+
+# Core system and Kubernetes monitoring
+clusterAgent:
+  enabled: true
+  metricsProvider:
+    enabled: true
+  
+  # Monitor Kubernetes resources and events
+  rbac:
+    create: true
+  
+  # Collect cluster level metrics
+  kubernetes:
+    admissionController:
+      enabled: false  # Disabled initially for simpler setup
+
+# Application-specific monitors
+customAgentConfig:
+  logs_enabled: true
+  logs_config:
+    container_collect_all: true
+    
+  # Application-specific log collection
+  logs:
+    - type: file
+      path: /var/log/maily-api/*.log
+      service: maily-api
+      source: nodejs
+      tags:
+        - env:production
+        - service:api
+    
+    - type: file 
+      path: /var/log/maily-ai-service/*.log
+      service: maily-ai
+      source: python
+      tags:
+        - env:production
+        - service:ai
+    
+    - type: file
+      path: /var/log/maily-email-service/*.log
+      service: maily-email
+      source: nodejs
+      tags:
+        - env:production
+        - service:email
+
+# Service-specific monitors
+serviceMonitoring:
+  enabled: true
+  
+  # Specific services to monitor
+  services:
+    - name: maily-api
+      check: http
+      url: http://maily-api:3000/health
+      interval: 30
+      
+    - name: maily-ai-service
+      check: http
+      url: http://ai-mesh:8000/health
+      interval: 30
+      
+    - name: maily-email-service
+      check: http
+      url: http://email-service:4000/health
+      interval: 30
+      
+    - name: maily-redis
+      check: tcp
+      host: redis
+      port: 6379
+      interval: 30
+
+# Dashboard and alert configurations
+dashboards:
+  api:
+    title: "Maily API Service"
+    layout_type: ordered
+    widgets:
+      - definition:
+          title: "API Request Rate"
+          type: timeseries
+          requests:
+            - q: "sum:maily.api.requests{*}.as_count()"
+              display_type: line
+      - definition:
+          title: "API Response Time (95th Percentile)"
+          type: timeseries
+          requests:
+            - q: "p95:maily.api.response.time{*}"
+              display_type: line
+      - definition:
+          title: "API Error Rate"
+          type: timeseries
+          requests:
+            - q: "sum:maily.api.errors{*}.as_count() / sum:maily.api.requests{*}.as_count() * 100"
+              display_type: line
+
+  ai:
+    title: "Maily AI Service"
+    layout_type: ordered
+    widgets:
+      - definition:
+          title: "AI Service Request Rate"
+          type: timeseries
+          requests:
+            - q: "sum:maily.ai.requests{*}.as_count()"
+              display_type: line
+      - definition:
+          title: "AI Response Time"
+          type: timeseries
+          requests:
+            - q: "p95:maily.ai.response.time{*}"
+              display_type: line
+      - definition:
+          title: "AI Service Error Rate"
+          type: timeseries
+          requests:
+            - q: "sum:maily.ai.errors{*}.as_count() / sum:maily.ai.requests{*}.as_count() * 100"
+              display_type: line
+
+  blockchain:
+    title: "Maily Blockchain Service"
+    layout_type: ordered
+    widgets:
+      - definition:
+          title: "Blockchain Verification Rate"
+          type: timeseries
+          requests:
+            - q: "sum:maily.blockchain.verifications{*}.as_count()"
+              display_type: line
+      - definition:
+          title: "Blockchain Verification Time"
+          type: timeseries
+          requests:
+            - q: "p95:maily.blockchain.verification.time{*}"
+              display_type: line
+      - definition:
+          title: "Blockchain Transaction Batches"
+          type: timeseries
+          requests:
+            - q: "sum:maily.blockchain.batch.count{*}.as_count()"
+              display_type: line
+
+# Basic alert definitions - initially focus on critical service availability
+monitors:
+  api_availability:
+    name: "Maily API Availability"
+    type: "service check"
+    query: '"http.can_connect".over("instance:maily-api").by("host").last(3).count_by_status()'
+    message: "Maily API service is unavailable {{#is_alert}}for the past 3 checks{{/is_alert}}. Notify: @ops-team"
+    tags:
+      - "service:api"
+      - "severity:critical"
+    options:
+      notify_no_data: true
+      no_data_timeframe: 5
+      new_host_delay: 300
+      evaluation_delay: 60
+      thresholds:
+        critical: 3
+        warning: 1
+        ok: 0
+
+  ai_availability:
+    name: "Maily AI Service Availability"
+    type: "service check"
+    query: '"http.can_connect".over("instance:maily-ai-service").by("host").last(3).count_by_status()'
+    message: "Maily AI service is unavailable {{#is_alert}}for the past 3 checks{{/is_alert}}. Notify: @ops-team"
+    tags:
+      - "service:ai"
+      - "severity:critical"
+    options:
+      notify_no_data: true
+      no_data_timeframe: 5
+      new_host_delay: 300
+      evaluation_delay: 60
+      thresholds:
+        critical: 3
+        warning: 1
+        ok: 0
+
+  redis_availability:
+    name: "Maily Redis Availability"
+    type: "service check"
+    query: '"tcp.can_connect".over("instance:maily-redis").by("host").last(3).count_by_status()'
+    message: "Maily Redis service is unavailable {{#is_alert}}for the past 3 checks{{/is_alert}}. Notify: @ops-team"
+    tags:
+      - "service:redis"
+      - "severity:critical"
+    options:
+      notify_no_data: true
+      no_data_timeframe: 5
+      new_host_delay: 300
+      evaluation_delay: 60
+      thresholds:
+        critical: 3
+        warning: 1
+        ok: 0
+
+  high_api_error_rate:
+    name: "Maily API High Error Rate"
+    type: "metric alert"
+    query: 'avg(last_15m):sum:maily.api.errors{*}.as_count() / sum:maily.api.requests{*}.as_count() * 100 > 5'
+    message: "Maily API error rate is above 5% for the past 15 minutes. Notify: @ops-team"
+    tags:
+      - "service:api"
+      - "severity:warning"
+    options:
+      notify_no_data: false
+      evaluation_delay: 900
+      thresholds:
+        critical: 10
+        warning: 5
+
+  high_api_latency:
+    name: "Maily API High Latency"
+    type: "metric alert"
+    query: 'avg(last_10m):p95:maily.api.response.time{*} > 1000'
+    message: "Maily API p95 response time is above 1000ms for the past 10 minutes. Notify: @ops-team"
+    tags:
+      - "service:api"
+      - "severity:warning"
+    options:
+      notify_no_data: false
+      evaluation_delay: 600
+      thresholds:
+        critical: 2000
+        warning: 1000
+
+  high_ai_latency:
+    name: "Maily AI Service High Latency"
+    type: "metric alert"
+    query: 'avg(last_5m):p95:maily.ai.response.time{*} > 5000'
+    message: "Maily AI service p95 response time is above 5 seconds for the past 5 minutes. Notify: @ops-team"
+    tags:
+      - "service:ai"
+      - "severity:warning"
+    options:
+      notify_no_data: false
+      evaluation_delay: 300
+      thresholds:
+        critical: 10000
+        warning: 5000

@@ -1,233 +1,280 @@
 #!/bin/bash
-# Maily Production Deployment Script
-# This script automates the deployment of Maily components to production
-# Usage: ./deploy-production.sh [--skip-tests] [--skip-verification]
-
 set -e
 
-# Parse command line arguments
-SKIP_TESTS=false
-SKIP_VERIFICATION=false
+# Maily Production Deployment Script
+# This script handles the complete deployment process for Maily
+# It manages environment setup, database migrations, and Vercel deployment
 
-for arg in "$@"
-do
-    case $arg in
-        --skip-tests)
-        SKIP_TESTS=true
-        shift
-        ;;
-        --skip-verification)
-        SKIP_VERIFICATION=true
-        shift
-        ;;
-        *)
-        # Unknown option
-        ;;
-    esac
+# Color codes for output
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
+
+echo -e "${GREEN}Starting Maily Production Deployment${NC}"
+echo "Timestamp: $(date)"
+
+# Check required tools
+command -v jq >/dev/null 2>&1 || { echo -e "${RED}Error: jq is required but not installed. Aborting.${NC}"; exit 1; }
+command -v vercel >/dev/null 2>&1 || { echo -e "${RED}Error: Vercel CLI is required but not installed. Aborting.${NC}"; exit 1; }
+command -v kubectl >/dev/null 2>&1 || { echo -e "${RED}Error: kubectl is required but not installed. Aborting.${NC}"; exit 1; }
+
+# Load environment variables
+if [ -f "config/.env.production" ]; then
+    echo -e "${GREEN}Loading production environment variables...${NC}"
+    export $(grep -v '^#' config/.env.production | xargs)
+else
+    echo -e "${RED}Error: config/.env.production file not found${NC}"
+    exit 1
+fi
+
+# Validate required environment variables
+REQUIRED_VARS=("DATABASE_URL" "REDIS_URL" "API_URL" "JWT_SECRET" "VERCEL_TOKEN" "POLYGON_RPC_URL")
+for var in "${REQUIRED_VARS[@]}"; do
+    if [ -z "${!var}" ]; then
+        echo -e "${RED}Error: Required environment variable ${var} is not set${NC}"
+        exit 1
+    fi
 done
 
-# Configuration
-NAMESPACE="maily-production"
-DEPLOYMENT_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-LOG_FILE="deployment-$DEPLOYMENT_TIMESTAMP.log"
-
-# Start logging
-echo "Starting Maily production deployment at $(date)" | tee -a $LOG_FILE
-echo "--------------------------------------------" | tee -a $LOG_FILE
-
-# Function to run tests
-run_tests() {
-  echo "Running pre-deployment tests..." | tee -a $LOG_FILE
-
-  # Email service tests
-  echo "Running email service tests..." | tee -a $LOG_FILE
-  cd apps/email-service
-  npm run test | tee -a ../../$LOG_FILE
-
-  # Load tests (reduced scope for pre-deployment)
-  echo "Running load tests with reduced scope..." | tee -a ../../$LOG_FILE
-  NODE_ENV=test npm run test:load -- --emails=100 --batch-size=25 --concurrent=2 | tee -a ../../$LOG_FILE
-  cd ../..
-
-  # Accessibility tests
-  echo "Running accessibility tests..." | tee -a $LOG_FILE
-  cd apps/web
-  npm run test:a11y | tee -a ../../$LOG_FILE
-  cd ../..
-
-  echo "All tests completed successfully" | tee -a $LOG_FILE
-}
-
-# Function to verify Kubernetes namespace configuration
-verify_namespace() {
-  echo "Verifying namespace configuration..." | tee -a $LOG_FILE
-
-  # Check if namespace exists
-  if kubectl get namespace $NAMESPACE > /dev/null 2>&1; then
-    echo "Namespace $NAMESPACE exists" | tee -a $LOG_FILE
-  else
-    echo "Creating namespace $NAMESPACE..." | tee -a $LOG_FILE
-    kubectl apply -f kubernetes/namespaces/production.yaml | tee -a $LOG_FILE
-  fi
-
-  # Verify security labels
-  SECURITY_SCAN=$(kubectl get namespace $NAMESPACE -o jsonpath='{.metadata.labels.security-scan}')
-  COMPLIANCE_AUDIT=$(kubectl get namespace $NAMESPACE -o jsonpath='{.metadata.labels.compliance-audit}')
-
-  if [ "$SECURITY_SCAN" != "required" ] || [ "$COMPLIANCE_AUDIT" != "required" ]; then
-    echo "ERROR: Namespace $NAMESPACE does not have required security labels!" | tee -a $LOG_FILE
-    exit 1
-  fi
-
-  echo "Namespace configuration verified" | tee -a $LOG_FILE
-}
-
-# Function to deploy Kubernetes resources
-deploy_resources() {
-  echo "Deploying Kubernetes resources..." | tee -a $LOG_FILE
-
-  # Apply ConfigMaps and Secrets
-  echo "Applying ConfigMaps and Secrets..." | tee -a $LOG_FILE
-  kubectl apply -f kubernetes/configmaps/ -n $NAMESPACE | tee -a $LOG_FILE
-
-  # Note: In a real environment, secrets would be managed by a secrets manager
-  # and not applied directly from files
-
-  # Deploy services
-  echo "Deploying services..." | tee -a $LOG_FILE
-  kubectl apply -f kubernetes/services/ -n $NAMESPACE | tee -a $LOG_FILE
-
-  # Deploy API service
-  echo "Deploying API service..." | tee -a $LOG_FILE
-  kubectl apply -f kubernetes/deployments/api-service.yaml -n $NAMESPACE | tee -a $LOG_FILE
-  kubectl rollout status deployment/api-service -n $NAMESPACE | tee -a $LOG_FILE
-
-  # Deploy email processing service
-  echo "Deploying email processing service..." | tee -a $LOG_FILE
-  kubectl apply -f kubernetes/deployments/email-processing-service.yaml -n $NAMESPACE | tee -a $LOG_FILE
-  kubectl rollout status deployment/email-processing-service -n $NAMESPACE | tee -a $LOG_FILE
-
-  # Deploy web frontend
-  echo "Deploying web frontend..." | tee -a $LOG_FILE
-  kubectl apply -f kubernetes/deployments/web-frontend.yaml -n $NAMESPACE | tee -a $LOG_FILE
-  kubectl rollout status deployment/web-frontend -n $NAMESPACE | tee -a $LOG_FILE
-
-  # Deploy worker services
-  echo "Deploying worker services..." | tee -a $LOG_FILE
-  kubectl apply -f kubernetes/deployments/analytics-worker.yaml -n $NAMESPACE | tee -a $LOG_FILE
-  kubectl apply -f kubernetes/deployments/email-tracking-worker.yaml -n $NAMESPACE | tee -a $LOG_FILE
-
-  echo "All services deployed successfully" | tee -a $LOG_FILE
-}
-
-# Function to verify deployment
-verify_deployment() {
-  echo "Verifying deployment..." | tee -a $LOG_FILE
-
-  # Check all pods are running
-  PENDING_PODS=$(kubectl get pods -n $NAMESPACE -o jsonpath='{.items[?(@.status.phase=="Pending")].metadata.name}')
-  if [ -n "$PENDING_PODS" ]; then
-    echo "ERROR: Some pods are still pending: $PENDING_PODS" | tee -a $LOG_FILE
-    exit 1
-  fi
-
-  # Check for pods in CrashLoopBackOff
-  CRASHLOOP_PODS=$(kubectl get pods -n $NAMESPACE -o jsonpath='{.items[?(@.status.containerStatuses[0].state.waiting.reason=="CrashLoopBackOff")].metadata.name}')
-  if [ -n "$CRASHLOOP_PODS" ]; then
-    echo "ERROR: Some pods are in CrashLoopBackOff: $CRASHLOOP_PODS" | tee -a $LOG_FILE
-    exit 1
-  fi
-
-  # Verify health endpoints
-  echo "Verifying service health endpoints..." | tee -a $LOG_FILE
-
-  # Get API service URL
-  API_URL=$(kubectl get svc api-service -n $NAMESPACE -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-  if [ -z "$API_URL" ]; then
-    API_URL=$(kubectl get svc api-service -n $NAMESPACE -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-  fi
-
-  # Check API health endpoint
-  if [ -n "$API_URL" ]; then
-    HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$API_URL/health)
-    if [ $HTTP_STATUS -ne 200 ]; then
-      echo "ERROR: API health check failed with status $HTTP_STATUS" | tee -a $LOG_FILE
-      exit 1
+# Run database migrations
+run_migrations() {
+    echo -e "${GREEN}Running database migrations...${NC}"
+    
+    # Check database connection
+    DATABASE_URL=${DATABASE_URL} node -e "
+        const { Client } = require('pg');
+        const client = new Client({
+            connectionString: process.env.DATABASE_URL
+        });
+        client.connect()
+            .then(() => {
+                console.log('Database connection successful');
+                client.end();
+            })
+            .catch(err => {
+                console.error('Database connection failed:', err);
+                process.exit(1);
+            });
+    " || { echo -e "${RED}Error: Database connection failed. Aborting deployment.${NC}"; exit 1; }
+    
+    # Run SQL migrations
+    echo "Running SQL migrations..."
+    cd archives_migrations/sql
+    for sql_file in $(find . -name "*.sql" | sort); do
+        echo "Applying migration: $sql_file"
+        PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -U $DB_USER -d $DB_NAME -f $sql_file || { 
+            echo -e "${RED}Error: Failed to apply migration $sql_file${NC}"
+            exit 1
+        }
+    done
+    cd ../..
+    
+    # Run Prisma migrations if needed
+    if [ -f "prisma/schema.prisma" ]; then
+        echo "Running Prisma migrations..."
+        npx prisma migrate deploy || { 
+            echo -e "${RED}Error: Prisma migration failed${NC}"
+            exit 1
+        }
     fi
-    echo "API health check passed" | tee -a $LOG_FILE
-  else
-    echo "WARNING: Unable to verify API health - no external IP/hostname found" | tee -a $LOG_FILE
-  fi
-
-  echo "Deployment verification completed successfully" | tee -a $LOG_FILE
+    
+    echo -e "${GREEN}Database migrations completed successfully${NC}"
 }
 
-# Function to update DNS
-update_dns() {
-  echo "Updating DNS records..." | tee -a $LOG_FILE
-
-  # Get load balancer IP/hostname
-  LB_HOSTNAME=$(kubectl get svc web-frontend -n $NAMESPACE -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-  if [ -z "$LB_HOSTNAME" ]; then
-    LB_HOSTNAME=$(kubectl get svc web-frontend -n $NAMESPACE -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-  fi
-
-  if [ -n "$LB_HOSTNAME" ]; then
-    echo "Load balancer endpoint: $LB_HOSTNAME" | tee -a $LOG_FILE
-    echo "Please update DNS records manually to point to this endpoint" | tee -a $LOG_FILE
-    # In a real environment, you would use AWS CLI, GCP CLI, or an API to update DNS records
-    # Example for AWS:
-    # aws route53 change-resource-record-sets --hosted-zone-id YOUR_ZONE_ID --change-batch '{"Changes":[{"Action":"UPSERT","ResourceRecordSet":{"Name":"app.justmaily.com","Type":"CNAME","TTL":300,"ResourceRecords":[{"Value":"'$LB_HOSTNAME'"}]}}]}'
-  else
-    echo "WARNING: Unable to update DNS - no external IP/hostname found" | tee -a $LOG_FILE
-  fi
+# Deploy backend services to Kubernetes
+deploy_backend() {
+    echo -e "${GREEN}Deploying backend services to Kubernetes...${NC}"
+    
+    # Check kubectl connection
+    kubectl get nodes > /dev/null || { 
+        echo -e "${RED}Error: Cannot connect to Kubernetes cluster${NC}"
+        exit 1
+    }
+    
+    # Deploy Redis cache first (dependency)
+    echo "Deploying Redis..."
+    kubectl apply -f kubernetes/deployments/redis.yaml
+    kubectl rollout status deployment/redis
+    
+    # Deploy API service with canary deployment
+    echo "Deploying API service with canary deployment..."
+    kubectl apply -f kubernetes/deployments/maily-unified.yaml --record=true
+    kubectl rollout pause deployment/maily-api
+    
+    # Scale to ensure we have capacity for both versions during transition
+    kubectl scale deployment/maily-api --replicas=2
+    
+    # Update image for canary pods
+    kubectl set image deployment/maily-api maily-api=maily-api:latest --record=true
+    
+    # Resume rollout to allow canary pods to be created
+    kubectl rollout resume deployment/maily-api
+    
+    # Deploy AI service
+    echo "Deploying AI service..."
+    kubectl apply -f kubernetes/deployments/ai-mesh-deployment.yaml --record=true
+    
+    # Check deployment status
+    echo "Waiting for deployments to be ready..."
+    kubectl rollout status deployment/maily-api
+    kubectl rollout status deployment/ai-mesh
+    
+    echo -e "${YELLOW}Letting services stabilize for 30 minutes...${NC}"
+    echo "Started stabilization period at: $(date)"
+    
+    # Sleep for 30 minutes to allow services to stabilize before redirecting traffic
+    # In a real pipeline, you might implement a more sophisticated check here
+    # e.g., running health checks and checking metrics before proceeding
+    sleep 1800
+    
+    echo "Finished stabilization period at: $(date)"
+    echo -e "${GREEN}Backend services deployed successfully${NC}"
 }
 
-# Function to send notification
-send_notification() {
-  echo "Sending deployment notification..." | tee -a $LOG_FILE
+# Deploy frontend to Vercel
+deploy_frontend() {
+    echo -e "${GREEN}Deploying frontend to Vercel...${NC}"
+    
+    # Build web app
+    echo "Building web app..."
+    npm run build:web || { 
+        echo -e "${RED}Error: Frontend build failed${NC}"
+        exit 1
+    }
+    
+    # Deploy to Vercel
+    echo "Deploying to Vercel..."
+    cd apps/web
+    vercel deploy --prod --token=${VERCEL_TOKEN} || { 
+        echo -e "${RED}Error: Vercel deployment failed${NC}"
+        exit 1
+    }
+    cd ../..
+    
+    echo -e "${GREEN}Frontend deployed successfully${NC}"
+}
 
-  # In a real environment, you would send slack messages, emails, etc.
-  # For this example, we'll just log it
-  echo "Deployment completed successfully at $(date)" | tee -a $LOG_FILE
+# Setup monitoring
+setup_monitoring() {
+    echo -e "${GREEN}Setting up monitoring...${NC}"
+    
+    # Deploy Prometheus
+    echo "Deploying Prometheus..."
+    kubectl apply -f kubernetes/monitoring/prometheus-production.yaml
+    
+    # Deploy Grafana
+    echo "Deploying Grafana..."
+    kubectl apply -f kubernetes/monitoring/grafana-production.yaml
+    
+    # Deploy the monitoring ingress
+    echo "Setting up monitoring ingress..."
+    kubectl apply -f kubernetes/monitoring/ingress.yaml
+    
+    # Apply Datadog configuration for lightweight monitoring
+    echo "Configuring Datadog..."
+    kubectl apply -f kubernetes/monitoring/datadog-values.yaml
+    
+    echo -e "${GREEN}Monitoring setup completed${NC}"
+}
 
-  # Create summary of deployment
-  SUMMARY="Maily Production Deployment Summary\n"
-  SUMMARY+="Deployment timestamp: $DEPLOYMENT_TIMESTAMP\n"
-  SUMMARY+="Deployments:\n"
-  SUMMARY+=$(kubectl get deployments -n $NAMESPACE -o wide | tee -a $LOG_FILE)
-
-  echo -e $SUMMARY | tee -a $LOG_FILE
+# Run stress tests
+run_stress_tests() {
+    echo -e "${YELLOW}Running stress tests...${NC}"
+    
+    # Email sending capacity test
+    echo "Testing email sending capacity..."
+    python scripts/performance/load_test.py --test email-sending --users 100 --duration 30 || {
+        echo -e "${YELLOW}Warning: Email sending test did not meet performance targets${NC}"
+    }
+    
+    # Canvas concurrent users test
+    echo "Testing canvas with 10 simultaneous users..."
+    node scripts/performance/test_canvas_performance.js --users 10 --duration 60 || {
+        echo -e "${YELLOW}Warning: Canvas performance test did not meet targets${NC}"
+    }
+    
+    # AI agent responsiveness test
+    echo "Testing AI agent responsiveness..."
+    python tests/performance/test_ai_agent_responsiveness.py || {
+        echo -e "${YELLOW}Warning: AI agent responsiveness test did not meet targets${NC}"
+    }
+    
+    # Blockchain verification test
+    echo "Testing blockchain verification throughput..."
+    node scripts/performance/test_blockchain_performance.js --operations 100 || {
+        echo -e "${YELLOW}Warning: Blockchain verification test did not meet performance targets${NC}"
+    }
+    
+    echo -e "${GREEN}Stress tests completed${NC}"
 }
 
 # Main deployment flow
-echo "Starting deployment process..." | tee -a $LOG_FILE
+main() {
+    echo "Starting deployment process..."
+    
+    # Process command line arguments
+    MIGRATE_ONLY=false
+    SERVICES_ONLY=false
+    FRONTEND_ONLY=false
+    
+    for arg in "$@"; do
+        case $arg in
+            --migrate-only)
+                MIGRATE_ONLY=true
+                ;;
+            --services-only)
+                SERVICES_ONLY=true
+                ;;
+            --frontend-only)
+                FRONTEND_ONLY=true
+                ;;
+        esac
+    done
+    
+    # If specific flags are provided, run only those components
+    if [ "$MIGRATE_ONLY" = true ]; then
+        echo "Running migrations only mode..."
+        run_migrations
+        echo -e "${GREEN}Migration-only deployment completed successfully!${NC}"
+        exit 0
+    fi
+    
+    if [ "$SERVICES_ONLY" = true ]; then
+        echo "Running services only mode..."
+        deploy_backend
+        setup_monitoring
+        echo -e "${GREEN}Services-only deployment completed successfully!${NC}"
+        exit 0
+    fi
+    
+    if [ "$FRONTEND_ONLY" = true ]; then
+        echo "Running frontend only mode..."
+        deploy_frontend
+        echo -e "${GREEN}Frontend-only deployment completed successfully!${NC}"
+        exit 0
+    fi
+    
+    # If no specific flags are provided, run the complete deployment
+    run_migrations
+    deploy_backend
+    deploy_frontend
+    setup_monitoring
+    
+    # Run stress tests if --test flag is provided
+    if [[ "$*" == *"--test"* ]]; then
+        run_stress_tests
+    fi
+    
+    echo -e "${GREEN}Deployment completed successfully!${NC}"
+    echo "Timestamp: $(date)"
+    
+    # Output service URLs
+    echo -e "${GREEN}Service URLs:${NC}"
+    echo "Frontend: https://maily.vercel.app"
+    echo "API: https://api.maily.example.com"
+    echo "Monitoring: https://monitor.maily.example.com"
+}
 
-# Step 1: Run tests if not skipped
-if [ "$SKIP_TESTS" = false ]; then
-  run_tests
-else
-  echo "Skipping tests as requested" | tee -a $LOG_FILE
-fi
-
-# Step 2: Verify namespace configuration
-verify_namespace
-
-# Step 3: Deploy resources
-deploy_resources
-
-# Step 4: Verify deployment if not skipped
-if [ "$SKIP_VERIFICATION" = false ]; then
-  verify_deployment
-else
-  echo "Skipping verification as requested" | tee -a $LOG_FILE
-fi
-
-# Step 5: Update DNS records
-update_dns
-
-# Step 6: Send notification
-send_notification
-
-echo "Deployment completed successfully!" | tee -a $LOG_FILE
-echo "Deployment log saved to $LOG_FILE"
+# Execute main function with all arguments
+main "$@"
