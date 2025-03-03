@@ -6,8 +6,8 @@ global:
 
 image:
   repository: ghcr.io/maily/maily
-  tag: latest
-  pullPolicy: IfNotPresent
+  tag: v1.0.0
+  pullPolicy: Always
 
 replicaCount:
   api: 3

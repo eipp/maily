@@ -1,0 +1,273 @@
+# Prometheus Helm Chart Values for Maily
+# Environment: ${environment}
+# Domain: ${domain}
+
+# Global settings
+global:
+  evaluation_interval: 30s
+  scrape_interval: ${scrape_interval}s
+  external_labels:
+    environment: ${environment}
+    domain: ${domain}
+
+# Prometheus settings
+prometheus:
+  prometheusSpec:
+    retention: ${retention_days}d
+    scrapeInterval: ${scrape_interval}s
+    evaluationInterval: 30s
+    enableAdminAPI: true
+    externalUrl: https://prometheus.${domain}
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp2
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 50Gi
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+    additionalScrapeConfigs:
+      - job_name: 'maily-ai-services'
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: ['maily']
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            regex: ai-service
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            regex: "true"
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: kubernetes_pod_name
+      
+      - job_name: 'maily-websocket'
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: ['maily']
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            regex: websocket
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            regex: "true"
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: kubernetes_pod_name
+      
+      - job_name: 'maily-blockchain'
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: ['maily']
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            regex: blockchain
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            regex: "true"
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: kubernetes_pod_name
+
+# Alertmanager settings
+alertmanager:
+  alertmanagerSpec:
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp2
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 10Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 200m
+        memory: 512Mi
+    externalUrl: https://alertmanager.${domain}
+
+# Grafana settings
+grafana:
+  image:
+    tag: ${grafana_version}
+  adminPassword: ${grafana_admin_password}
+  ingress:
+    enabled: true
+    hosts:
+      - grafana.${domain}
+    tls:
+      - hosts:
+          - grafana.${domain}
+  persistence:
+    enabled: true
+    storageClassName: gp2
+    size: 10Gi
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  plugins:
+    - grafana-piechart-panel
+    - grafana-worldmap-panel
+    - grafana-clock-panel
+    - grafana-kubernetes-app
+    - grafana-datadog-datasource
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          type: prometheus
+          url: http://prometheus-operated:9090
+          access: proxy
+          isDefault: true
+        - name: Loki
+          type: loki
+          url: http://loki:3100
+          access: proxy
+        - name: Datadog
+          type: datadog
+          url: https://api.datadoghq.com
+          access: proxy
+          jsonData:
+            apiKey: ${datadog_api_key}
+            appKey: ${datadog_app_key}
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: 'default'
+          orgId: 1
+          folder: ''
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards/default
+        - name: 'maily'
+          orgId: 1
+          folder: 'Maily'
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards/maily
+  dashboards:
+    default:
+      kubernetes-cluster:
+        gnetId: 7249
+        revision: 1
+        datasource: Prometheus
+      kubernetes-nodes:
+        gnetId: 11074
+        revision: 1
+        datasource: Prometheus
+      kubernetes-pods:
+        gnetId: 6336
+        revision: 1
+        datasource: Prometheus
+      prometheus-stats:
+        gnetId: 2
+        revision: 2
+        datasource: Prometheus
+      loki-logs:
+        gnetId: 12019
+        revision: 1
+        datasource: Loki
+
+# Node Exporter settings
+nodeExporter:
+  enabled: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# kube-state-metrics settings
+kubeStateMetrics:
+  enabled: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# Prometheus Operator settings
+prometheusOperator:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  admissionWebhooks:
+    enabled: true
+    patch:
+      enabled: true

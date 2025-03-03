@@ -1,103 +1,89 @@
-# Maily - apps/web
+# JustMaily Web Interface
 
-This directory contains the web module for the Maily platform. It's built with Next.js using the Pages Router architecture (pages/ directory).
+This is the web interface for JustMaily, an enterprise-grade email marketing platform with AI-powered features.
 
-## Deployment
+## Features
 
-The web application is deployed at **app.justmaily.com** and serves as the main interface for the Maily platform.
+- **Hybrid Interface**: Split-screen layout with chat interface and canvas workspace
+- **AI Mesh Network**: Multiple specialized AI agents working together
+- **Operational Modes**: Content Creation, Campaign Flow, Analytics, and Audience
+- **Real-Time Collaboration**: Multi-user editing with presence awareness
+- **Trust Verification**: Blockchain-based verification for email campaigns
 
-## Technologies
+## Tech Stack
 
-- Next.js 14+
-- React 18+
-- TypeScript
-- Tailwind CSS
-- tldraw for Canvas interface
-- Yjs for real-time collaboration
-- React Aria for accessible components
-- Radix UI for advanced components
-- Jest for testing
-- Cypress for E2E testing
+- **Frontend Framework**: Next.js 14.1.0+ with App Router
+- **UI Library**: React 18.2.0+ with TypeScript 5.3.0+
+- **Styling**: Tailwind CSS 3.4.0+ with shadcn/ui components
+- **State Management**: React Context, SWR, and Zustand
+- **AI Integration**: Claude 3.7 Sonnet, GPT-4o, and Gemini 2.0
 
-## Structure
+## Getting Started
 
-- `pages/`: Main application routes using Pages Router
-- `components/`: Reusable React components
-- `services/`: API client services
-- `hooks/`: Custom React hooks
-- `utils/`: Utility functions
-- `types/`: TypeScript type definitions
-- `tests/`: Unit and integration tests
-- `public/`: Static assets
-- `contexts/`: React context providers
-- `stores/`: State management stores
-- `ui/`: UI component library
-- `lib/`: Shared libraries and utilities
-- `contracts/`: TypeScript interfaces for API contracts
+### Prerequisites
 
-## Canvas Implementation
+- Node.js 18.x or later
+- npm or yarn
 
-The Canvas interface is implemented using tldraw as the base framework with the following features:
-
-- **Real-time Collaboration**: Implemented using Yjs and WebSocket integration
-- **Multi-agent Assistance**: AI agents provide real-time assistance for content, design, and analytics
-- **Split-screen Layout**: Chat interface on the left, visual workspace on the right
-- **Content Card System**: Drag-and-drop components for email creation
-- **State Persistence**: Canvas state is persisted to the database using Supabase
-
-## Component Structure
-
-The component structure follows a modular approach:
-
-- **Layout Components**: Base layout components for different sections of the application
-- **UI Components**: Reusable UI components built with React Aria and Radix UI
-- **Feature Components**: Components specific to features like campaigns, contacts, analytics
-- **Canvas Components**: Components specific to the Canvas interface
-- **Chat Components**: Components for the chat-centric interface
-
-## Development Philosophy
-
-The web application is developed and maintained by a lean team consisting of a founder and an AI coding agent. This approach enables:
-
-- **Rapid UI Evolution**: Quick adaptation to changing requirements and user feedback
-- **Consistent Implementation**: AI-enforced coding standards and patterns
-- **Comprehensive Component Documentation**: Automated documentation generation and maintenance
-- **Efficient Problem Solving**: AI-assisted debugging and optimization
-- **Scalable Architecture**: Design patterns that facilitate growth without proportional team expansion
-
-## Accessibility
-
-The web application follows WCAG 2.1 AA guidelines with the following features:
-
-- **Keyboard Navigation**: Full keyboard navigation support
-- **Screen Reader Support**: Proper ARIA attributes and screen reader announcements
-- **Focus Management**: Proper focus management for modals, dialogs, and other interactive elements
-- **Color Contrast**: Sufficient color contrast for all text and UI elements
-- **Responsive Design**: Fully responsive design that works on all device sizes
-
-## Development
-
-To run the web application locally:
+### Installation
 
 ```bash
-cd apps/web
+# Install dependencies
 npm install
+
+# Run the development server
 npm run dev
 ```
 
-The application will be available at http://localhost:3000.
-
-## Testing
-
-To run tests:
+### Build
 
 ```bash
-# Unit and integration tests
-npm run test
+# Build for production
+npm run build
 
-# E2E tests
-npm run cypress
-
-# Accessibility tests
-npm run a11y
+# Start the production server
+npm start
 ```
+
+## Project Structure
+
+- `/app`: Next.js App Router pages and layouts
+- `/components`: React components organized by feature
+  - `/ai-mesh`: AI agent components
+  - `/analytics`: Analytics and reporting components
+  - `/canvas`: Email editor canvas components
+  - `/chat`: Chat interface components
+  - `/layout`: Layout components
+  - `/modes`: Operational mode components
+  - `/navigation`: Navigation components
+  - `/ui`: Reusable UI components
+- `/lib`: Utility functions and shared code
+- `/public`: Static assets
+
+## Performance Optimization
+
+The application is optimized for performance with:
+
+- Server-side rendering with Next.js
+- Code splitting and lazy loading
+- Image optimization
+- Efficient state management
+- Hardware-accelerated animations
+
+## Accessibility
+
+The application follows WCAG 2.1 AA guidelines with:
+
+- Semantic HTML structure
+- ARIA attributes where necessary
+- Keyboard navigation
+- Sufficient color contrast
+- Screen reader support
+- Reduced motion options
+
+## Browser Support
+
+- Chrome (latest)
+- Firefox (latest)
+- Safari (latest)
+- Edge (latest)

@@ -1,0 +1,80 @@
+{
+  "description": "Maily WAF Rules Configuration",
+  "rules": [
+    {
+      "id": "maily-rate-limiting",
+      "description": "Rate limiting for API endpoints",
+      "expression": "(http.request.uri.path contains \"/api/\")",
+      "action": "rate_limit",
+      "rate_limit": {
+        "period": 60,
+        "requests": 100,
+        "mitigation_timeout": 300
+      },
+      "enabled": true
+    },
+    {
+      "id": "maily-block-sql-injection",
+      "description": "Block SQL injection attacks",
+      "expression": "(http.request.uri.query contains \"select\" or http.request.uri.query contains \"union\" or http.request.uri.query contains \"insert\" or http.request.uri.query contains \"drop\" or http.request.uri.query contains \"update\" or http.request.uri.query contains \"delete\") and not cf.waf.score.sqli lt 10",
+      "action": "block",
+      "enabled": true
+    },
+    {
+      "id": "maily-block-xss",
+      "description": "Block XSS attacks",
+      "expression": "(http.request.uri.query contains \"<script\" or http.request.uri.query contains \"javascript:\" or http.request.uri.query contains \"onerror=\" or http.request.uri.query contains \"onload=\") and not cf.waf.score.xss lt 10",
+      "action": "block",
+      "enabled": true
+    },
+    {
+      "id": "maily-block-path-traversal",
+      "description": "Block path traversal attacks",
+      "expression": "http.request.uri.path contains \"..\" or http.request.uri.path contains \"//\" or http.request.uri.path contains \"%2f%2f\" or http.request.uri.path contains \"%2e%2e\"",
+      "action": "block",
+      "enabled": true
+    },
+    {
+      "id": "maily-block-file-inclusion",
+      "description": "Block remote file inclusion attacks",
+      "expression": "http.request.uri.query contains \"http://\" or http.request.uri.query contains \"https://\" or http.request.uri.query contains \"ftp://\"",
+      "action": "block",
+      "enabled": true
+    },
+    {
+      "id": "maily-block-command-injection",
+      "description": "Block command injection attacks",
+      "expression": "http.request.uri.query contains \";\" or http.request.uri.query contains \"|\" or http.request.uri.query contains \"`\"",
+      "action": "block",
+      "enabled": true
+    },
+    {
+      "id": "maily-challenge-suspicious-countries",
+      "description": "Challenge requests from high-risk countries",
+      "expression": "ip.geoip.country in {\"CN\" \"RU\" \"IR\" \"KP\" \"SY\"}",
+      "action": "challenge",
+      "enabled": true
+    },
+    {
+      "id": "maily-block-bad-bots",
+      "description": "Block known bad bots",
+      "expression": "http.user_agent contains \"bot\" and not http.user_agent contains \"googlebot\" and not http.user_agent contains \"bingbot\" and not http.user_agent contains \"yandexbot\"",
+      "action": "block",
+      "enabled": true
+    },
+    {
+      "id": "maily-protect-admin-paths",
+      "description": "Extra protection for admin paths",
+      "expression": "http.request.uri.path contains \"/admin/\" or http.request.uri.path contains \"/dashboard/\" or http.request.uri.path contains \"/manage/\"",
+      "action": "managed_challenge",
+      "enabled": true
+    },
+    {
+      "id": "maily-protect-auth-endpoints",
+      "description": "Extra protection for authentication endpoints",
+      "expression": "http.request.uri.path contains \"/login\" or http.request.uri.path contains \"/register\" or http.request.uri.path contains \"/auth/\" or http.request.uri.path contains \"/reset-password\"",
+      "action": "managed_challenge",
+      "enabled": true
+    }
+  ]
+}

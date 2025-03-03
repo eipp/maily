@@ -1,0 +1,259 @@
+# Datadog Helm Chart Values for Maily
+# Environment: ${environment}
+# Domain: ${domain}
+
+# Datadog Agent configuration
+datadog:
+  # API and APP keys
+  apiKey: ${datadog_api_key}
+  appKey: ${datadog_app_key}
+  
+  # Cluster name for Datadog
+  clusterName: maily-${environment}
+  
+  # Site and region
+  site: "datadoghq.com"
+  
+  # Tags
+  tags:
+    - "env:${environment}"
+    - "service:maily"
+    - "domain:${domain}"
+  
+  # Logs collection
+  logs:
+    enabled: true
+    containerCollectAll: true
+    containerCollectUsingFiles: true
+    
+    # Custom log collection configuration
+    customConfigs:
+      ai-service-logs:
+        source: "ai-service"
+        service: "maily-ai-service"
+        log_processing_rules:
+          - type: "multi_line"
+            name: "ai-service-stack-traces"
+            pattern: "^\\s"
+            
+      websocket-logs:
+        source: "websocket"
+        service: "maily-websocket"
+        log_processing_rules:
+          - type: "multi_line"
+            name: "websocket-stack-traces"
+            pattern: "^\\s"
+            
+      blockchain-logs:
+        source: "blockchain"
+        service: "maily-blockchain"
+        log_processing_rules:
+          - type: "multi_line"
+            name: "blockchain-stack-traces"
+            pattern: "^\\s"
+  
+  # APM and tracing
+  apm:
+    enabled: true
+    portEnabled: true
+    socketEnabled: true
+    
+    # Custom instrumentation for Maily services
+    instrumentation:
+      enabled: true
+      
+  # Process monitoring
+  processAgent:
+    enabled: true
+    processCollection: true
+    
+  # Network monitoring
+  networkMonitoring:
+    enabled: true
+    
+  # Kubernetes integration
+  kubeStateMetricsEnabled: true
+  kubeStateMetricsCore:
+    enabled: true
+  
+  # Cluster checks
+  clusterChecks:
+    enabled: true
+  
+  # Dogstatsd
+  dogstatsd:
+    port: 8125
+    useHostPort: true
+    nonLocalTraffic: true
+    
+  # Prometheus scraping
+  prometheusScrape:
+    enabled: true
+    serviceEndpoints: true
+    additionalConfigs:
+      # AI Service metrics
+      - kubernetes_pod_annotations:
+          prometheus.io/scrape: "true"
+          app: "ai-service"
+        configurations:
+          - match_labels:
+              app: ai-service
+            metrics_path: /metrics
+            scheme: http
+            
+      # WebSocket metrics
+      - kubernetes_pod_annotations:
+          prometheus.io/scrape: "true"
+          app: "websocket"
+        configurations:
+          - match_labels:
+              app: websocket
+            metrics_path: /metrics
+            scheme: http
+            
+      # Blockchain metrics
+      - kubernetes_pod_annotations:
+          prometheus.io/scrape: "true"
+          app: "blockchain"
+        configurations:
+          - match_labels:
+              app: blockchain
+            metrics_path: /metrics
+            scheme: http
+  
+  # Datadog Cluster Agent
+  clusterAgent:
+    enabled: true
+    metricsProvider:
+      enabled: true
+    admissionController:
+      enabled: true
+    
+    # Cluster checks
+    clusterChecks:
+      enabled: true
+    
+    # External metrics
+    externalMetrics:
+      enabled: true
+    
+    # Kubernetes resources monitoring
+    rbac:
+      create: true
+    
+    # Resources
+    resources:
+      requests:
+        cpu: 200m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+# Agent configuration
+agents:
+  # Tolerations to run on all nodes
+  tolerations:
+    - operator: Exists
+  
+  # Resources
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  
+  # Pod security context
+  podSecurity:
+    seccompProfile:
+      type: RuntimeDefault
+    apparmor:
+      enabled: true
+  
+  # Node selector
+  nodeSelector: {}
+  
+  # Affinity
+  affinity: {}
+
+# Kube State Metrics
+kube-state-metrics:
+  enabled: false  # We're using the one from Prometheus stack
+
+# Cluster Agent configuration
+clusterAgent:
+  # Resources
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  
+  # Replicas
+  replicas: 2
+  
+  # Pod security context
+  podSecurity:
+    seccompProfile:
+      type: RuntimeDefault
+    apparmor:
+      enabled: true
+
+# Datadog Cluster Checks Runner
+clusterChecksRunner:
+  enabled: true
+  
+  # Resources
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  
+  # Replicas
+  replicas: 2
+  
+  # Pod security context
+  podSecurity:
+    seccompProfile:
+      type: RuntimeDefault
+    apparmor:
+      enabled: true
+
+# Integrations
+datadog-crds:
+  crds:
+    datadogMetrics: true
+    datadogMonitors: true
+    datadogAgents: true
+
+# Custom checks
+customAgentConfig:
+  # Custom checks for Maily services
+  confd:
+    ai_service_check.yaml: |-
+      init_config:
+      instances:
+        - name: "ai-service"
+          url: "http://ai-service.maily.svc.cluster.local:8080/health"
+          timeout: 5
+          
+    websocket_check.yaml: |-
+      init_config:
+      instances:
+        - name: "websocket"
+          url: "http://websocket.maily.svc.cluster.local:8080/health"
+          timeout: 5
+          
+    blockchain_check.yaml: |-
+      init_config:
+      instances:
+        - name: "blockchain"
+          url: "http://blockchain.maily.svc.cluster.local:8080/health"
+          timeout: 5

@@ -11,36 +11,36 @@ import { analyticsService } from '@/services/analytics';
 const navItems = [
   {
     name: 'Solutions',
-    href: '/solutions',
+    href: '#',
     children: [
       {
         name: 'Email Marketing',
-        href: '/solutions/email-marketing',
+        href: '/features#email-marketing',
         description: 'Build and send beautiful email campaigns',
         icon: '📧',
       },
       {
         name: 'Automation',
-        href: '/solutions/automation',
+        href: '/features#automation',
         description: 'Automate your email workflows',
         icon: '⚡',
       },
       {
         name: 'Analytics',
-        href: '/solutions/analytics',
+        href: '/features#analytics',
         description: 'Track and optimize performance',
         icon: '📊',
       },
       {
         name: 'Templates',
-        href: '/solutions/templates',
+        href: '/features#templates',
         description: 'Pre-built email templates',
         icon: '🎨',
       },
     ],
   },
   { name: 'Pricing', href: '/pricing' },
-  { name: 'Resources', href: '/resources' },
+  { name: 'Features', href: '/features' },
   { name: 'Blog', href: '/blog' },
 ];
 
@@ -171,18 +171,18 @@ export function MarketingNav() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => handleNavigation('/login')}
+                onClick={() => handleNavigation('/auth/login')}
                 asChild
               >
-                <Link href="/login">Sign in</Link>
+                <Link href="/auth/login">Sign in</Link>
               </Button>
               <Button
                 variant="primary"
                 size="sm"
-                onClick={() => handleNavigation('/signup')}
+                onClick={() => handleNavigation('/auth/signup')}
                 asChild
               >
-                <Link href="/signup">Get started</Link>
+                <Link href="/auth/signup">Get started</Link>
               </Button>
             </div>
           </div>
@@ -252,32 +252,20 @@ export function MarketingNav() {
                     <Link
                       href={item.href}
                       onClick={() => handleNavigation(item.href)}
-                      className={`block py-2 text-base font-medium ${
-                        pathname === item.href
-                          ? 'text-primary-600 dark:text-primary-500'
-                          : 'text-gray-700 hover:text-primary-600 dark:text-gray-300 dark:hover:text-primary-500'
-                      }`}
+                      className="block py-2 text-base font-medium text-gray-700 hover:text-primary-600 dark:text-gray-300 dark:hover:text-primary-500"
                     >
                       {item.name}
                     </Link>
                   )}
                 </div>
               ))}
-              <div className="mt-4 space-y-2 border-t pt-4 dark:border-gray-800">
-                <Link
-                  href="/login"
-                  onClick={() => handleNavigation('/login')}
-                  className="block py-2 text-base font-medium text-gray-700 hover:text-primary-600 dark:text-gray-300 dark:hover:text-primary-500"
-                >
-                  Sign in
-                </Link>
-                <Link
-                  href="/signup"
-                  onClick={() => handleNavigation('/signup')}
-                  className="block py-2 text-base font-medium text-primary-600 hover:text-primary-700 dark:text-primary-500 dark:hover:text-primary-400"
-                >
-                  Get started
-                </Link>
+              <div className="mt-4 space-y-3">
+                <Button variant="outline" fullWidth onClick={() => handleNavigation('/auth/login')} asChild>
+                  <Link href="/auth/login">Sign in</Link>
+                </Button>
+                <Button variant="primary" fullWidth onClick={() => handleNavigation('/auth/signup')} asChild>
+                  <Link href="/auth/signup">Get started</Link>
+                </Button>
               </div>
             </div>
           </motion.div>

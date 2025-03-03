@@ -1,0 +1,84 @@
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: maily-resource-quota
+  namespace: maily
+spec:
+  hard:
+    # CPU limits
+    limits.cpu: "32"
+    # Memory limits
+    limits.memory: 64Gi
+    # Storage limits
+    requests.storage: 500Gi
+    # Pod count limits
+    pods: "100"
+    # Service limits
+    services: "50"
+    # ConfigMap limits
+    configmaps: "100"
+    # Secret limits
+    secrets: "100"
+    # PersistentVolumeClaim limits
+    persistentvolumeclaims: "50"
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: maily-compute-resources
+  namespace: maily
+spec:
+  hard:
+    requests.cpu: "16"
+    requests.memory: 32Gi
+    limits.cpu: "32"
+    limits.memory: 64Gi
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: maily-storage-resources
+  namespace: maily
+spec:
+  hard:
+    requests.storage: 500Gi
+    persistentvolumeclaims: "50"
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: maily-object-counts
+  namespace: maily
+spec:
+  hard:
+    configmaps: "100"
+    secrets: "100"
+    services: "50"
+    services.loadbalancers: "10"
+    services.nodeports: "10"
+    pods: "100"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: maily-limit-range
+  namespace: maily
+spec:
+  limits:
+  - type: Container
+    default:
+      cpu: 500m
+      memory: 512Mi
+    defaultRequest:
+      cpu: 100m
+      memory: 256Mi
+    max:
+      cpu: "4"
+      memory: 8Gi
+    min:
+      cpu: 50m
+      memory: 64Mi
+  - type: Pod
+    max:
+      cpu: "8"
+      memory: 16Gi

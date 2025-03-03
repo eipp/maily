@@ -29,6 +29,8 @@ import { Canvas } from './Canvas';
 import { Shapes, Shape } from './Shapes';
 import { useOptimizedCollaboration, useThrottledCursorUpdate } from '@/hooks/useOptimizedCollaboration';
 import { canvasPerformance } from '@/utils/canvasPerformance';
+import { useCanvasShapeWorker } from '@/hooks/useCanvasShapeWorker';
+import { canvasBatch } from '@/utils/canvasBatch';
 
 // Define tool types
 type ToolType = 'select' | 'rectangle' | 'circle' | 'line' | 'text' | 'freehand' | 'eraser' | 'hand';
@@ -236,13 +238,16 @@ export const CollaborativeCanvas: React.FC<CollaborativeCanvasProps> = ({
 
   // Handle viewport change
   const handleViewportChange = useCallback((viewport: any) => {
-    setViewportData(viewport);
-    setScale(viewport.scale);
+    // Batch viewport updates
+    canvasBatch.queueUpdate('viewport', () => {
+      setViewportData(viewport);
+      setScale(viewport.scale);
 
-    // Update cursor position for collaboration
-    if (viewport.pointerPosition) {
-      throttledUpdateCursor(viewport.pointerPosition.x, viewport.pointerPosition.y);
-    }
+      // Update cursor position for collaboration
+      if (viewport.pointerPosition) {
+        throttledUpdateCursor(viewport.pointerPosition.x, viewport.pointerPosition.y);
+      }
+    });
   }, [throttledUpdateCursor]);
 
   // Handle stage pointer move
@@ -391,6 +396,9 @@ export const CollaborativeCanvas: React.FC<CollaborativeCanvasProps> = ({
     canvasPerformance.endMetric('interaction.pointerUp');
   }, [isDrawing, shapes, collaborationActions]);
 
+  // Set up shape worker for collision detection
+  const { findShapesAtPoint } = useCanvasShapeWorker();
+
   // Handle shape click
   const handleShapeClick = useCallback((id: string) => {
     if (readOnly) return;
@@ -405,8 +413,11 @@ export const CollaborativeCanvas: React.FC<CollaborativeCanvasProps> = ({
       setShapes(prev => {
         const newShapes = prev.filter(shape => shape.id !== id);
 
-        // Broadcast shapes update
-        collaborationActions.broadcastUpdate('canvas', { shapes: newShapes });
+        // Batch the collaboration update
+        canvasBatch.queueUpdate('shapes-update', () => {
+          // Broadcast shapes update
+          collaborationActions.broadcastUpdate('canvas', { shapes: newShapes });
+        });
 
         return newShapes;
       });
@@ -414,6 +425,28 @@ export const CollaborativeCanvas: React.FC<CollaborativeCanvasProps> = ({
 
     canvasPerformance.endMetric('interaction.shapeClick');
   }, [tool, readOnly, collaborationActions]);
+  
+  // Handle canvas click (for checking collision at a point)
+  const handleCanvasClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (readOnly || !viewportData) return;
+    
+    const canvasRect = e.currentTarget.getBoundingClientRect();
+    const clickX = e.clientX - canvasRect.left;
+    const clickY = e.clientY - canvasRect.top;
+    
+    // Convert to canvas coordinates
+    const canvasX = (clickX - viewportData.x) / viewportData.scale;
+    const canvasY = (clickY - viewportData.y) / viewportData.scale;
+    
+    // Use worker to find shapes under the point
+    findShapesAtPoint(shapes, { x: canvasX, y: canvasY }, (collidingShapes) => {
+      if (collidingShapes && collidingShapes.length > 0) {
+        // Click the top shape (last in the array)
+        const topShape = collidingShapes[collidingShapes.length - 1];
+        handleShapeClick(topShape.id);
+      }
+    });
+  }, [readOnly, viewportData, shapes, findShapesAtPoint, handleShapeClick]);
 
   // Handle shape drag
   const handleShapeDragStart = useCallback((id: string) => {
@@ -509,12 +542,8 @@ export const CollaborativeCanvas: React.FC<CollaborativeCanvasProps> = ({
     console.log('Export functionality to be implemented');
   }, []);
 
-  // Filter shapes for virtualization
-  const visibleShapes = useMemo(() => {
-    if (!viewportData?.visibleRect) return shapes;
-
-    return shapes;
-  }, [shapes, viewportData]);
+  // Filter shapes for virtualization is done in the Shapes component
+  // This is a pass-through for the shapes data
 
   // Render text editing overlay
   const renderTextEditor = () => {
@@ -829,14 +858,14 @@ export const CollaborativeCanvas: React.FC<CollaborativeCanvasProps> = ({
       </div>
 
       {/* Canvas */}
-      <div className="relative flex-grow">
+      <div className="relative flex-grow" onClick={handleCanvasClick}>
         <Canvas
           width={800}
           height={600}
           onViewportChange={handleViewportChange}
         >
           <Shapes
-            shapes={visibleShapes}
+            shapes={shapes}
             visibleRect={viewportData?.visibleRect || { x: 0, y: 0, width: 800, height: 600 }}
             scale={scale}
             onShapeClick={handleShapeClick}

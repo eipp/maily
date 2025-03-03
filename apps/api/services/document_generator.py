@@ -1,693 +1,457 @@
-"""Document generation service for MailyDocs."""
+"""Document generation service."""
 
 import os
-import uuid
 import logging
+import uuid
 import json
-from typing import Dict, Any, List, Optional, Tuple, Union
+from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime
 import asyncio
-import tempfile
 
-from core.config import settings
-from core.storage import get_storage
-from db.documents import DocumentsRepository
-from services.ai import get_ai_service
-from services.blockchain import BlockchainService
-from metrics.prometheus import (
+from .base_service import BaseService
+from .document_generators.contract_generator import ContractGenerator
+from .document_generators.form_generator import FormGenerator
+from .document_generators.invoice_generator import InvoiceGenerator
+from .document_generators.newsletter_generator import NewsletterGenerator
+from .document_generators.pdf_generator import PDFGenerator
+from .document_generators.presentation_generator import PresentationGenerator
+from .document_generators.report_generator import ReportGenerator
+from ..monitoring.mailydocs_monitoring import (
     monitor_document_generation,
     track_document_size,
-    track_template_usage
+    track_template_usage,
+    track_document_analytics_event,
+    log_document_event
 )
 
 logger = logging.getLogger(__name__)
 
 class DocumentGenerationError(Exception):
-    """Exception raised for errors during document generation."""
+    """Exception raised for document generation errors."""
     pass
 
-class DocumentGenerator:
-    """Service for generating and managing documents."""
+class DocumentGenerator(BaseService):
+    """Service for generating various document types."""
 
-    def __init__(self, docs_repo: DocumentsRepository = None):
-        """Initialize the document generator.
-
-        Args:
-            docs_repo: Repository for document storage
-        """
-        self.docs_repo = docs_repo or DocumentsRepository()
-        self.storage = get_storage()
-        self.ai_service = get_ai_service()
-        self.blockchain_service = BlockchainService() if settings.BLOCKCHAIN_ENABLED else None
-
-        # File paths configuration
-        self.document_base_path = settings.DOCUMENT_STORAGE_PATH
-        self.document_base_url = settings.DOCUMENT_BASE_URL
-        self.temp_dir = settings.TEMP_DIRECTORY
-
-        # Ensure directories exist
+    def __init__(self, db=None, settings=None):
+        """Initialize the document generator service."""
+        super().__init__(db, settings)
+        
+        # Set base paths for document storage and access
+        self.document_base_path = os.environ.get("DOCUMENT_BASE_PATH", "storage/documents")
+        self.document_base_url = os.environ.get("DOCUMENT_BASE_URL", "/api/documents/files")
+        
+        # Ensure base directory exists
         os.makedirs(self.document_base_path, exist_ok=True)
-        os.makedirs(self.temp_dir, exist_ok=True)
+        
+        # Initialize document generators
+        self.generators = {
+            "contract": ContractGenerator(self.document_base_path, self.document_base_url),
+            "form": FormGenerator(self.document_base_path, self.document_base_url),
+            "invoice": InvoiceGenerator(self.document_base_path, self.document_base_url),
+            "newsletter": NewsletterGenerator(self.document_base_path, self.document_base_url),
+            "pdf": PDFGenerator(self.document_base_path, self.document_base_url),
+            "presentation": PresentationGenerator(self.document_base_path, self.document_base_url),
+            "report": ReportGenerator(self.document_base_path, self.document_base_url)
+        }
+        
+        # Initialize document database
+        self.documents_db_path = os.path.join(self.document_base_path, "documents.json")
+        self.templates_db_path = os.path.join(self.document_base_path, "templates.json")
+        self.analytics_db_path = os.path.join(self.document_base_path, "analytics.json")
+        
+        # Load existing data or create new databases
+        self.documents = self._load_json_db(self.documents_db_path, {})
+        self.templates = self._load_json_db(self.templates_db_path, {})
+        self.analytics = self._load_json_db(self.analytics_db_path, {})
+        
+        # Lock for thread safety
+        self._lock = asyncio.Lock()
+        
+        logger.info("Document generator service initialized")
 
-    async def create_document(self, document_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Create a new document based on provided data.
-
+    def _load_json_db(self, path: str, default: Any) -> Any:
+        """Load JSON database from file or create new one.
+        
         Args:
-            document_data: Document creation parameters
+            path: Path to JSON file
+            default: Default value if file doesn't exist
+            
+        Returns:
+            Loaded data or default value
+        """
+        try:
+            if os.path.exists(path):
+                with open(path, 'r') as f:
+                    return json.load(f)
+            else:
+                # Create directory if it doesn't exist
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                
+                # Create new file with default value
+                with open(path, 'w') as f:
+                    json.dump(default, f)
+                return default
+        except Exception as e:
+            logger.error(f"Error loading JSON database from {path}: {e}")
+            return default
 
+    async def _save_json_db(self, path: str, data: Any) -> None:
+        """Save JSON database to file.
+        
+        Args:
+            path: Path to JSON file
+            data: Data to save
+        """
+        try:
+            async with self._lock:
+                with open(path, 'w') as f:
+                    json.dump(data, f, indent=2)
+        except Exception as e:
+            logger.error(f"Error saving JSON database to {path}: {e}")
+            raise DocumentGenerationError(f"Failed to save data: {str(e)}")
+
+    @monitor_document_generation("generic")
+    async def create_document(self, document_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a new document.
+        
+        Args:
+            document_data: Document data including type, title, etc.
+            
         Returns:
             Created document data
         """
-        # Generate ID if not provided
-        document_id = document_data.get("id", f"doc_{uuid.uuid4().hex}")
-        document_data["id"] = document_id
-
-        # Set initial status
-        document_data["status"] = "pending"
-
-        # Create document record
-        await self.docs_repo.create_document(document_data)
-
-        # Start generation process in background
-        asyncio.create_task(self._generate_document(document_id, document_data))
-
-        # Return initial data
-        return {
-            "id": document_id,
-            "status": "pending",
-            "created_at": document_data.get("created_at", datetime.utcnow().isoformat() + "Z")
-        }
-
-    async def _generate_document(self, document_id: str, document_data: Dict[str, Any]) -> None:
-        """Generate document content based on document type and template.
-
-        Args:
-            document_id: Document ID
-            document_data: Document data including template and content parameters
-        """
         try:
-            # Update status to processing
-            await self.docs_repo.update_document(document_id, {"status": "processing"})
-
+            # Generate document ID
+            document_id = f"doc_{uuid.uuid4().hex}"
+            
+            # Get document type
+            document_type = document_data.get("type", "pdf").lower()
+            
+            # Validate document type
+            if document_type not in self.generators:
+                raise DocumentGenerationError(f"Unsupported document type: {document_type}")
+            
             # Get template if specified
             template = None
-            if template_id := document_data.get("template_id"):
-                template = await self.docs_repo.get_template(template_id)
+            template_id = document_data.get("template_id")
+            if template_id:
+                template = self.templates.get(template_id)
                 if not template:
                     raise DocumentGenerationError(f"Template not found: {template_id}")
-
-            # Choose generator based on document type
-            document_type = document_data.get("type", "standard")
-
-            # Generate content based on document type
-            file_path, file_url, preview_url = await self._generate_by_type(
-                document_id,
-                document_type,
-                document_data,
-                template
+                
+                # Track template usage
+                track_template_usage(template_id, document_type)
+            
+            # Generate document
+            generator = self.generators[document_type]
+            file_path, file_url, preview_url = await generator.generate(
+                document_id=document_id,
+                document_data=document_data,
+                template=template
             )
-
-            # Update document with file info
-            update_data = {
+            
+            # Track document size
+            track_document_size(file_path, document_type)
+            
+            # Create document record
+            timestamp = datetime.utcnow().isoformat()
+            document = {
+                "id": document_id,
+                "title": document_data.get("title", "Untitled Document"),
+                "type": document_type,
+                "user_id": document_data.get("user_id"),
                 "status": "completed",
-                "file_path": file_path,
                 "file_url": file_url,
-                "preview_url": preview_url
+                "preview_url": preview_url,
+                "created_at": timestamp,
+                "updated_at": timestamp,
+                "metadata": document_data.get("metadata", {})
             }
-
-            # Verify document if blockchain verification is enabled
-            if document_data.get("blockchain_verify", False) and self.blockchain_service:
-                verification_info = await self._verify_document(document_id, file_path)
-                if verification_info:
-                    update_data["blockchain_verified"] = True
-                    update_data["verification_url"] = verification_info.get("verification_url")
-                    update_data["verification_info"] = verification_info
-
-            # Update document record
-            await self.docs_repo.update_document(document_id, update_data)
-
-            # Process document sections if provided
-            if sections := document_data.get("sections"):
-                await self._process_sections(document_id, sections)
-
-            logger.info(f"Document {document_id} generated successfully")
-
-        except Exception as e:
-            logger.error(f"Document generation failed for {document_id}: {str(e)}")
-            # Update document with error status
-            await self.docs_repo.update_document(document_id, {
-                "status": "failed",
-                "metadata": {
-                    "error": str(e)
-                }
-            })
-
-    async def _generate_by_type(
-        self,
-        document_id: str,
-        document_type: str,
-        document_data: Dict[str, Any],
-        template: Optional[Dict[str, Any]] = None
-    ) -> Tuple[str, str, str]:
-        """Generate document based on its type.
-
-        Args:
-            document_id: Document ID
-            document_type: Type of document to generate
-            document_data: Document data
-            template: Optional template data
-
-        Returns:
-            Tuple of (file_path, file_url, preview_url)
-        """
-        if document_type == "pdf":
-            return await self._generate_pdf_document(document_id, document_data, template)
-        elif document_type == "presentation":
-            return await self._generate_presentation(document_id, document_data, template)
-        elif document_type == "contract":
-            return await self._generate_contract(document_id, document_data, template)
-        elif document_type == "report":
-            return await self._generate_report(document_id, document_data, template)
-        elif document_type == "newsletter":
-            return await self._generate_newsletter(document_id, document_data, template)
-        elif document_type == "form":
-            return await self._generate_interactive_form(document_id, document_data, template)
-        elif document_type == "invoice":
-            return await self._generate_invoice(document_id, document_data, template)
-        else:
-            # Default to standard document
-            return await self._generate_standard_document(document_id, document_data, template)
-
-    @monitor_document_generation(document_type="pdf")
-    async def _generate_pdf_document(
-        self,
-        document_id: str,
-        document_data: Dict[str, Any],
-        template: Optional[Dict[str, Any]] = None
-    ) -> Tuple[str, str, str]:
-        """Generate a PDF document.
-
-        Args:
-            document_id: Document ID
-            document_data: Document data
-            template: Optional template data
-
-        Returns:
-            Tuple of (file_path, file_url, preview_url)
-        """
-        # Implement PDF generation logic
-        # For now, we'll create a placeholder
-        title = document_data.get("title", "Untitled Document")
-
-        # Define file paths
-        file_name = f"{document_id}.pdf"
-        file_path = os.path.join(self.document_base_path, file_name)
-        file_url = f"{self.document_base_url}/{file_name}"
-        preview_url = f"{self.document_base_url}/previews/{document_id}_preview.png"
-
-        # TODO: Implement actual PDF generation with a PDF library
-        # For now, just create a dummy file
-        with open(file_path, "w") as f:
-            f.write(f"PDF Document: {title}")
-
-        # Track document size
-        track_document_size(file_path, "pdf")
-
-        # Track template usage
-        if template:
-            track_template_usage(template["id"], "pdf")
-
-        return file_path, file_url, preview_url
-
-    async def _generate_presentation(
-        self,
-        document_id: str,
-        document_data: Dict[str, Any],
-        template: Optional[Dict[str, Any]] = None
-    ) -> Tuple[str, str, str]:
-        """Generate a presentation document.
-
-        Args:
-            document_id: Document ID
-            document_data: Document data
-            template: Optional template data
-
-        Returns:
-            Tuple of (file_path, file_url, preview_url)
-        """
-        # Placeholder for presentation generation logic
-        title = document_data.get("title", "Untitled Presentation")
-
-        # Define file paths
-        file_name = f"{document_id}.pptx"
-        file_path = os.path.join(self.document_base_path, file_name)
-        file_url = f"{self.document_base_url}/{file_name}"
-        preview_url = f"{self.document_base_url}/previews/{document_id}_preview.png"
-
-        # TODO: Implement actual presentation generation
-        # For now, just create a dummy file
-        with open(file_path, "w") as f:
-            f.write(f"Presentation: {title}")
-
-        return file_path, file_url, preview_url
-
-    async def _generate_contract(
-        self,
-        document_id: str,
-        document_data: Dict[str, Any],
-        template: Optional[Dict[str, Any]] = None
-    ) -> Tuple[str, str, str]:
-        """Generate a contract document.
-
-        Args:
-            document_id: Document ID
-            document_data: Document data
-            template: Optional template data
-
-        Returns:
-            Tuple of (file_path, file_url, preview_url)
-        """
-        # Placeholder for contract generation logic
-        title = document_data.get("title", "Untitled Contract")
-
-        # Define file paths
-        file_name = f"{document_id}.pdf"
-        file_path = os.path.join(self.document_base_path, file_name)
-        file_url = f"{self.document_base_url}/{file_name}"
-        preview_url = f"{self.document_base_url}/previews/{document_id}_preview.png"
-
-        # TODO: Implement actual contract generation
-        # For now, just create a dummy file
-        with open(file_path, "w") as f:
-            f.write(f"Contract: {title}")
-
-        return file_path, file_url, preview_url
-
-    async def _generate_report(
-        self,
-        document_id: str,
-        document_data: Dict[str, Any],
-        template: Optional[Dict[str, Any]] = None
-    ) -> Tuple[str, str, str]:
-        """Generate a report document.
-
-        Args:
-            document_id: Document ID
-            document_data: Document data
-            template: Optional template data
-
-        Returns:
-            Tuple of (file_path, file_url, preview_url)
-        """
-        # Placeholder for report generation logic
-        title = document_data.get("title", "Untitled Report")
-
-        # Define file paths
-        file_name = f"{document_id}.pdf"
-        file_path = os.path.join(self.document_base_path, file_name)
-        file_url = f"{self.document_base_url}/{file_name}"
-        preview_url = f"{self.document_base_url}/previews/{document_id}_preview.png"
-
-        # TODO: Implement actual report generation
-        # For now, just create a dummy file
-        with open(file_path, "w") as f:
-            f.write(f"Report: {title}")
-
-        return file_path, file_url, preview_url
-
-    async def _generate_newsletter(
-        self,
-        document_id: str,
-        document_data: Dict[str, Any],
-        template: Optional[Dict[str, Any]] = None
-    ) -> Tuple[str, str, str]:
-        """Generate a newsletter document.
-
-        Args:
-            document_id: Document ID
-            document_data: Document data
-            template: Optional template data
-
-        Returns:
-            Tuple of (file_path, file_url, preview_url)
-        """
-        # Placeholder for newsletter generation logic
-        title = document_data.get("title", "Untitled Newsletter")
-
-        # Define file paths
-        file_name = f"{document_id}.html"
-        file_path = os.path.join(self.document_base_path, file_name)
-        file_url = f"{self.document_base_url}/{file_name}"
-        preview_url = f"{self.document_base_url}/previews/{document_id}_preview.png"
-
-        # TODO: Implement actual newsletter generation
-        # For now, just create a dummy file
-        with open(file_path, "w") as f:
-            f.write(f"<html><body><h1>Newsletter: {title}</h1></body></html>")
-
-        return file_path, file_url, preview_url
-
-    async def _generate_interactive_form(
-        self,
-        document_id: str,
-        document_data: Dict[str, Any],
-        template: Optional[Dict[str, Any]] = None
-    ) -> Tuple[str, str, str]:
-        """Generate an interactive form document.
-
-        Args:
-            document_id: Document ID
-            document_data: Document data
-            template: Optional template data
-
-        Returns:
-            Tuple of (file_path, file_url, preview_url)
-        """
-        # Placeholder for interactive form generation logic
-        title = document_data.get("title", "Untitled Form")
-
-        # Define file paths
-        file_name = f"{document_id}.html"
-        file_path = os.path.join(self.document_base_path, file_name)
-        file_url = f"{self.document_base_url}/{file_name}"
-        preview_url = f"{self.document_base_url}/previews/{document_id}_preview.png"
-
-        # TODO: Implement actual form generation
-        # For now, just create a dummy file
-        with open(file_path, "w") as f:
-            f.write(f"<html><body><h1>Interactive Form: {title}</h1></body></html>")
-
-        return file_path, file_url, preview_url
-
-    async def _generate_invoice(
-        self,
-        document_id: str,
-        document_data: Dict[str, Any],
-        template: Optional[Dict[str, Any]] = None
-    ) -> Tuple[str, str, str]:
-        """Generate an invoice document.
-
-        Args:
-            document_id: Document ID
-            document_data: Document data
-            template: Optional template data
-
-        Returns:
-            Tuple of (file_path, file_url, preview_url)
-        """
-        # Placeholder for invoice generation logic
-        title = document_data.get("title", "Untitled Invoice")
-
-        # Define file paths
-        file_name = f"{document_id}.pdf"
-        file_path = os.path.join(self.document_base_path, file_name)
-        file_url = f"{self.document_base_url}/{file_name}"
-        preview_url = f"{self.document_base_url}/previews/{document_id}_preview.png"
-
-        # TODO: Implement actual invoice generation
-        # For now, just create a dummy file
-        with open(file_path, "w") as f:
-            f.write(f"Invoice: {title}")
-
-        return file_path, file_url, preview_url
-
-    async def _generate_standard_document(
-        self,
-        document_id: str,
-        document_data: Dict[str, Any],
-        template: Optional[Dict[str, Any]] = None
-    ) -> Tuple[str, str, str]:
-        """Generate a standard document.
-
-        Args:
-            document_id: Document ID
-            document_data: Document data
-            template: Optional template data
-
-        Returns:
-            Tuple of (file_path, file_url, preview_url)
-        """
-        # Placeholder for standard document generation logic
-        title = document_data.get("title", "Untitled Document")
-
-        # Define file paths
-        file_name = f"{document_id}.pdf"
-        file_path = os.path.join(self.document_base_path, file_name)
-        file_url = f"{self.document_base_url}/{file_name}"
-        preview_url = f"{self.document_base_url}/previews/{document_id}_preview.png"
-
-        # TODO: Implement actual document generation
-        # For now, just create a dummy file
-        with open(file_path, "w") as f:
-            f.write(f"Standard Document: {title}")
-
-        return file_path, file_url, preview_url
-
-    async def _process_sections(
-        self,
-        document_id: str,
-        sections: List[Dict[str, Any]]
-    ) -> None:
-        """Process and store document sections.
-
-        Args:
-            document_id: Document ID
-            sections: List of section data
-        """
-        for idx, section in enumerate(sections):
-            # Generate ID if not provided
-            section_id = section.get("id", f"sect_{uuid.uuid4().hex}")
-
-            # Prepare section data
-            section_data = {
-                "id": section_id,
-                "document_id": document_id,
-                "title": section.get("title"),
-                "type": section.get("type", "text"),
-                "content": section.get("content"),
-                "content_json": section.get("content_json"),
-                "order_index": section.get("order_index", idx),
-                "interactive": section.get("interactive", False),
-                "interaction_data": section.get("interaction_data"),
-                "created_at": datetime.utcnow().isoformat() + "Z",
-                "updated_at": datetime.utcnow().isoformat() + "Z"
-            }
-
-            # Insert section record
-            # TODO: Implement section repository
-            # For now, we'll just log
-            logger.info(f"Processing section {section_id} for document {document_id}")
-
-    async def _verify_document(
-        self,
-        document_id: str,
-        file_path: str
-    ) -> Optional[Dict[str, Any]]:
-        """Verify document on blockchain.
-
-        Args:
-            document_id: Document ID
-            file_path: Path to the document file
-
-        Returns:
-            Verification info or None if verification failed
-        """
-        if not self.blockchain_service:
-            logger.warning("Blockchain service not available for verification")
-            return None
-
-        try:
-            # Generate document hash
-            with open(file_path, "rb") as f:
-                document_content = f.read()
-
-            # Submit to blockchain
-            tx_hash, verification_url = await self.blockchain_service.register_document(
-                document_id, document_content
+            
+            # Save document record
+            self.documents[document_id] = document
+            await self._save_json_db(self.documents_db_path, self.documents)
+            
+            # Log document creation
+            log_document_event(
+                event_type="document_created",
+                document_id=document_id,
+                document_type=document_type,
+                user_id=document_data.get("user_id")
             )
-
-            if not tx_hash:
-                logger.error(f"Failed to verify document {document_id} on blockchain")
-                return None
-
-            # Create verification record
-            verification_id = f"ver_{uuid.uuid4().hex}"
-            verification_data = {
-                "id": verification_id,
-                "document_id": document_id,
-                "hash": self.blockchain_service.calculate_hash(document_content),
-                "blockchain_tx": tx_hash,
-                "verification_method": "blockchain",
-                "verified_at": datetime.utcnow().isoformat() + "Z",
-                "verification_data": {
-                    "blockchain": "ethereum",  # or whatever blockchain is used
-                    "network": self.blockchain_service.network
-                },
-                "created_at": datetime.utcnow().isoformat() + "Z",
-                "updated_at": datetime.utcnow().isoformat() + "Z"
+            
+            # Initialize analytics for this document
+            self.analytics[document_id] = {
+                "views": 0,
+                "downloads": 0,
+                "shares": 0,
+                "last_viewed": None,
+                "view_history": []
             }
-
-            # TODO: Store verification record
-            # For now, just return the data
-            return {
-                "verification_id": verification_id,
-                "tx_hash": tx_hash,
-                "verification_url": verification_url,
-                "verified_at": verification_data["verified_at"]
-            }
-
+            await self._save_json_db(self.analytics_db_path, self.analytics)
+            
+            return document
         except Exception as e:
-            logger.error(f"Document verification failed: {str(e)}")
-            return None
+            logger.error(f"Error creating document: {str(e)}")
+            raise DocumentGenerationError(f"Failed to create document: {str(e)}")
 
     async def get_document(self, document_id: str) -> Dict[str, Any]:
-        """Get document data by ID.
-
+        """Get a document by ID.
+        
         Args:
             document_id: Document ID
-
+            
         Returns:
             Document data
         """
-        document = await self.docs_repo.get_document(document_id)
+        document = self.documents.get(document_id)
         if not document:
             raise DocumentGenerationError(f"Document not found: {document_id}")
+        
         return document
-
-    async def get_document_analytics(self, document_id: str) -> Dict[str, Any]:
-        """Get analytics data for a document.
-
-        Args:
-            document_id: Document ID
-
-        Returns:
-            Analytics data
-        """
-        # Ensure document exists
-        document = await self.docs_repo.get_document(document_id)
-        if not document:
-            raise DocumentGenerationError(f"Document not found: {document_id}")
-
-        # Get analytics
-        analytics = await self.docs_repo.get_document_analytics(document_id)
-        if not analytics:
-            # Return empty analytics if none exist
-            return {
-                "document_id": document_id,
-                "views": 0,
-                "unique_views": 0,
-                "average_view_time": 0,
-                "completion_rate": 0,
-                "engagement_by_section": {},
-                "conversion_rate": None,
-                "additional_metrics": {}
-            }
-
-        return analytics
-
-    async def track_document_view(
-        self,
-        document_id: str,
-        view_data: Dict[str, Any]
-    ) -> None:
-        """Track a document view event.
-
-        Args:
-            document_id: Document ID
-            view_data: View event data
-        """
-        # Ensure document exists
-        document = await self.docs_repo.get_document(document_id)
-        if not document:
-            raise DocumentGenerationError(f"Document not found: {document_id}")
-
-        # Update analytics
-        await self.docs_repo.update_document_analytics(document_id, view_data)
-
-    async def delete_document(self, document_id: str) -> bool:
-        """Delete a document and its associated files.
-
-        Args:
-            document_id: Document ID
-
-        Returns:
-            True if deleted, False otherwise
-        """
-        # Get document details
-        document = await self.docs_repo.get_document(document_id)
-        if not document:
-            return False
-
-        # Delete associated files
-        if file_path := document.get("file_path"):
-            try:
-                if os.path.exists(file_path):
-                    os.remove(file_path)
-            except Exception as e:
-                logger.error(f"Failed to delete document file {file_path}: {str(e)}")
-
-        # Delete from database
-        return await self.docs_repo.delete_document(document_id)
-
-    async def list_templates(
-        self,
-        document_type: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
-        """List available document templates.
-
-        Args:
-            document_type: Optional filter by document type
-
-        Returns:
-            List of templates
-        """
-        return await self.docs_repo.list_templates(document_type)
-
-    async def create_template(self, template_data: Dict[str, Any]) -> str:
-        """Create a new document template.
-
-        Args:
-            template_data: Template data
-
-        Returns:
-            Template ID
-        """
-        # Generate ID if not provided
-        template_id = template_data.get("id", f"tmpl_{uuid.uuid4().hex}")
-        template_data["id"] = template_id
-
-        # Create template record
-        await self.docs_repo.create_template(template_data)
-
-        return template_id
 
     async def list_documents(
         self,
         user_id: Optional[str] = None,
-        campaign_id: Optional[str] = None,
         document_type: Optional[str] = None,
         status: Optional[str] = None,
         limit: int = 50,
         offset: int = 0
     ) -> List[Dict[str, Any]]:
         """List documents with optional filtering.
-
+        
         Args:
             user_id: Filter by user ID
-            campaign_id: Filter by campaign ID
             document_type: Filter by document type
             status: Filter by status
             limit: Maximum number of results
             offset: Pagination offset
-
+            
         Returns:
             List of document records
         """
-        return await self.docs_repo.list_documents(
-            user_id=user_id,
-            campaign_id=campaign_id,
-            type=document_type,
-            status=status,
-            limit=limit,
-            offset=offset
+        # Filter documents
+        filtered_documents = []
+        for doc in self.documents.values():
+            # Apply filters
+            if user_id and doc.get("user_id") != user_id:
+                continue
+                
+            if document_type and doc.get("type") != document_type:
+                continue
+                
+            if status and doc.get("status") != status:
+                continue
+                
+            filtered_documents.append(doc)
+        
+        # Sort by creation date (newest first)
+        filtered_documents.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+        
+        # Apply pagination
+        paginated_documents = filtered_documents[offset:offset + limit]
+        
+        return paginated_documents
+
+    async def delete_document(self, document_id: str) -> bool:
+        """Delete a document.
+        
+        Args:
+            document_id: Document ID
+            
+        Returns:
+            True if deleted successfully, False otherwise
+        """
+        if document_id not in self.documents:
+            return False
+        
+        try:
+            # Get document data
+            document = self.documents[document_id]
+            document_type = document.get("type", "pdf")
+            
+            # Delete document file
+            file_path = os.path.join(self.document_base_path, f"{document_id}.{self._get_file_extension(document_type)}")
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            
+            # Delete preview file if exists
+            preview_path = os.path.join(self.document_base_path, "previews", f"{document_id}_preview.png")
+            if os.path.exists(preview_path):
+                os.remove(preview_path)
+            
+            # Remove document record
+            del self.documents[document_id]
+            await self._save_json_db(self.documents_db_path, self.documents)
+            
+            # Remove analytics record
+            if document_id in self.analytics:
+                del self.analytics[document_id]
+                await self._save_json_db(self.analytics_db_path, self.analytics)
+            
+            # Log document deletion
+            log_document_event(
+                event_type="document_deleted",
+                document_id=document_id,
+                document_type=document_type,
+                user_id=document.get("user_id")
+            )
+            
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting document {document_id}: {str(e)}")
+            return False
+
+    def _get_file_extension(self, document_type: str) -> str:
+        """Get file extension for document type.
+        
+        Args:
+            document_type: Document type
+            
+        Returns:
+            File extension
+        """
+        extensions = {
+            "pdf": "pdf",
+            "presentation": "pptx",
+            "contract": "pdf",
+            "report": "pdf",
+            "newsletter": "html",
+            "form": "html",
+            "invoice": "pdf"
+        }
+        
+        return extensions.get(document_type, "pdf")
+
+    async def list_templates(self, document_type: Optional[str] = None) -> List[Dict[str, Any]]:
+        """List document templates.
+        
+        Args:
+            document_type: Filter by document type
+            
+        Returns:
+            List of templates
+        """
+        # Filter templates
+        filtered_templates = []
+        for template_id, template in self.templates.items():
+            # Apply filter
+            if document_type and template.get("type") != document_type:
+                continue
+                
+            # Add template ID to data
+            template_data = dict(template)
+            template_data["id"] = template_id
+            
+            filtered_templates.append(template_data)
+        
+        # Sort by name
+        filtered_templates.sort(key=lambda x: x.get("name", ""))
+        
+        return filtered_templates
+
+    async def create_template(self, template_data: Dict[str, Any]) -> str:
+        """Create a new document template.
+        
+        Args:
+            template_data: Template data
+            
+        Returns:
+            Template ID
+        """
+        try:
+            # Generate template ID
+            template_id = f"template_{uuid.uuid4().hex}"
+            
+            # Create template record
+            timestamp = datetime.utcnow().isoformat()
+            template = {
+                "name": template_data.get("name", "Untitled Template"),
+                "type": template_data.get("type", "pdf"),
+                "description": template_data.get("description"),
+                "content": template_data.get("content", {}),
+                "created_at": timestamp,
+                "updated_at": timestamp,
+                "user_id": template_data.get("user_id"),
+                "metadata": template_data.get("metadata", {})
+            }
+            
+            # Save template record
+            self.templates[template_id] = template
+            await self._save_json_db(self.templates_db_path, self.templates)
+            
+            # Log template creation
+            logger.info(f"Template created: {template_id} ({template['name']})")
+            
+            return template_id
+        except Exception as e:
+            logger.error(f"Error creating template: {str(e)}")
+            raise DocumentGenerationError(f"Failed to create template: {str(e)}")
+
+    async def get_document_analytics(self, document_id: str) -> Dict[str, Any]:
+        """Get analytics for a document.
+        
+        Args:
+            document_id: Document ID
+            
+        Returns:
+            Document analytics data
+        """
+        if document_id not in self.analytics:
+            raise DocumentGenerationError(f"Analytics not found for document: {document_id}")
+        
+        return self.analytics[document_id]
+
+    async def track_document_view(self, document_id: str, view_data: Dict[str, Any]) -> None:
+        """Track a document view event.
+        
+        Args:
+            document_id: Document ID
+            view_data: View event data
+        """
+        if document_id not in self.documents:
+            raise DocumentGenerationError(f"Document not found: {document_id}")
+        
+        if document_id not in self.analytics:
+            self.analytics[document_id] = {
+                "views": 0,
+                "downloads": 0,
+                "shares": 0,
+                "last_viewed": None,
+                "view_history": []
+            }
+        
+        # Update analytics
+        timestamp = datetime.utcnow().isoformat()
+        self.analytics[document_id]["views"] += 1
+        self.analytics[document_id]["last_viewed"] = timestamp
+        
+        # Add view event to history
+        view_event = {
+            "timestamp": timestamp,
+            "ip": view_data.get("ip"),
+            "user_agent": view_data.get("user_agent"),
+            "user_id": view_data.get("user_id"),
+            "referrer": view_data.get("referrer")
+        }
+        
+        self.analytics[document_id]["view_history"].append(view_event)
+        
+        # Limit history size
+        if len(self.analytics[document_id]["view_history"]) > 100:
+            self.analytics[document_id]["view_history"] = self.analytics[document_id]["view_history"][-100:]
+        
+        # Save analytics
+        await self._save_json_db(self.analytics_db_path, self.analytics)
+        
+        # Track analytics event
+        track_document_analytics_event("view")
+        
+        # Log view event
+        log_document_event(
+            event_type="document_viewed",
+            document_id=document_id,
+            user_id=view_data.get("user_id"),
+            ip=view_data.get("ip")
         )

@@ -1,0 +1,223 @@
+# AlertManager Configuration for Maily
+# Environment: ${environment}
+
+global:
+  resolve_timeout: 5m
+  slack_api_url: ${slack_webhook_url}
+  pagerduty_url: https://events.pagerduty.com/v2/enqueue
+
+# The root route on which each incoming alert enters.
+route:
+  # The root route must not have any matchers as it is the entry point for all alerts.
+  # It needs to have a receiver configured so alerts that do not match any of the sub-routes
+  # are sent to someone.
+  receiver: 'slack-notifications'
+  
+  # The labels by which incoming alerts are grouped together. For example,
+  # multiple alerts coming in for cluster=A and alertname=LatencyHigh would
+  # be batched into a single group.
+  group_by: ['alertname', 'cluster', 'service']
+  
+  # When a new group of alerts is created by an incoming alert, wait at
+  # least 'group_wait' to send the initial notification.
+  # This way ensures that you get multiple alerts for the same group that start
+  # firing shortly after another are batched together on the first notification.
+  group_wait: 30s
+  
+  # When the first notification was sent, wait 'group_interval' to send a batch
+  # of new alerts that started firing for that group.
+  group_interval: 5m
+  
+  # If an alert has successfully been sent, wait 'repeat_interval' to
+  # resend them.
+  repeat_interval: 4h
+  
+  # Child routes
+  routes:
+    # Critical alerts go to PagerDuty
+    - match:
+        severity: critical
+      receiver: 'pagerduty-critical'
+      continue: true
+      
+    # AI service alerts
+    - match:
+        service: ai-service
+      receiver: 'slack-ai-team'
+      continue: true
+      
+    # WebSocket alerts
+    - match:
+        service: websocket
+      receiver: 'slack-websocket-team'
+      continue: true
+      
+    # Blockchain alerts
+    - match:
+        service: blockchain
+      receiver: 'slack-blockchain-team'
+      continue: true
+      
+    # Database alerts
+    - match:
+        service: database
+      receiver: 'slack-database-team'
+      continue: true
+      
+    # Infrastructure alerts
+    - match:
+        service: infrastructure
+      receiver: 'slack-infrastructure-team'
+      continue: true
+
+# Inhibition rules allow to mute a set of alerts given that another alert is
+# firing. We use this to mute warnings when criticals are firing for the
+# same service.
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    # Apply inhibition if the alertname is the same.
+    equal: ['alertname', 'cluster', 'service']
+
+# Receivers define notification integrations.
+receivers:
+  - name: 'slack-notifications'
+    slack_configs:
+      - channel: '#maily-${environment}-alerts'
+        send_resolved: true
+        title: '[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }}'
+        title_link: 'https://grafana.${domain}/d/maily-overview/maily-overview'
+        text: >-
+          {{ range .Alerts }}
+            *Alert:* {{ .Annotations.summary }}
+            *Description:* {{ .Annotations.description }}
+            *Severity:* {{ .Labels.severity }}
+            *Service:* {{ .Labels.service }}
+            *Started:* {{ .StartsAt | since }}
+            {{ if ne .Labels.instance "" }}*Instance:* {{ .Labels.instance }}{{ end }}
+            {{ if ne .Labels.pod "" }}*Pod:* {{ .Labels.pod }}{{ end }}
+          {{ end }}
+        footer: 'Maily Monitoring | ${environment}'
+        actions:
+          - type: button
+            text: 'View in Grafana'
+            url: 'https://grafana.${domain}/d/maily-overview/maily-overview'
+          - type: button
+            text: 'View in Prometheus'
+            url: 'https://prometheus.${domain}/alerts'
+  
+  - name: 'slack-ai-team'
+    slack_configs:
+      - channel: '#maily-ai-team'
+        send_resolved: true
+        title: '[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }}'
+        title_link: 'https://grafana.${domain}/d/maily-ai-services/maily-ai-services'
+        text: >-
+          {{ range .Alerts }}
+            *Alert:* {{ .Annotations.summary }}
+            *Description:* {{ .Annotations.description }}
+            *Severity:* {{ .Labels.severity }}
+            *Service:* {{ .Labels.service }}
+            *Started:* {{ .StartsAt | since }}
+            {{ if ne .Labels.instance "" }}*Instance:* {{ .Labels.instance }}{{ end }}
+            {{ if ne .Labels.pod "" }}*Pod:* {{ .Labels.pod }}{{ end }}
+          {{ end }}
+        footer: 'Maily AI Services Monitoring | ${environment}'
+        actions:
+          - type: button
+            text: 'View in Grafana'
+            url: 'https://grafana.${domain}/d/maily-ai-services/maily-ai-services'
+  
+  - name: 'slack-websocket-team'
+    slack_configs:
+      - channel: '#maily-websocket-team'
+        send_resolved: true
+        title: '[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }}'
+        title_link: 'https://grafana.${domain}/d/maily-websocket/maily-websocket'
+        text: >-
+          {{ range .Alerts }}
+            *Alert:* {{ .Annotations.summary }}
+            *Description:* {{ .Annotations.description }}
+            *Severity:* {{ .Labels.severity }}
+            *Service:* {{ .Labels.service }}
+            *Started:* {{ .StartsAt | since }}
+            {{ if ne .Labels.instance "" }}*Instance:* {{ .Labels.instance }}{{ end }}
+            {{ if ne .Labels.pod "" }}*Pod:* {{ .Labels.pod }}{{ end }}
+          {{ end }}
+        footer: 'Maily WebSocket Monitoring | ${environment}'
+        actions:
+          - type: button
+            text: 'View in Grafana'
+            url: 'https://grafana.${domain}/d/maily-websocket/maily-websocket'
+  
+  - name: 'slack-blockchain-team'
+    slack_configs:
+      - channel: '#maily-blockchain-team'
+        send_resolved: true
+        title: '[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }}'
+        title_link: 'https://grafana.${domain}/d/maily-blockchain/maily-blockchain'
+        text: >-
+          {{ range .Alerts }}
+            *Alert:* {{ .Annotations.summary }}
+            *Description:* {{ .Annotations.description }}
+            *Severity:* {{ .Labels.severity }}
+            *Service:* {{ .Labels.service }}
+            *Started:* {{ .StartsAt | since }}
+            {{ if ne .Labels.instance "" }}*Instance:* {{ .Labels.instance }}{{ end }}
+            {{ if ne .Labels.pod "" }}*Pod:* {{ .Labels.pod }}{{ end }}
+          {{ end }}
+        footer: 'Maily Blockchain Monitoring | ${environment}'
+        actions:
+          - type: button
+            text: 'View in Grafana'
+            url: 'https://grafana.${domain}/d/maily-blockchain/maily-blockchain'
+  
+  - name: 'slack-database-team'
+    slack_configs:
+      - channel: '#maily-database-team'
+        send_resolved: true
+        title: '[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }}'
+        title_link: 'https://grafana.${domain}/d/maily-overview/maily-overview'
+        text: >-
+          {{ range .Alerts }}
+            *Alert:* {{ .Annotations.summary }}
+            *Description:* {{ .Annotations.description }}
+            *Severity:* {{ .Labels.severity }}
+            *Service:* {{ .Labels.service }}
+            *Started:* {{ .StartsAt | since }}
+            {{ if ne .Labels.instance "" }}*Instance:* {{ .Labels.instance }}{{ end }}
+            {{ if ne .Labels.pod "" }}*Pod:* {{ .Labels.pod }}{{ end }}
+          {{ end }}
+        footer: 'Maily Database Monitoring | ${environment}'
+  
+  - name: 'slack-infrastructure-team'
+    slack_configs:
+      - channel: '#maily-infrastructure-team'
+        send_resolved: true
+        title: '[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }}'
+        title_link: 'https://grafana.${domain}/d/maily-overview/maily-overview'
+        text: >-
+          {{ range .Alerts }}
+            *Alert:* {{ .Annotations.summary }}
+            *Description:* {{ .Annotations.description }}
+            *Severity:* {{ .Labels.severity }}
+            *Service:* {{ .Labels.service }}
+            *Started:* {{ .StartsAt | since }}
+            {{ if ne .Labels.instance "" }}*Instance:* {{ .Labels.instance }}{{ end }}
+            {{ if ne .Labels.pod "" }}*Pod:* {{ .Labels.pod }}{{ end }}
+          {{ end }}
+        footer: 'Maily Infrastructure Monitoring | ${environment}'
+  
+  - name: 'pagerduty-critical'
+    pagerduty_configs:
+      - service_key: ${pagerduty_service_key}
+        send_resolved: true
+        description: >-
+          [{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }}
+        details:
+          firing: '{{ template "pagerduty.default.instances" .Alerts.Firing }}'
+          resolved: '{{ template "pagerduty.default.instances" .Alerts.Resolved }}'
+          num_firing: '{{ .Alerts.Firing | len }}'
+          num_resolved: '{{ .Alerts.Resolved | len }}'

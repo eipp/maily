@@ -1,11 +1,27 @@
-"""API key service for managing API key operations."""
+"""
+API Key management service for secure authentication and authorization.
+
+This module provides functions for creating, validating, and managing API keys
+with proper scopes and permissions.
+"""
+
 from typing import Dict, Optional, List, Any, Tuple, Union
 import logging
 import secrets
 import hashlib
+import uuid
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+import time
+import base64
+
+# Redis for caching
+try:
+    from apps.api.cache.redis_client import get_redis_client
+    REDIS_AVAILABLE = True
+except ImportError:
+    REDIS_AVAILABLE = False
 
 from models.api_key import ApiKey
 from models.user import User
@@ -13,6 +29,90 @@ from database.session import get_db
 from errors.exceptions import NotFoundError, DatabaseError, AuthenticationError
 
 logger = logging.getLogger(__name__)
+
+
+async def validate_api_key(api_key: str) -> Tuple[bool, Optional[Dict[str, Any]]]:
+    """
+    Validate an API key and return its associated data.
+    
+    Args:
+        api_key: The API key to validate
+        
+    Returns:
+        Tuple of (is_valid, key_data or None)
+    """
+    # Try to get from cache first
+    if REDIS_AVAILABLE:
+        try:
+            key_hash = hashlib.sha256(api_key.encode()).hexdigest()
+            redis_client = await get_redis_client()
+            cached_data = await redis_client.get(f"api_key:{key_hash}")
+            
+            if cached_data:
+                # Key exists in cache, return success with minimal data
+                key_data = base64.b64decode(cached_data).decode('utf-8')
+                import json
+                return True, json.loads(key_data)
+        except Exception as e:
+            logger.warning(f"Redis error during API key validation: {str(e)}")
+
+    # Fall back to database
+    db_user, db_key = await get_user_by_api_key(api_key, return_api_key=True)
+    
+    if not db_user or not db_key:
+        return False, None
+        
+    # Cache the result for faster future validation
+    if REDIS_AVAILABLE and db_key:
+        try:
+            key_hash = hashlib.sha256(api_key.encode()).hexdigest()
+            redis_client = await get_redis_client()
+            key_data = {
+                "id": str(db_key.id),
+                "user_id": str(db_user.id),
+                "scopes": db_key.scopes,
+                "is_valid": True
+            }
+            import json
+            await redis_client.setex(
+                f"api_key:{key_hash}", 
+                300,  # 5 minutes TTL
+                base64.b64encode(json.dumps(key_data).encode('utf-8'))
+            )
+        except Exception as e:
+            logger.warning(f"Failed to cache API key: {str(e)}")
+    
+    # Return the key data
+    if db_key:
+        return True, {
+            "id": str(db_key.id),
+            "user_id": str(db_user.id),
+            "name": db_key.name,
+            "scopes": db_key.scopes,
+            "expires_at": db_key.expires_at.isoformat() if db_key.expires_at else None,
+            "created_at": db_key.created_at.isoformat() if db_key.created_at else None,
+            "is_valid": True,
+        }
+    
+    return False, None
+
+
+async def get_api_key_scopes(api_key: str) -> List[str]:
+    """
+    Get the scopes associated with an API key.
+    
+    Args:
+        api_key: The API key
+        
+    Returns:
+        List of scope strings
+    """
+    is_valid, key_data = await validate_api_key(api_key)
+    
+    if not is_valid or not key_data:
+        return []
+    
+    return key_data.get("scopes", [])
 
 
 async def get_user_by_api_key(api_key: str, db: Optional[AsyncSession] = None, return_api_key: bool = False) -> Optional[Union[User, Tuple[User, ApiKey]]]:

@@ -1,0 +1,12 @@
+{
+  "version": "1",
+  "description": "Consolidated baseline migration from multiple systems",
+  "source": "consolidated",
+  "timestamp": "2025-03-03T18:39:57Z",
+  "consolidated": true,
+  "original_systems": [
+    "SQL Migrations (packages/database/migrations/*.sql)",
+    "Alembic Migrations (apps/api/database/migrations/versions/*.py)",
+    "Prisma Migrations (apps/api/db/migrations)"
+  ]
+} 

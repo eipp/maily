@@ -1,8 +1,10 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Group, Rect, Circle, Text, Line } from 'react-konva';
 import { canvasPerformance } from '@/utils/canvasPerformance';
+import { VisibleRect } from '@/utils/canvasUtils';
+import { useCanvasShapeWorker } from '@/hooks/useCanvasShapeWorker';
 
 // Types
 export interface Shape {
@@ -23,13 +25,6 @@ export interface Shape {
   opacity?: number;
   draggable?: boolean;
   isSelected?: boolean;
-}
-
-interface VisibleRect {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
 }
 
 interface ShapesProps {
@@ -55,97 +50,27 @@ export const Shapes: React.FC<ShapesProps> = ({
   onShapeDragStart,
   onShapeDragEnd,
 }) => {
-  // Filter shapes to only those visible in the viewport
-  const visibleShapes = useMemo(() => {
+  // Use WebWorker for filtering shapes if available
+  const [visibleShapes, setVisibleShapes] = useState<Shape[]>([]);
+  const { filterVisibleShapes } = useCanvasShapeWorker();
+
+  // Update visibleShapes when input shapes or viewportRect changes
+  useEffect(() => {
     const startTime = performance.now();
-
-    const filtered = shapes.filter(shape => {
-      // Calculate shape bounds
-      let bounds: VisibleRect;
-
-      switch (shape.type) {
-        case 'rect':
-          bounds = {
-            x: shape.x,
-            y: shape.y,
-            width: shape.width || 0,
-            height: shape.height || 0,
-          };
-          break;
-
-        case 'circle':
-          const radius = shape.radius || 0;
-          bounds = {
-            x: shape.x - radius,
-            y: shape.y - radius,
-            width: radius * 2,
-            height: radius * 2,
-          };
-          break;
-
-        case 'text':
-          // Text bounds are approximate
-          bounds = {
-            x: shape.x,
-            y: shape.y,
-            width: (shape.text?.length || 0) * (shape.fontSize || 12) * 0.6,
-            height: (shape.fontSize || 12) * 1.2,
-          };
-          break;
-
-        case 'line':
-        case 'freehand':
-          if (!shape.points || shape.points.length < 2) {
-            return false;
-          }
-
-          // Calculate bounding box of points
-          let minX = Infinity;
-          let minY = Infinity;
-          let maxX = -Infinity;
-          let maxY = -Infinity;
-
-          for (let i = 0; i < shape.points.length; i += 2) {
-            const x = shape.points[i];
-            const y = shape.points[i + 1];
-
-            minX = Math.min(minX, x);
-            minY = Math.min(minY, y);
-            maxX = Math.max(maxX, x);
-            maxY = Math.max(maxY, y);
-          }
-
-          bounds = {
-            x: minX,
-            y: minY,
-            width: maxX - minX,
-            height: maxY - minY,
-          };
-          break;
-
-        default:
-          return false;
-      }
-
-      // Check if shape bounds intersect with visible rect
-      return (
-        bounds.x + bounds.width >= visibleRect.x &&
-        bounds.x <= visibleRect.x + visibleRect.width &&
-        bounds.y + bounds.height >= visibleRect.y &&
-        bounds.y <= visibleRect.y + visibleRect.height
-      );
+    
+    // Use worker to filter shapes
+    filterVisibleShapes(shapes, visibleRect, (filteredShapes) => {
+      setVisibleShapes(filteredShapes || shapes);
+      
+      // Measure performance
+      const endTime = performance.now();
+      canvasPerformance.measure('render.filterShapes', () => {}, {
+        totalShapes: shapes.length,
+        visibleShapes: filteredShapes ? filteredShapes.length : shapes.length,
+        duration: endTime - startTime,
+      });
     });
-
-    // Measure performance
-    const endTime = performance.now();
-    canvasPerformance.measure('render.filterShapes', () => {}, {
-      totalShapes: shapes.length,
-      visibleShapes: filtered.length,
-      duration: endTime - startTime,
-    });
-
-    return filtered;
-  }, [shapes, visibleRect]);
+  }, [shapes, visibleRect, filterVisibleShapes]);
 
   // Render shapes based on their type
   const renderShape = (shape: Shape) => {
@@ -176,6 +101,7 @@ export const Shapes: React.FC<ShapesProps> = ({
             {...commonProps}
             width={shape.width}
             height={shape.height}
+            perfectDrawEnabled={false} // Performance optimization
           />
         );
 
@@ -184,6 +110,7 @@ export const Shapes: React.FC<ShapesProps> = ({
           <Circle
             {...commonProps}
             radius={shape.radius}
+            perfectDrawEnabled={false} // Performance optimization
           />
         );
 
@@ -193,6 +120,7 @@ export const Shapes: React.FC<ShapesProps> = ({
             {...commonProps}
             text={shape.text}
             fontSize={shape.fontSize}
+            perfectDrawEnabled={false} // Performance optimization
           />
         );
 
@@ -205,6 +133,7 @@ export const Shapes: React.FC<ShapesProps> = ({
             tension={shape.type === 'freehand' ? 0.5 : 0}
             lineCap="round"
             lineJoin="round"
+            perfectDrawEnabled={false} // Performance optimization
           />
         );
 

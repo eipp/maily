@@ -1,0 +1,23 @@
+# Maily Operations Cron Jobs
+# Copy this file to /etc/cron.d/maily or use crontab -e to add these entries
+# Format: minute hour day month day-of-week user command
+
+# Environment setup
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+MAILTO=admin@justmaily.com
+
+# Daily database backup at 1 AM
+0 1 * * * root /path/to/maily-ops.sh backup --retention=30 > /var/log/maily-backup.log 2>&1
+
+# Hourly health checks during business hours (8 AM to 6 PM, weekdays)
+0 8-18 * * 1-5 root /path/to/maily-ops.sh monitor > /var/log/maily-monitor.log 2>&1
+
+# Full system validation every Sunday at 10 PM
+0 22 * * 0 root /path/to/maily-ops.sh validate --env=production > /var/log/maily-validate.log 2>&1
+
+# Clean up old log files weekly
+0 0 * * 0 root find /var/log -name "maily-*.log" -type f -mtime +30 -delete
+
+# Reminder to check for Maily updates every two weeks
+0 9 1,15 * * root echo "Reminder: Check for Maily updates" | mail -s "Maily Update Check" admin@justmaily.com

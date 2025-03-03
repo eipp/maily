@@ -8,6 +8,7 @@ import promBundle from 'express-prom-bundle';
 import config from './config';
 import logger from './utils/logger';
 import eventsRoutes from './routes/events.routes';
+import predictiveRoutes from './routes/predictive.routes';
 
 // Create Express application
 const app = express();
@@ -48,6 +49,7 @@ if (config.metrics.enabled) {
 
 // API routes
 app.use(`${config.server.apiPrefix}/events`, eventsRoutes);
+app.use(`${config.server.apiPrefix}/predictive`, predictiveRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

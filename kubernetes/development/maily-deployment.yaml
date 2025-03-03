@@ -1,0 +1,148 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: maily-api
+  namespace: development
+  labels:
+    app: maily
+    component: api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: maily
+      component: api
+  template:
+    metadata:
+      labels:
+        app: maily
+        component: api
+    spec:
+      containers:
+      - name: maily-api
+        image: maily/api:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 3000
+        env:
+        - name: NODE_ENV
+          value: "development"
+        - name: SUPABASE_URL
+          value: "postgresql://postgres:postgres@supabase-db:5432/maily"
+        - name: REDIS_URL
+          value: "redis://redis:6379"
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "256Mi"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 15
+          periodSeconds: 20
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: maily-web
+  namespace: development
+  labels:
+    app: maily
+    component: web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: maily
+      component: web
+  template:
+    metadata:
+      labels:
+        app: maily
+        component: web
+    spec:
+      containers:
+      - name: maily-web
+        image: maily/web:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 3000
+        env:
+        - name: NODE_ENV
+          value: "development"
+        - name: API_URL
+          value: "http://maily-api:3000"
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "300m"
+            memory: "256Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: maily-api
+  namespace: development
+spec:
+  selector:
+    app: maily
+    component: api
+  ports:
+  - port: 3000
+    targetPort: 3000
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: maily-web
+  namespace: development
+spec:
+  selector:
+    app: maily
+    component: web
+  ports:
+  - port: 3000
+    targetPort: 3000
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: maily-ingress
+  namespace: development
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  rules:
+  - http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: maily-api
+            port:
+              number: 3000
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: maily-web
+            port:
+              number: 3000 

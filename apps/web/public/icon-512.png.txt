@@ -1,0 +1,10 @@
+This is a placeholder for the 512x512 PNG icon.
+To generate the actual PNG file, install the 'sharp' package and run the generate-icons.js script:
+
+1. Install sharp:
+   npm install sharp --save-dev
+
+2. Run the script:
+   node scripts/generate-icons.js
+
+This will convert the favicon.svg to PNG icons of various sizes.

@@ -843,7 +843,263 @@ class ThrottlingService:
                     logger.warning(f"BUDGET ALERT: AI spend has reached {threshold}% of daily budget (${self.current_spend:.2f}/{self.daily_budget:.2f})")
                     self.budget_alerts_sent.add(threshold)
 
-                    # TODO: Send notification to admin/monitoring system
+                    # Send notification to admin/monitoring system
+                    self._send_admin_notification(
+                        alert_type="budget_threshold",
+                        severity="high" if threshold >= 90 else "medium" if threshold >= 75 else "low",
+                        message=f"AI Budget Alert: {threshold}% of daily budget reached",
+                        details={
+                            "threshold": threshold,
+                            "current_spend": self.current_spend,
+                            "daily_budget": self.daily_budget,
+                            "percentage": spend_percentage,
+                            "timestamp": datetime.datetime.now().isoformat()
+                        }
+                    )
+                    
+    def _send_admin_notification(self, alert_type: str, severity: str, message: str, details: Dict[str, Any]) -> None:
+        """Send notification to admin/monitoring system.
+        
+        Args:
+            alert_type: Type of alert (e.g., budget_threshold, error_rate)
+            severity: Alert severity (low, medium, high)
+            message: Alert message
+            details: Additional alert details
+        """
+        try:
+            # Log the notification
+            log_method = logger.warning if severity == "high" else logger.info
+            log_method(f"Admin notification: {message}")
+            
+            # Send to monitoring system via metrics service if available
+            if self.metrics_service:
+                self.metrics_service.record_alert(
+                    alert_type=alert_type,
+                    severity=severity,
+                    message=message,
+                    details=details
+                )
+            
+            # Send email notification if configured
+            if email_config := os.environ.get("ADMIN_EMAIL_NOTIFICATIONS"):
+                self._send_email_notification(email_config, alert_type, severity, message, details)
+                
+            # Send Slack notification if configured
+            if slack_webhook := os.environ.get("ADMIN_SLACK_WEBHOOK"):
+                self._send_slack_notification(slack_webhook, alert_type, severity, message, details)
+                
+            # Store alert in database for admin dashboard
+            self._store_alert_in_database(alert_type, severity, message, details)
+            
+        except Exception as e:
+            logger.error(f"Failed to send admin notification: {str(e)}")
+            
+    def _send_email_notification(self, email_config: str, alert_type: str, severity: str, message: str, details: Dict[str, Any]) -> None:
+        """Send email notification to admins.
+        
+        Args:
+            email_config: Email configuration string (comma-separated email addresses)
+            alert_type: Type of alert
+            severity: Alert severity
+            message: Alert message
+            details: Additional alert details
+        """
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+            from email.mime.multipart import MIMEMultipart
+            
+            # Get SMTP configuration from environment
+            smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
+            smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+            smtp_user = os.environ.get("SMTP_USER", "")
+            smtp_password = os.environ.get("SMTP_PASSWORD", "")
+            
+            if not smtp_user or not smtp_password:
+                logger.warning("SMTP credentials not configured, skipping email notification")
+                return
+                
+            # Create email message
+            recipients = email_config.split(',')
+            
+            for recipient in recipients:
+                msg = MIMEMultipart()
+                msg['From'] = smtp_user
+                msg['To'] = recipient.strip()
+                msg['Subject'] = f"[{severity.upper()}] AI Budget Alert: {message}"
+                
+                # Format email body with alert details
+                body = f"""
+                <html>
+                <body>
+                    <h2>{message}</h2>
+                    <p><strong>Alert Type:</strong> {alert_type}</p>
+                    <p><strong>Severity:</strong> {severity}</p>
+                    <p><strong>Time:</strong> {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+                    <h3>Details:</h3>
+                    <ul>
+                """
+                
+                for key, value in details.items():
+                    body += f"<li><strong>{key}:</strong> {value}</li>"
+                
+                body += """
+                    </ul>
+                    <p>Please check the admin dashboard for more information.</p>
+                </body>
+                </html>
+                """
+                
+                msg.attach(MIMEText(body, 'html'))
+                
+                # Connect to SMTP server and send email
+                with smtplib.SMTP(smtp_host, smtp_port) as server:
+                    server.starttls()
+                    server.login(smtp_user, smtp_password)
+                    server.send_message(msg)
+                    
+                logger.info(f"Sent email notification to {recipient}")
+                
+        except Exception as e:
+            logger.error(f"Failed to send email notification: {str(e)}")
+            
+    def _send_slack_notification(self, webhook_url: str, alert_type: str, severity: str, message: str, details: Dict[str, Any]) -> None:
+        """Send Slack notification via webhook.
+        
+        Args:
+            webhook_url: Slack webhook URL
+            alert_type: Type of alert
+            severity: Alert severity
+            message: Alert message
+            details: Additional alert details
+        """
+        try:
+            import requests
+            
+            # Format Slack message
+            color = "#ff0000" if severity == "high" else "#ffcc00" if severity == "medium" else "#36a64f"
+            
+            # Format details as fields
+            fields = []
+            for key, value in details.items():
+                fields.append({
+                    "title": key,
+                    "value": str(value),
+                    "short": len(str(value)) < 20  # Short fields for values less than 20 chars
+                })
+            
+            # Create Slack message payload
+            payload = {
+                "attachments": [
+                    {
+                        "fallback": message,
+                        "color": color,
+                        "pretext": f"*{severity.upper()} Alert*: {alert_type}",
+                        "title": message,
+                        "fields": fields,
+                        "footer": "AI Budget Monitoring System",
+                        "footer_icon": "https://platform.slack-edge.com/img/default_application_icon.png",
+                        "ts": int(datetime.datetime.now().timestamp())
+                    }
+                ]
+            }
+            
+            # Send to Slack webhook
+            response = requests.post(
+                webhook_url,
+                json=payload,
+                headers={"Content-Type": "application/json"}
+            )
+            
+            if response.status_code != 200:
+                logger.warning(f"Failed to send Slack notification: {response.status_code} {response.text}")
+            else:
+                logger.info(f"Sent Slack notification: {message}")
+                
+        except Exception as e:
+            logger.error(f"Failed to send Slack notification: {str(e)}")
+            
+    def _store_alert_in_database(self, alert_type: str, severity: str, message: str, details: Dict[str, Any]) -> None:
+        """Store alert in database for admin dashboard.
+        
+        Args:
+            alert_type: Type of alert
+            severity: Alert severity
+            message: Alert message
+            details: Additional alert details
+        """
+        try:
+            # Create alert data
+            alert_id = str(uuid.uuid4())
+            timestamp = datetime.datetime.now().isoformat()
+            
+            alert_data = {
+                "id": alert_id,
+                "type": alert_type,
+                "severity": severity,
+                "message": message,
+                "details": details,
+                "created_at": timestamp,
+                "acknowledged": False
+            }
+            
+            # Store in Redis for immediate access by admin dashboard
+            if hasattr(self, 'cache_manager') and self.cache_manager:
+                alert_key = f"maily:alerts:{alert_id}"
+                self.cache_manager.set(alert_key, json.dumps(alert_data), ex=86400*7)  # Expire after 7 days
+                
+                # Add to recent alerts list
+                self.cache_manager.lpush("maily:recent_alerts", alert_id)
+                self.cache_manager.ltrim("maily:recent_alerts", 0, 99)  # Keep last 100 alerts
+                
+            # Store in database if available
+            try:
+                from ...services.database import get_db_connection
+                
+                # Get database connection
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                
+                # Create alerts table if it doesn't exist
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS admin_alerts (
+                        id TEXT PRIMARY KEY,
+                        type TEXT NOT NULL,
+                        severity TEXT NOT NULL,
+                        message TEXT NOT NULL,
+                        details TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        acknowledged BOOLEAN NOT NULL DEFAULT FALSE
+                    )
+                """)
+                
+                # Insert alert into database
+                cursor.execute(
+                    """
+                    INSERT INTO admin_alerts (id, type, severity, message, details, created_at, acknowledged)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        alert_id,
+                        alert_type,
+                        severity,
+                        message,
+                        json.dumps(details),
+                        timestamp,
+                        False
+                    )
+                )
+                
+                conn.commit()
+                logger.info(f"Stored alert in database: {alert_id}")
+                
+            except ImportError:
+                logger.debug("Database module not available, skipping database storage")
+            except Exception as db_error:
+                logger.error(f"Failed to store alert in database: {str(db_error)}")
+                
+        except Exception as e:
+            logger.error(f"Failed to store alert in database: {str(e)}")
 
     def update_cost_tracking(self, model: str, input_tokens: int, output_tokens: int, user_id: Optional[str] = None) -> None:
         """

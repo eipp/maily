@@ -27,7 +27,7 @@ spec:
       name: memory
       target:
         type: Utilization
-        averageUtilization: {{ .Values.frontend.autoscaling.targetMemoryUtilizationPercentage }}
+        averageUtilization: {{ .Values.frontend.autoscaling.{{ PAGERDUTY_SERVICE_KEY }}e }}
   {{- if .Values.frontend.autoscaling.custom }}
   - type: Pods
     pods:
@@ -84,7 +84,7 @@ spec:
       name: memory
       target:
         type: Utilization
-        averageUtilization: {{ .Values.backend.autoscaling.targetMemoryUtilizationPercentage }}
+        averageUtilization: {{ .Values.backend.autoscaling.{{ PAGERDUTY_SERVICE_KEY }}e }}
   {{- if .Values.backend.autoscaling.custom }}
   - type: Pods
     pods:
@@ -152,7 +152,7 @@ spec:
       name: memory
       target:
         type: Utilization
-        averageUtilization: {{ .Values.worker.autoscaling.targetMemoryUtilizationPercentage }}
+        averageUtilization: {{ .Values.worker.autoscaling.{{ PAGERDUTY_SERVICE_KEY }}e }}
   {{- if .Values.worker.autoscaling.custom }}
   - type: Object
     object:
@@ -213,7 +213,7 @@ spec:
       name: memory
       target:
         type: Utilization
-        averageUtilization: {{ .Values.apiEdgeCaching.autoscaling.targetMemoryUtilizationPercentage }}
+        averageUtilization: {{ .Values.apiEdgeCaching.autoscaling.{{ PAGERDUTY_SERVICE_KEY }}e }}
   {{- if .Values.apiEdgeCaching.autoscaling.custom }}
   - type: Pods
     pods:
@@ -270,7 +270,7 @@ spec:
       name: memory
       target:
         type: Utilization
-        averageUtilization: {{ .Values.security.waf.autoscaling.targetMemoryUtilizationPercentage | default 70 }}
+        averageUtilization: {{ .Values.security.waf.autoscaling.{{ PAGERDUTY_SERVICE_KEY }}e | default 70 }}
   {{- if .Values.security.waf.autoscaling.custom }}
   - type: Pods
     pods:

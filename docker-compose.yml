@@ -1,76 +1,78 @@
 version: '3.8'
 
 services:
-  vault:
-    image: hashicorp/vault:1.15.2
-    ports:
-      - "8200:8200"
-    environment:
-      VAULT_DEV_ROOT_TOKEN_ID: "maily-dev-token"
-      VAULT_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
-    volumes:
-      - ./dev/vault:/vault/data
-    healthcheck:
-      test: ["CMD", "vault", "status"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 5s
-
   api:
     build:
-      context: ./apps/api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: docker/services/api.Dockerfile
     ports:
       - "8000:8000"
     environment:
-      - VAULT_ADDR=http://vault:8200
-      - VAULT_TOKEN=maily-dev-token
+      - DATABASE_URL=postgres://postgres:postgres@db:5432/maily
+      - REDIS_URL=redis://redis:6379/0
+      - AI_SERVICE_URL=http://ai-service:8080
     depends_on:
       - db
       - redis
-      - vault
+      - ai-service
     volumes:
-      - ./apps/api:/app
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 5s
+      - ./apps/api:/app:ro
+    networks:
+      - maily-network
 
   web:
     build:
-      context: ./apps/web
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: docker/services/web.Dockerfile
     ports:
       - "3000:3000"
     environment:
-      - API_URL=http://api:8000
+      - NEXT_PUBLIC_API_URL=http://api:8000
     depends_on:
       - api
-    volumes:
-      - ./apps/web:/app
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 5s
+    networks:
+      - maily-network
+
+  ai-service:
+    build:
+      context: .
+      dockerfile: docker/services/ai-service.Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - REDIS_URL=redis://redis:6379/1
+    depends_on:
+      - redis
+    networks:
+      - maily-network
+
+  email-service:
+    build:
+      context: .
+      dockerfile: docker/services/email-service.Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      - API_URL=http://api:8000
+      - REDIS_URL=redis://redis:6379/2
+    depends_on:
+      - api
+      - redis
+    networks:
+      - maily-network
 
   workers:
     build:
-      context: ./apps/workers
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: docker/services/workers.Dockerfile
     environment:
-      - VAULT_ADDR=http://vault:8200
-      - VAULT_TOKEN=maily-dev-token
+      - DATABASE_URL=postgres://postgres:postgres@db:5432/maily
+      - REDIS_URL=redis://redis:6379/3
     depends_on:
       - db
       - redis
-      - vault
-    volumes:
-      - ./apps/workers:/app
+    networks:
+      - maily-network
 
   db:
     image: postgres:15-alpine
@@ -81,25 +83,23 @@ services:
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=maily
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - maily-network
 
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
     volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - redis-data:/data
+    networks:
+      - maily-network
+
+networks:
+  maily-network:
+    driver: bridge
 
 volumes:
-  postgres_data:
-  redis_data:
+  postgres-data:
+  redis-data:

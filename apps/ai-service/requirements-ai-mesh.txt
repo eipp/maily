@@ -1,0 +1,22 @@
+# AI Mesh Network Dependencies
+
+# Core Dependencies
+fastapi>=0.103.1
+uvicorn>=0.23.2
+pydantic>=2.4.2
+httpx>=0.25.0
+redis>=5.0.1  # Redis 5.0.0+ includes asyncio functionality (previously in aioredis)
+sqlalchemy>=2.0.23
+asyncpg>=0.28.0
+prometheus-client>=0.17.1
+
+# LLM API Dependencies
+anthropic>=0.7.0  # For Claude API
+openai>=1.3.0     # For GPT API
+google-generativeai>=0.3.0  # For Gemini API
+
+# Utility Dependencies
+python-dotenv>=1.0.0
+tenacity>=8.2.3   # For retries
+aiocache>=0.12.1  # For caching
+structlog>=23.2.0 # For structured logging

@@ -295,8 +295,8 @@ jobs:
 
       - name: Run deployment script
         run: |
-          chmod +x ./scripts/master-deploy.sh
-          ./scripts/master-deploy.sh staging || echo "Deployment encountered issues but continuing"
+          chmod +x ./mailylaunch.sh
+          ./mailylaunch.sh deploy --env=staging || echo "Deployment encountered issues but continuing"
 
       - name: Run smoke tests
         run: |
@@ -373,8 +373,8 @@ jobs:
 
       - name: Run master deployment script
         run: |
-          chmod +x ./scripts/master-deploy.sh
-          ./scripts/master-deploy.sh production
+          chmod +x ./mailylaunch.sh
+          ./mailylaunch.sh deploy --env=production
 
       - name: Run smoke tests
         run: |

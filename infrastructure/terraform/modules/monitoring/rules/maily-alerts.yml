@@ -1,0 +1,263 @@
+groups:
+  - name: maily-alerts
+    rules:
+      # General service alerts
+      - alert: HighErrorRate
+        expr: sum(rate(http_requests_total{status=~"5.."}[5m])) by (service) / sum(rate(http_requests_total[5m])) by (service) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate detected for {{ $labels.service }}"
+          description: "{{ $labels.service }} is experiencing a high error rate (> 5% of requests are failing)"
+
+      - alert: CriticalErrorRate
+        expr: sum(rate(http_requests_total{status=~"5.."}[5m])) by (service) / sum(rate(http_requests_total[5m])) by (service) > 0.15
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical error rate detected for {{ $labels.service }}"
+          description: "{{ $labels.service }} is experiencing a critical error rate (> 15% of requests are failing)"
+
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, service)) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High latency detected for {{ $labels.service }}"
+          description: "{{ $labels.service }} is experiencing high latency (95th percentile > 1s)"
+
+      - alert: CriticalLatency
+        expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, service)) > 2
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical latency detected for {{ $labels.service }}"
+          description: "{{ $labels.service }} is experiencing critical latency (95th percentile > 2s)"
+
+      - alert: ServiceDown
+        expr: up{job=~"maily-.*"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "{{ $labels.job }} has been down for more than 2 minutes"
+
+      # AI Service specific alerts
+      - alert: AIServiceHighErrorRate
+        expr: sum(rate(http_requests_total{status=~"5..", service="ai-service"}[5m])) / sum(rate(http_requests_total{service="ai-service"}[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          service: ai-service
+        annotations:
+          summary: "AI Service high error rate"
+          description: "AI Service is experiencing a high error rate (> 5% of requests are failing)"
+
+      - alert: AIServiceHighLatency
+        expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{service="ai-service"}[5m])) by (le)) > 2
+        for: 5m
+        labels:
+          severity: warning
+          service: ai-service
+        annotations:
+          summary: "AI Service high latency"
+          description: "AI Service is experiencing high latency (95th percentile > 2s)"
+
+      - alert: AIServiceHighMemoryUsage
+        expr: container_memory_usage_bytes{container="ai-service"} / container_spec_memory_limit_bytes{container="ai-service"} > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          service: ai-service
+        annotations:
+          summary: "AI Service high memory usage"
+          description: "AI Service is using more than 85% of its memory limit"
+
+      - alert: AIServiceHighCPUUsage
+        expr: sum(rate(container_cpu_usage_seconds_total{container="ai-service"}[5m])) by (pod) / sum(container_spec_cpu_quota{container="ai-service"} / container_spec_cpu_period{container="ai-service"}) by (pod) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          service: ai-service
+        annotations:
+          summary: "AI Service high CPU usage"
+          description: "AI Service is using more than 85% of its CPU limit"
+
+      # WebSocket specific alerts
+      - alert: WebSocketConnectionsDropping
+        expr: rate(websocket_connections_closed_total{reason="error"}[5m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+          service: websocket
+        annotations:
+          summary: "WebSocket connections dropping"
+          description: "WebSocket connections are dropping at a rate of {{ $value }} per second"
+
+      - alert: WebSocketHighLatency
+        expr: histogram_quantile(0.95, sum(rate(websocket_message_duration_seconds_bucket[5m])) by (le)) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: websocket
+        annotations:
+          summary: "WebSocket high latency"
+          description: "WebSocket messages are experiencing high latency (95th percentile > 100ms)"
+
+      - alert: WebSocketHighMemoryUsage
+        expr: container_memory_usage_bytes{container="websocket"} / container_spec_memory_limit_bytes{container="websocket"} > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          service: websocket
+        annotations:
+          summary: "WebSocket high memory usage"
+          description: "WebSocket service is using more than 85% of its memory limit"
+
+      - alert: WebSocketHighCPUUsage
+        expr: sum(rate(container_cpu_usage_seconds_total{container="websocket"}[5m])) by (pod) / sum(container_spec_cpu_quota{container="websocket"} / container_spec_cpu_period{container="websocket"}) by (pod) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          service: websocket
+        annotations:
+          summary: "WebSocket high CPU usage"
+          description: "WebSocket service is using more than 85% of its CPU limit"
+
+      # Blockchain specific alerts
+      - alert: BlockchainTransactionFailure
+        expr: rate(blockchain_transaction_failures_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          service: blockchain
+        annotations:
+          summary: "Blockchain transaction failures"
+          description: "Blockchain transactions are failing at a rate of {{ $value }} per second"
+
+      - alert: BlockchainHighGasUsage
+        expr: blockchain_gas_used / blockchain_gas_limit > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          service: blockchain
+        annotations:
+          summary: "Blockchain high gas usage"
+          description: "Blockchain gas usage is more than 85% of the limit"
+
+      - alert: BlockchainSyncIssue
+        expr: time() - blockchain_last_block_timestamp > 600
+        for: 5m
+        labels:
+          severity: critical
+          service: blockchain
+        annotations:
+          summary: "Blockchain sync issue"
+          description: "Blockchain is not syncing properly. Last block was more than 10 minutes ago."
+
+      - alert: BlockchainHighMemoryUsage
+        expr: container_memory_usage_bytes{container="blockchain"} / container_spec_memory_limit_bytes{container="blockchain"} > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          service: blockchain
+        annotations:
+          summary: "Blockchain high memory usage"
+          description: "Blockchain service is using more than 85% of its memory limit"
+
+      # Database alerts
+      - alert: DatabaseHighCPUUsage
+        expr: avg by (instance) (rate(node_cpu_seconds_total{mode!="idle", job="rds-exporter"}[5m])) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          service: database
+        annotations:
+          summary: "Database high CPU usage"
+          description: "Database is using more than 80% CPU for more than 5 minutes"
+
+      - alert: DatabaseHighMemoryUsage
+        expr: node_memory_MemAvailable_bytes{job="rds-exporter"} / node_memory_MemTotal_bytes{job="rds-exporter"} < 0.2
+        for: 5m
+        labels:
+          severity: warning
+          service: database
+        annotations:
+          summary: "Database high memory usage"
+          description: "Database has less than 20% available memory"
+
+      - alert: DatabaseHighDiskUsage
+        expr: node_filesystem_avail_bytes{job="rds-exporter", mountpoint="/rdsdbdata"} / node_filesystem_size_bytes{job="rds-exporter", mountpoint="/rdsdbdata"} < 0.2
+        for: 5m
+        labels:
+          severity: warning
+          service: database
+        annotations:
+          summary: "Database high disk usage"
+          description: "Database has less than 20% available disk space"
+
+      - alert: DatabaseHighConnections
+        expr: pg_stat_activity_count{job="rds-exporter"} / pg_settings_max_connections{job="rds-exporter"} > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          service: database
+        annotations:
+          summary: "Database high connection count"
+          description: "Database is using more than 80% of available connections"
+
+      # Infrastructure alerts
+      - alert: NodeHighCPUUsage
+        expr: avg by (instance) (rate(node_cpu_seconds_total{mode!="idle"}[5m])) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          service: infrastructure
+        annotations:
+          summary: "Node high CPU usage"
+          description: "Node {{ $labels.instance }} is using more than 80% CPU for more than 5 minutes"
+
+      - alert: NodeHighMemoryUsage
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: infrastructure
+        annotations:
+          summary: "Node high memory usage"
+          description: "Node {{ $labels.instance }} has less than 10% available memory"
+
+      - alert: NodeHighDiskUsage
+        expr: node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} < 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: infrastructure
+        annotations:
+          summary: "Node high disk usage"
+          description: "Node {{ $labels.instance }} has less than 10% available disk space"
+
+      - alert: PodCrashLooping
+        expr: increase(kube_pod_container_status_restarts_total[1h]) > 5
+        for: 5m
+        labels:
+          severity: warning
+          service: infrastructure
+        annotations:
+          summary: "Pod crash looping"
+          description: "Pod {{ $labels.pod }} is crash looping ({{ $value }} restarts in the last hour)"
+
+      - alert: PodNotReady
+        expr: kube_pod_status_ready{condition="true"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          service: infrastructure
+        annotations:
+          summary: "Pod not ready"
+          description: "Pod {{ $labels.pod }} is not ready"

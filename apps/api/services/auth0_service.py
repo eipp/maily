@@ -284,6 +284,167 @@ class Auth0Service:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Users not found for role: {role_id}",
             )
+            
+    async def create_user(self, email: str, password: str, name: Optional[str] = None) -> Dict[str, Any]:
+        """Create a new user in Auth0.
+
+        Args:
+            email: The user's email.
+            password: The user's password.
+            name: The user's name (optional).
+
+        Returns:
+            The created user information.
+
+        Raises:
+            HTTPException: If the user cannot be created.
+        """
+        headers = await self._get_headers()
+        url = f"https://{self.domain}/api/v2/users"
+        
+        payload = {
+            "email": email,
+            "password": password,
+            "connection": "Username-Password-Authentication",
+            "email_verified": False,
+        }
+        
+        if name:
+            payload["name"] = name
+            
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            logger.error(f"Failed to create user in Auth0: {str(e)}")
+            
+            # Check if it's a duplicate user error
+            if e.response and e.response.status_code == 409:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="A user with this email already exists",
+                )
+                
+            # Check for validation errors
+            if e.response and e.response.status_code == 400:
+                try:
+                    error_details = e.response.json()
+                    if "message" in error_details:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=error_details["message"],
+                        )
+                except (ValueError, KeyError):
+                    pass
+                    
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Failed to create user",
+            )
+            
+    async def send_password_reset_email(self, email: str) -> bool:
+        """Send a password reset email to a user.
+
+        Args:
+            email: The user's email.
+
+        Returns:
+            True if the email was sent successfully.
+
+        Raises:
+            HTTPException: If the email cannot be sent.
+        """
+        url = f"https://{self.domain}/dbconnections/change_password"
+        
+        payload = {
+            "client_id": self.client_id,
+            "email": email,
+            "connection": "Username-Password-Authentication",
+        }
+        
+        headers = {"Content-Type": "application/json"}
+        
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=10)
+            response.raise_for_status()
+            return True
+        except requests.RequestException as e:
+            logger.error(f"Failed to send password reset email: {str(e)}")
+            
+            # Don't expose whether the email exists or not for security reasons
+            # Just return success even if the email doesn't exist
+            if e.response and e.response.status_code == 404:
+                return True
+                
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to send password reset email",
+            )
+            
+    async def verify_email(self, user_id: str) -> bool:
+        """Send an email verification email to a user.
+
+        Args:
+            user_id: The Auth0 user ID.
+
+        Returns:
+            True if the email was sent successfully.
+
+        Raises:
+            HTTPException: If the email cannot be sent.
+        """
+        headers = await self._get_headers()
+        url = f"https://{self.domain}/api/v2/jobs/verification-email"
+        
+        payload = {
+            "user_id": user_id,
+            "client_id": self.client_id,
+        }
+        
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=10)
+            response.raise_for_status()
+            return True
+        except requests.RequestException as e:
+            logger.error(f"Failed to send verification email: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to send verification email",
+            )
+            
+    async def list_users(self, page: int = 0, per_page: int = 100) -> List[Dict[str, Any]]:
+        """List all users from Auth0.
+
+        Args:
+            page: The page number (0-based).
+            per_page: The number of users per page.
+
+        Returns:
+            The users.
+
+        Raises:
+            HTTPException: If the users cannot be retrieved.
+        """
+        headers = await self._get_headers()
+        url = f"https://{self.domain}/api/v2/users"
+        
+        params = {
+            "page": page,
+            "per_page": per_page,
+            "include_totals": True,
+        }
+        
+        try:
+            response = requests.get(url, params=params, headers=headers, timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            logger.error(f"Failed to list users from Auth0: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Failed to list users from Auth0",
+            )
 
 
 # Create a singleton instance

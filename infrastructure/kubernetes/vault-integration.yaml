@@ -260,7 +260,7 @@ spec:
         emptyDir: {}
       affinity:
         podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
+          {{ PAGERDUTY_SERVICE_KEY }}DuringExecution:
           - weight: 100
             podAffinityTerm:
               labelSelector:

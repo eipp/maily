@@ -127,7 +127,7 @@ data:
           summary: "Slow document generation"
           description: "95th percentile of document generation time is above 60 seconds for document type {{ $labels.document_type }}"
 
-      - alert: DocumentGenerationHighLoadWarning
+      - alert: {{ PAGERDUTY_SERVICE_KEY }}g
         expr: sum(mailydocs_active_document_generations) > 20
         for: 10m
         labels:
@@ -136,7 +136,7 @@ data:
           summary: "High number of active document generations"
           description: "More than 20 active document generations for 10 minutes (current: {{ $value }})"
 
-      - alert: DocumentGenerationHighLoadCritical
+      - alert: {{ PAGERDUTY_SERVICE_KEY }}al
         expr: sum(mailydocs_active_document_generations) > 50
         for: 5m
         labels:

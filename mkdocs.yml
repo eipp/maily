@@ -11,6 +11,7 @@ theme:
     - navigation.top
     - search.suggest
     - search.highlight
+    - content.code.copy
   palette:
     - scheme: default
       primary: indigo
@@ -30,18 +31,16 @@ nav:
     - 'Core Guide': 'core-guide.md'
     - 'Glossary and FAQ': 'glossary-and-faq.md'
     - 'Quick Start': 'quick-start.md'
+    - 'Installation': 'development/installation.md'
+    - 'Configuration': 'development/configuration.md'
 
   - Platform Documentation:
-    - 'Architecture Overview': 'architecture-overview.md'
+    - 'Architecture Overview': 'internal/architecture-overview.md'
     - 'Tech Stack': 'tech-stack.md'
     - 'Enhancement Plan': 'enhancement-plan.md'
     - 'Modernization Roadmap': 'modernization-roadmap.md'
     - 'Integration Guide': 'integration-guide.md'
-    - 'Sprint Summaries':
-      - 'Sprint 6 Summary': 'sprint-6-summary.md'
-      - 'Sprint 7 Documentation': 'sprint-7-documentation-summary.md'
-      - 'Sprint 8 Security': 'sprint-8-security-enhancements.md'
-      - 'Sprint 9 Documentation': 'sprint-9-documentation-summary.md'
+    - 'Service Structure': 'internal/service-structure.md'
 
   - Features:
     - 'AI Handbook': 'ai-handbook.md'
@@ -55,9 +54,12 @@ nav:
     - 'API Services': 'api-services.md'
     - 'Worker Services': 'worker-services.md'
     - 'App Components': 'app-components.md'
+    - 'AI Mesh Network': 'adr/0012-ai-mesh-network.md'
 
   - Technical Reference:
-    - 'API Reference': 'api-reference.md'
+    - 'API Reference': 'api/overview.md'
+    - 'API Authentication': 'api/authentication.md'
+    - 'API Endpoints': 'api/endpoints.md'
     - 'Database Schema': 'database-schema.md'
     - 'Enhancement Tools': 'enhancement-tools-reference.md'
     - 'Configuration Guide': 'configuration-guide.md'
@@ -66,10 +68,18 @@ nav:
   - Development:
     - 'Contributing Guide': 'contributing-guide.md'
     - 'Testing Strategy': 'testing-strategy.md'
-    - 'Code Style Guide': 'code-style-guide.md'
+    - 'Code Style Guide': 'CLAUDE.md'
     - 'CI/CD Pipeline': 'ci-cd-pipeline.md'
+    - 'Local Development': 'development/local-development.md'
+
+  - DevOps:
+    - 'Deployment Guide': 'DEVOPS-README.md'
+    - 'Infrastructure': 'infrastructure/README.md'
+    - 'Monitoring': 'internal/monitoring.md'
+    - 'Mailyctl Tool': 'MAILYCTL-README.md'
 
   - Resources:
+    - 'ADR Process': 'adr/README.md'
     - 'Implementation Summaries':
       - 'Infrastructure': 'infrastructure-implementation-summary.md'
       - 'Security': 'security-implementation-summary.md'

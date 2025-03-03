@@ -11,6 +11,9 @@ from ..db.database import get_db
 from sqlalchemy.orm import Session
 from ..cache.redis_pubsub import RedisPubSub
 from ..services.operational_transform import OperationalTransform
+from ..services.visualization_service import get_visualization_service
+from ..services.performance_insights_service import get_performance_insights_service
+from ..services.trust_verification_service import get_trust_verification_service
 
 router = APIRouter(prefix="/v1/canvas")
 
@@ -254,4 +257,233 @@ async def get_operations(
         }
     except Exception as e:
         logger.error(f"Failed to get operations: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Visualization Layer Endpoints
+
+class AIReasoningUpdateRequest(BaseModel):
+    """Request model for updating AI reasoning layer"""
+    confidence_scores: Dict[str, float]
+    reasoning_steps: List[Dict[str, Any]]
+    model_info: Dict[str, Any]
+
+class PerformanceUpdateRequest(BaseModel):
+    """Request model for updating performance layer"""
+    metrics: Dict[str, Any]
+    historical_data: List[Dict[str, Any]]
+    benchmarks: Dict[str, Any]
+
+class TrustVerificationUpdateRequest(BaseModel):
+    """Request model for updating trust verification layer"""
+    verification_status: str
+    certificate_data: Optional[Dict[str, Any]] = None
+    blockchain_info: Optional[Dict[str, Any]] = None
+
+class LayerVisibilityRequest(BaseModel):
+    """Request model for updating layer visibility"""
+    visible: bool
+    opacity: Optional[float] = None
+
+@router.get("/{canvas_id}/visualization/layers")
+async def get_visualization_layers(
+    canvas_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Get all visualization layers for a canvas"""
+    try:
+        # Get visualization service
+        visualization_service = get_visualization_service()
+        
+        # Get layers
+        layers = await visualization_service.get_visualization_layers(canvas_id)
+        
+        return layers
+    except Exception as e:
+        logger.error(f"Failed to get visualization layers: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.put("/{canvas_id}/visualization/layers/ai_reasoning")
+async def update_ai_reasoning_layer(
+    canvas_id: str,
+    request: AIReasoningUpdateRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Update AI reasoning visualization layer"""
+    try:
+        # Get visualization service
+        visualization_service = get_visualization_service()
+        
+        # Update layer
+        updated_layer = await visualization_service.update_ai_reasoning_layer(
+            canvas_id=canvas_id,
+            confidence_scores=request.confidence_scores,
+            reasoning_steps=request.reasoning_steps,
+            model_info=request.model_info
+        )
+        
+        return updated_layer
+    except Exception as e:
+        logger.error(f"Failed to update AI reasoning layer: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.put("/{canvas_id}/visualization/layers/performance")
+async def update_performance_layer(
+    canvas_id: str,
+    request: PerformanceUpdateRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Update performance insights visualization layer"""
+    try:
+        # Get visualization service
+        visualization_service = get_visualization_service()
+        
+        # Update layer
+        updated_layer = await visualization_service.update_performance_layer(
+            canvas_id=canvas_id,
+            metrics=request.metrics,
+            historical_data=request.historical_data,
+            benchmarks=request.benchmarks
+        )
+        
+        return updated_layer
+    except Exception as e:
+        logger.error(f"Failed to update performance layer: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.put("/{canvas_id}/visualization/layers/trust_verification")
+async def update_trust_verification_layer(
+    canvas_id: str,
+    request: TrustVerificationUpdateRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Update trust verification visualization layer"""
+    try:
+        # Get visualization service
+        visualization_service = get_visualization_service()
+        
+        # Update layer
+        updated_layer = await visualization_service.update_trust_verification_layer(
+            canvas_id=canvas_id,
+            verification_status=request.verification_status,
+            certificate_data=request.certificate_data,
+            blockchain_info=request.blockchain_info
+        )
+        
+        return updated_layer
+    except Exception as e:
+        logger.error(f"Failed to update trust verification layer: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.put("/{canvas_id}/visualization/layers/{layer_id}/visibility")
+async def update_layer_visibility(
+    canvas_id: str,
+    layer_id: str,
+    request: LayerVisibilityRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Update layer visibility and opacity"""
+    try:
+        # Get visualization service
+        visualization_service = get_visualization_service()
+        
+        # Update layer visibility
+        updated_layer = await visualization_service.update_layer_visibility(
+            canvas_id=canvas_id,
+            layer_id=layer_id,
+            visible=request.visible,
+            opacity=request.opacity
+        )
+        
+        return updated_layer
+    except Exception as e:
+        logger.error(f"Failed to update layer visibility: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Performance Insights Endpoints
+
+@router.get("/{canvas_id}/performance/metrics")
+async def get_performance_metrics(
+    canvas_id: str,
+    campaign_id: Optional[str] = None,
+    current_user: User = Depends(get_current_user)
+):
+    """Get performance metrics for a canvas or campaign"""
+    try:
+        # Get performance insights service
+        performance_service = get_performance_insights_service()
+        
+        # Get metrics
+        metrics = await performance_service.get_email_performance_metrics(
+            canvas_id=canvas_id,
+            campaign_id=campaign_id
+        )
+        
+        return metrics
+    except Exception as e:
+        logger.error(f"Failed to get performance metrics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Trust Verification Endpoints
+
+class VerifyContentRequest(BaseModel):
+    """Request model for verifying content"""
+    content: str
+
+@router.post("/{canvas_id}/verify")
+async def verify_canvas_content(
+    canvas_id: str,
+    request: VerifyContentRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Verify canvas content and store on blockchain"""
+    try:
+        # Get trust verification service
+        verification_service = get_trust_verification_service()
+        
+        # Verify content
+        verification_data = await verification_service.verify_canvas_content(
+            canvas_id=canvas_id,
+            content=request.content,
+            user_id=current_user.id
+        )
+        
+        return verification_data
+    except Exception as e:
+        logger.error(f"Failed to verify canvas content: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/{canvas_id}/verification")
+async def get_verification_data(
+    canvas_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Get verification data for a canvas"""
+    try:
+        # Get trust verification service
+        verification_service = get_trust_verification_service()
+        
+        # Get verification data
+        verification_data = await verification_service.get_verification_data(canvas_id)
+        
+        return verification_data
+    except Exception as e:
+        logger.error(f"Failed to get verification data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/{canvas_id}/verification/badge")
+async def get_verification_badge(
+    canvas_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Get verification badge for embedding in emails"""
+    try:
+        # Get trust verification service
+        verification_service = get_trust_verification_service()
+        
+        # Get verification badge
+        badge = await verification_service.generate_verification_badge(canvas_id)
+        
+        return badge
+    except Exception as e:
+        logger.error(f"Failed to get verification badge: {e}")
         raise HTTPException(status_code=500, detail=str(e))

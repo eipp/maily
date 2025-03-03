@@ -43,19 +43,19 @@ autoscaling:
     minReplicas: 2
     maxReplicas: 5
     targetCPUUtilizationPercentage: 70
-    targetMemoryUtilizationPercentage: 80
+    {{ PAGERDUTY_SERVICE_KEY }}e: 80
   frontend:
     enabled: true
     minReplicas: 2
     maxReplicas: 5
     targetCPUUtilizationPercentage: 70
-    targetMemoryUtilizationPercentage: 80
+    {{ PAGERDUTY_SERVICE_KEY }}e: 80
   worker:
     enabled: true
     minReplicas: 2
     maxReplicas: 5
     targetCPUUtilizationPercentage: 70
-    targetMemoryUtilizationPercentage: 80
+    {{ PAGERDUTY_SERVICE_KEY }}e: 80
 
 ingress:
   enabled: true
@@ -140,7 +140,7 @@ tolerations: []
 
 affinity:
   podAntiAffinity:
-    preferredDuringSchedulingIgnoredDuringExecution:
+    {{ PAGERDUTY_SERVICE_KEY }}DuringExecution:
       - weight: 100
         podAffinityTerm:
           labelSelector:

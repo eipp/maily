@@ -1,17 +1,58 @@
 """Standardized auth router for user management and authentication."""
 from typing import Any, Dict, List, Optional
 import logging
+import jwt
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status, Request
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field, EmailStr, validator
 
 from middleware.standardized_auth import require_auth, require_admin, optional_auth
 from services.api_key_service import create_api_key, list_api_keys, revoke_api_key
 from services.auth0_service import auth0_service
+from config.auth0 import auth0_settings
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+class LoginRequest(BaseModel):
+    """Login request model."""
+    email: EmailStr = Field(..., description="User's email address")
+    password: str = Field(..., description="User's password")
+
+
+class UserRegistrationRequest(BaseModel):
+    """User registration request model."""
+    email: EmailStr = Field(..., description="User's email address")
+    password: str = Field(..., description="User's password", min_length=8)
+    name: Optional[str] = Field(None, description="User's full name")
+    
+    @validator('password')
+    def password_strength(cls, v):
+        """Validate password strength."""
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters long")
+        
+        # Check for at least one uppercase letter
+        if not any(c.isupper() for c in v):
+            raise ValueError("Password must contain at least one uppercase letter")
+            
+        # Check for at least one lowercase letter
+        if not any(c.islower() for c in v):
+            raise ValueError("Password must contain at least one lowercase letter")
+            
+        # Check for at least one digit
+        if not any(c.isdigit() for c in v):
+            raise ValueError("Password must contain at least one digit")
+            
+        return v
+
+
+class PasswordResetRequest(BaseModel):
+    """Password reset request model."""
+    email: EmailStr = Field(..., description="User's email address")
 
 
 class ApiKeyCreateRequest(BaseModel):
@@ -255,19 +296,140 @@ async def create_role(
         raise HTTPException(status_code=500, detail="Error creating role")
 
 
+# Authentication endpoints
+@router.post("/login", response_model=UserResponse)
+async def login(login_data: LoginRequest):
+    """Authenticate a user with email and password.
+
+    Args:
+        login_data: Login credentials.
+
+    Returns:
+        The authenticated user information.
+    """
+    try:
+        # Authenticate with Auth0
+        url = f"https://{auth0_settings.DOMAIN}/oauth/token"
+        payload = {
+            "grant_type": "password",
+            "username": login_data.email,
+            "password": login_data.password,
+            "client_id": auth0_settings.CLIENT_ID,
+            "client_secret": auth0_settings.CLIENT_SECRET,
+            "audience": auth0_settings.API_AUDIENCE,
+            "scope": "openid profile email",
+        }
+        
+        headers = {"Content-Type": "application/json"}
+        
+        response = await auth0_service._session.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        
+        token_data = response.json()
+        
+        # Decode the ID token to get user info
+        id_token = token_data.get("id_token")
+        if not id_token:
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+            
+        # Decode without verification since Auth0 already verified it
+        user_info = jwt.decode(id_token, options={"verify_signature": False})
+        
+        # Get additional user info from Auth0 Management API
+        user_id = user_info.get("sub")
+        user = await auth0_service.get_user(user_id)
+        
+        # Check if user is admin
+        roles = await auth0_service.get_user_roles(user_id)
+        is_admin = any(role["name"] in auth0_settings.ADMIN_ROLES for role in roles)
+        
+        return {
+            "id": user_id,
+            "email": user_info.get("email"),
+            "name": user_info.get("name"),
+            "is_admin": is_admin,
+            "auth_method": "auth0"
+        }
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        logger.error(f"Error authenticating user: {str(e)}")
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+
+# User registration and password reset endpoints
+@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+async def register_user(registration_data: UserRegistrationRequest):
+    """Register a new user.
+
+    Args:
+        registration_data: User registration data.
+
+    Returns:
+        The created user.
+    """
+    try:
+        user = await auth0_service.create_user(
+            email=registration_data.email,
+            password=registration_data.password,
+            name=registration_data.name
+        )
+        
+        # Send verification email
+        await auth0_service.verify_email(user["user_id"])
+        
+        return {
+            "id": user["user_id"],
+            "email": user["email"],
+            "name": user.get("name"),
+            "is_admin": False,
+            "auth_method": "auth0"
+        }
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        logger.error(f"Error registering user: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error registering user")
+
+
+@router.post("/password-reset", status_code=status.HTTP_204_NO_CONTENT)
+async def request_password_reset(reset_data: PasswordResetRequest):
+    """Request a password reset email.
+
+    Args:
+        reset_data: Password reset request data.
+    """
+    try:
+        await auth0_service.send_password_reset_email(reset_data.email)
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        logger.error(f"Error requesting password reset: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error requesting password reset")
+
+
 # Admin endpoints
 @router.get("/admin/users", response_model=List[UserResponse])
-async def list_users(admin: Dict[str, Any] = Depends(require_admin)):
+async def list_users(
+    page: int = Query(0, description="Page number (0-based)"),
+    per_page: int = Query(100, description="Items per page"),
+    admin: Dict[str, Any] = Depends(require_admin)
+):
     """List all users (admin only).
 
     Args:
+        page: Page number (0-based).
+        per_page: Items per page.
         admin: The admin user.
 
     Returns:
         List of users.
     """
     try:
-        return await auth0_service.list_users()
+        return await auth0_service.list_users(page=page, per_page=per_page)
     except Exception as e:
         logger.error(f"Error listing users: {str(e)}")
         raise HTTPException(status_code=500, detail="Error listing users")

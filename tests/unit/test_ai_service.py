@@ -1,288 +1,177 @@
-import unittest
-from unittest.mock import patch, MagicMock, AsyncMock
 import pytest
-import json
-import os
-from datetime import datetime
 
-# Import the AI service components
-from apps.api.ai.model_service import ModelService
-from apps.api.ai.adapters.base import ModelRequest, ModelResponse
-from apps.api.ai.caching import ModelResponseCache
-from apps.api.ai.monitoring import AIMetricsService
+from models import Campaign
+from apps.api.ai import consolidated_ai_service
+
+# No longer need to instantiate AIService
+# from services.ai_service import AIService
 
 
-class TestModelService(unittest.TestCase):
-    """Test cases for the ModelService class."""
+def test_content_generation(mock_ai_service):
+    """Test AI content generation."""
+    # Use the consolidated service directly
+    # service = AIService(ai_provider=mock_ai_service)
 
-    def setUp(self):
-        """Set up test fixtures."""
-        # Create a mock cache service
-        self.mock_cache_service = MagicMock()
+    # Mock the consolidated service
+    consolidated_ai_service._model_adapter = mock_ai_service
 
-        # Create a ModelService instance with the mock cache
-        self.model_service = ModelService(cache_service=self.mock_cache_service)
+    prompt = "Write a welcome email"
+    tone = "Professional"
 
-        # Mock the environment variables
-        self.env_patcher = patch.dict(os.environ, {
-            "DEFAULT_MODEL": "gpt-4",
-            "DEFAULT_PROVIDER": "openai",
-            "OPENAI_API_KEY": "test-openai-key",
-            "ANTHROPIC_API_KEY": "test-anthropic-key",
-            "GOOGLE_API_KEY": "test-google-key",
-            "ENABLE_MODEL_CACHING": "true"
-        })
-        self.env_patcher.start()
+    content = consolidated_ai_service.generate_text(prompt=prompt, tone=tone)
 
-        # Mock the model adapter factory
-        self.adapter_factory_patcher = patch('apps.api.ai.model_service.model_adapter_factory')
-        self.mock_adapter_factory = self.adapter_factory_patcher.start()
-
-        # Create a mock adapter
-        self.mock_adapter = MagicMock()
-        self.mock_adapter.generate_text = AsyncMock()
-        self.mock_adapter.generate_text.return_value = ModelResponse(
-            content="Test response",
-            model="gpt-4",
-            usage={"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
-            finish_reason="stop"
-        )
-
-        # Configure the mock adapter factory
-        self.mock_adapter_factory.get_adapter.return_value = self.mock_adapter
-
-        # Mock the metrics service
-        self.metrics_patcher = patch('apps.api.ai.model_service.ai_metrics_service')
-        self.mock_metrics = self.metrics_patcher.start()
-        self.mock_metrics.record_model_request = AsyncMock()
-        self.mock_metrics.record_model_response = AsyncMock()
-
-    def tearDown(self):
-        """Tear down test fixtures."""
-        self.env_patcher.stop()
-        self.adapter_factory_patcher.stop()
-        self.metrics_patcher.stop()
-
-    @pytest.mark.asyncio
-    async def test_generate_text(self):
-        """Test the generate_text method."""
-        # Create a request
-        request = ModelRequest(
-            prompt="Test prompt",
-            model="gpt-4",
-            max_tokens=100,
-            temperature=0.7
-        )
-
-        # Call the method
-        response = await self.model_service.generate_text(request)
-
-        # Verify the response
-        self.assertEqual(response.content, "Test response")
-        self.assertEqual(response.model, "gpt-4")
-        self.assertEqual(response.usage["total_tokens"], 30)
-
-        # Verify the adapter was called correctly
-        self.mock_adapter_factory.get_adapter.assert_called_once_with("openai")
-        self.mock_adapter.generate_text.assert_called_once_with(request)
-
-        # Verify metrics were recorded
-        self.mock_metrics.record_model_request.assert_called_once()
-        self.mock_metrics.record_model_response.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_generate_text_with_caching(self):
-        """Test the generate_text method with caching."""
-        # Configure the mock cache to return a cached response
-        cached_response = ModelResponse(
-            content="Cached response",
-            model="gpt-4",
-            usage={"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
-            finish_reason="stop"
-        )
-        self.model_service.response_cache.get = AsyncMock(return_value=cached_response)
-
-        # Create a request
-        request = ModelRequest(
-            prompt="Test prompt",
-            model="gpt-4",
-            max_tokens=100,
-            temperature=0.7
-        )
-
-        # Call the method
-        response = await self.model_service.generate_text(request)
-
-        # Verify the response is the cached one
-        self.assertEqual(response.content, "Cached response")
-
-        # Verify the adapter was not called
-        self.mock_adapter.generate_text.assert_not_called()
-
-        # Verify metrics were recorded
-        self.mock_metrics.record_model_request.assert_called_once()
-        self.mock_metrics.record_model_response.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_generate_text_with_error(self):
-        """Test the generate_text method with an error."""
-        # Configure the mock adapter to raise an exception
-        self.mock_adapter.generate_text.side_effect = Exception("Test error")
-
-        # Create a request
-        request = ModelRequest(
-            prompt="Test prompt",
-            model="gpt-4",
-            max_tokens=100,
-            temperature=0.7
-        )
-
-        # Call the method and expect an exception
-        with self.assertRaises(Exception):
-            await self.model_service.generate_text(request)
-
-        # Verify metrics were recorded
-        self.mock_metrics.record_model_request.assert_called_once()
-        self.mock_metrics.record_model_error.assert_called_once()
+    assert content is not None
+    assert isinstance(content, str)
+    assert len(content) > 0
 
 
-class TestModelResponseCache(unittest.TestCase):
-    """Test cases for the ModelResponseCache class."""
+def test_subject_line_optimization(mock_ai_service):
+    """Test subject line optimization."""
+    # service = AIService(ai_provider=mock_ai_service)
 
-    def setUp(self):
-        """Set up test fixtures."""
-        # Create a mock cache service
-        self.mock_cache_service = MagicMock()
-        self.mock_cache_service.get = AsyncMock()
-        self.mock_cache_service.set = AsyncMock()
+    # Mock the consolidated service
+    consolidated_ai_service._model_adapter = mock_ai_service
 
-        # Create a ModelResponseCache instance
-        self.response_cache = ModelResponseCache(self.mock_cache_service)
+    original_subject = "Welcome to our platform"
 
-    @pytest.mark.asyncio
-    async def test_get_cached_response(self):
-        """Test getting a cached response."""
-        # Configure the mock cache to return a cached response
-        cached_data = {
-            "content": "Cached response",
-            "model": "gpt-4",
-            "usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
-            "finish_reason": "stop",
-            "timestamp": datetime.now().isoformat()
-        }
-        self.mock_cache_service.get.return_value = json.dumps(cached_data)
+    suggestions = consolidated_ai_service.optimize_subject_line(original_subject)
 
-        # Create a request
-        request = ModelRequest(
-            prompt="Test prompt",
-            model="gpt-4",
-            max_tokens=100,
-            temperature=0.7
-        )
-
-        # Get the cached response
-        response = await self.response_cache.get(request)
-
-        # Verify the response
-        self.assertIsNotNone(response)
-        self.assertEqual(response.content, "Cached response")
-        self.assertEqual(response.model, "gpt-4")
-
-        # Verify the cache service was called correctly
-        self.mock_cache_service.get.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_set_cached_response(self):
-        """Test setting a cached response."""
-        # Create a request and response
-        request = ModelRequest(
-            prompt="Test prompt",
-            model="gpt-4",
-            max_tokens=100,
-            temperature=0.7
-        )
-        response = ModelResponse(
-            content="Test response",
-            model="gpt-4",
-            usage={"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
-            finish_reason="stop"
-        )
-
-        # Set the cached response
-        await self.response_cache.set(request, response)
-
-        # Verify the cache service was called correctly
-        self.mock_cache_service.set.assert_called_once()
+    assert isinstance(suggestions, list)
+    assert len(suggestions) > 0
+    assert all(isinstance(s, str) for s in suggestions)
 
 
-class TestAIMetricsService(unittest.TestCase):
-    """Test cases for the AIMetricsService class."""
+def test_campaign_performance_analysis(mock_ai_service, test_campaign):
+    """Test campaign performance analysis."""
+    # service = AIService(ai_provider=mock_ai_service)
 
-    def setUp(self):
-        """Set up test fixtures."""
-        # Create a mock metrics service
-        self.mock_metrics_service = MagicMock()
+    # Mock the consolidated service
+    consolidated_ai_service._model_adapter = mock_ai_service
 
-        # Create an AIMetricsService instance
-        self.ai_metrics = AIMetricsService(self.mock_metrics_service)
+    campaign_data = {
+        "opens": 100,
+        "clicks": 50,
+        "bounces": 5,
+        "unsubscribes": 2,
+        "total_sent": 200,
+    }
 
-    @pytest.mark.asyncio
-    async def test_record_model_request(self):
-        """Test recording a model request."""
-        # Create a request
-        request = ModelRequest(
-            prompt="Test prompt",
-            model="gpt-4",
-            max_tokens=100,
-            temperature=0.7
-        )
+    analysis = consolidated_ai_service.analyze_campaign_performance(campaign_data)
 
-        # Record the request
-        await self.ai_metrics.record_model_request(request, "test-user")
+    assert "score" in analysis
+    assert "suggestions" in analysis
+    assert "insights" in analysis
+    assert isinstance(analysis["score"], (int, float))
+    assert isinstance(analysis["suggestions"], list)
+    assert isinstance(analysis["insights"], list)
 
-        # Verify the metrics service was called correctly
-        self.mock_metrics_service.increment.assert_called_once()
-        self.mock_metrics_service.record_timing.assert_called_once()
 
-    @pytest.mark.asyncio
-    async def test_record_model_response(self):
-        """Test recording a model response."""
-        # Create a request and response
-        request = ModelRequest(
-            prompt="Test prompt",
-            model="gpt-4",
-            max_tokens=100,
-            temperature=0.7
-        )
-        response = ModelResponse(
-            content="Test response",
-            model="gpt-4",
-            usage={"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
-            finish_reason="stop"
-        )
+def test_audience_segmentation(mock_ai_service):
+    """Test AI-powered audience segmentation."""
+    # service = AIService(ai_provider=mock_ai_service)
 
-        # Record the response
-        await self.ai_metrics.record_model_response(request, response, 0.5, "test-user")
+    # Mock the consolidated service
+    consolidated_ai_service._model_adapter = mock_ai_service
 
-        # Verify the metrics service was called correctly
-        self.mock_metrics_service.increment.assert_called()
-        self.mock_metrics_service.record_timing.assert_called()
-        self.mock_metrics_service.record_gauge.assert_called()
+    user_data = [
+        {
+            "email": "user1@example.com",
+            "engagement_score": 0.8,
+            "last_active": "2024-02-20",
+            "interests": ["technology", "marketing"],
+        },
+        {
+            "email": "user2@example.com",
+            "engagement_score": 0.3,
+            "last_active": "2024-01-15",
+            "interests": ["business", "finance"],
+        },
+    ]
 
-    @pytest.mark.asyncio
-    async def test_record_model_error(self):
-        """Test recording a model error."""
-        # Create a request and error
-        request = ModelRequest(
-            prompt="Test prompt",
-            model="gpt-4",
-            max_tokens=100,
-            temperature=0.7
-        )
-        error = Exception("Test error")
+    segments = consolidated_ai_service.segment_audience(user_data)
 
-        # Record the error
-        await self.ai_metrics.record_model_error(request, error, "test-user")
+    assert isinstance(segments, dict)
+    assert "high_engagement" in segments
+    assert "low_engagement" in segments
+    assert isinstance(segments["high_engagement"], list)
+    assert isinstance(segments["low_engagement"], list)
 
-        # Verify the metrics service was called correctly
-        self.mock_metrics_service.increment.assert_called_once()
+
+def test_content_personalization(mock_ai_service):
+    """Test content personalization."""
+    # service = AIService(ai_provider=mock_ai_service)
+
+    # Mock the consolidated service
+    consolidated_ai_service._model_adapter = mock_ai_service
+
+    base_content = "Welcome to our platform!"
+    user_data = {
+        "name": "John",
+        "interests": ["technology"],
+        "usage_history": ["feature_a", "feature_b"],
+    }
+
+    personalized_content = consolidated_ai_service.personalize_content(base_content, user_data)
+
+    assert isinstance(personalized_content, str)
+    assert len(personalized_content) > 0
+    assert "John" in personalized_content
+
+
+def test_error_handling(mock_ai_service):
+    """Test error handling in AI service."""
+    # service = AIService(ai_provider=mock_ai_service)
+
+    # Mock the consolidated service
+    consolidated_ai_service._model_adapter = mock_ai_service
+
+    # Test with invalid prompt
+    with pytest.raises(ValueError):
+        consolidated_ai_service.generate_text(prompt="", tone="Professional")
+
+    # Test with invalid tone
+    with pytest.raises(ValueError):
+        consolidated_ai_service.generate_text(prompt="Write content", tone="InvalidTone")
+
+    # Test with invalid campaign data
+    with pytest.raises(ValueError):
+        consolidated_ai_service.analyze_campaign_performance({})
+
+
+def test_content_validation(mock_ai_service):
+    """Test content validation and safety checks."""
+    # service = AIService(ai_provider=mock_ai_service)
+
+    # Mock the consolidated service
+    consolidated_ai_service._model_adapter = mock_ai_service
+
+    unsafe_content = "SPAM! Buy now! Limited time offer!!!"
+
+    validation_result = consolidated_ai_service.validate_content(unsafe_content)
+
+    assert isinstance(validation_result, dict)
+    assert "is_safe" in validation_result
+    assert "issues" in validation_result
+    assert not validation_result["is_safe"]
+    assert len(validation_result["issues"]) > 0
+
+
+def test_performance_prediction(mock_ai_service, test_campaign):
+    """Test campaign performance prediction."""
+    # service = AIService(ai_provider=mock_ai_service)
+
+    # Mock the consolidated service
+    consolidated_ai_service._model_adapter = mock_ai_service
+
+    campaign_content = "Welcome to our platform!"
+    target_audience = ["technology", "marketing"]
+
+    prediction = consolidated_ai_service.predict_performance(campaign_content, target_audience)
+
+    assert isinstance(prediction, dict)
+    assert "estimated_open_rate" in prediction
+    assert "estimated_click_rate" in prediction
+    assert "confidence_score" in prediction
+    assert 0 <= prediction["estimated_open_rate"] <= 1
+    assert 0 <= prediction["estimated_click_rate"] <= 1
+    assert 0 <= prediction["confidence_score"] <= 1

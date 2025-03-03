@@ -1,0 +1,296 @@
+# Maily Production Environment Configuration
+
+# Kubernetes configuration
+kubernetes:
+  context: maily-production
+  namespace: maily
+
+# Vercel configuration
+vercel:
+  token: ${VERCEL_TOKEN}
+  team: maily-team
+
+# AWS configuration
+aws:
+  region: us-west-2
+  profile: maily-production
+
+# Lambda configuration
+lambda:
+  bucket: maily-production-lambda
+  role: arn:aws:iam::123456789012:role/maily-lambda-role
+
+# Monitoring configuration
+monitoring:
+  method: datadog
+  prometheus_url: https://prometheus.maily.ai
+  grafana_url: https://grafana.maily.ai
+  datadog_api_key: ${DATADOG_API_KEY}
+  datadog_app_key: ${DATADOG_APP_KEY}
+  alert_webhook: ${SLACK_WEBHOOK_URL}
+  pagerduty_service_key: ${PAGERDUTY_SERVICE_KEY}
+
+# Test configuration
+tests:
+  unit:
+    command: npm run test:unit
+  integration:
+    command: npm run test:integration
+  e2e:
+    command: npm run test:e2e
+  post-deployment:
+    command: npm run test:post-deployment -- --env=production
+
+# Component-specific configuration
+components:
+  frontend:
+    deploy_method: vercel
+    project_id: prj_production123456
+    verify_method: http
+    health_url: https://maily.ai/api/health
+    domain: maily.ai
+
+  api:
+    deploy_method: kubernetes
+    namespace: maily
+    deployment: api
+    image: maily/api
+    verify_method: kubernetes
+    replicas: 5
+    resources:
+      requests:
+        cpu: 1000m
+        memory: 1Gi
+      limits:
+        cpu: 2000m
+        memory: 2Gi
+    autoscaling:
+      enabled: true
+      min_replicas: 5
+      max_replicas: 20
+      target_cpu_utilization_percentage: 70
+
+  ai-service:
+    deploy_method: kubernetes
+    namespace: maily
+    deployment: ai-service
+    image: maily/ai-service
+    verify_method: http
+    health_url: https://ai.maily.ai/health
+    replicas: 5
+    resources:
+      requests:
+        cpu: 2000m
+        memory: 4Gi
+      limits:
+        cpu: 4000m
+        memory: 8Gi
+    env:
+      AI_MODEL: gpt-4o
+      AI_API_KEY: ${OPENAI_API_KEY}
+    autoscaling:
+      enabled: true
+      min_replicas: 5
+      max_replicas: 20
+      target_cpu_utilization_percentage: 70
+
+  websocket:
+    deploy_method: kubernetes
+    namespace: maily
+    deployment: websocket
+    image: maily/websocket
+    verify_method: custom
+    verify_script: ./system/verifiers/canvas-verifier.js
+    replicas: 5
+    resources:
+      requests:
+        cpu: 1000m
+        memory: 1Gi
+      limits:
+        cpu: 2000m
+        memory: 2Gi
+    env:
+      REDIS_URL: ${REDIS_URL}
+    autoscaling:
+      enabled: true
+      min_replicas: 5
+      max_replicas: 20
+      target_cpu_utilization_percentage: 70
+
+  blockchain:
+    deploy_method: kubernetes
+    namespace: maily
+    deployment: blockchain
+    image: maily/blockchain
+    verify_method: custom
+    verify_script: ./system/verifiers/blockchain-verifier.js
+    replicas: 3
+    resources:
+      requests:
+        cpu: 1000m
+        memory: 1Gi
+      limits:
+        cpu: 2000m
+        memory: 2Gi
+    env:
+      ETHEREUM_RPC_URL: ${ETHEREUM_RPC_URL}
+      PRIVATE_KEY: ${BLOCKCHAIN_PRIVATE_KEY}
+    autoscaling:
+      enabled: true
+      min_replicas: 3
+      max_replicas: 10
+      target_cpu_utilization_percentage: 70
+
+  analytics:
+    deploy_method: kubernetes
+    namespace: maily
+    deployment: analytics
+    image: maily/analytics
+    verify_method: http
+    health_url: https://analytics.maily.ai/health
+    replicas: 3
+    resources:
+      requests:
+        cpu: 1000m
+        memory: 1Gi
+      limits:
+        cpu: 2000m
+        memory: 2Gi
+    autoscaling:
+      enabled: true
+      min_replicas: 3
+      max_replicas: 10
+      target_cpu_utilization_percentage: 70
+
+  campaign:
+    deploy_method: kubernetes
+    namespace: maily
+    deployment: campaign
+    image: maily/campaign
+    verify_method: http
+    health_url: https://campaign.maily.ai/health
+    replicas: 3
+    resources:
+      requests:
+        cpu: 1000m
+        memory: 1Gi
+      limits:
+        cpu: 2000m
+        memory: 2Gi
+    autoscaling:
+      enabled: true
+      min_replicas: 3
+      max_replicas: 10
+      target_cpu_utilization_percentage: 70
+
+  email:
+    deploy_method: kubernetes
+    namespace: maily
+    deployment: email
+    image: maily/email
+    verify_method: http
+    health_url: https://email.maily.ai/health
+    replicas: 5
+    resources:
+      requests:
+        cpu: 1000m
+        memory: 1Gi
+      limits:
+        cpu: 2000m
+        memory: 2Gi
+    env:
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY}
+    autoscaling:
+      enabled: true
+      min_replicas: 5
+      max_replicas: 20
+      target_cpu_utilization_percentage: 70
+
+  workers:
+    deploy_method: kubernetes
+    namespace: maily
+    deployment: workers
+    image: maily/workers
+    verify_method: kubernetes
+    replicas: 5
+    resources:
+      requests:
+        cpu: 1000m
+        memory: 1Gi
+      limits:
+        cpu: 2000m
+        memory: 2Gi
+    env:
+      REDIS_URL: ${REDIS_URL}
+      DATABASE_URL: ${DATABASE_URL}
+    autoscaling:
+      enabled: true
+      min_replicas: 5
+      max_replicas: 20
+      target_cpu_utilization_percentage: 70
+
+# Database configuration
+database:
+  host: maily-production.cluster-abc.us-west-2.rds.amazonaws.com
+  port: 5432
+  name: maily
+  user: maily
+  password: ${DATABASE_PASSWORD}
+  read_replicas:
+    - host: maily-production-read-1.cluster-ro-abc.us-west-2.rds.amazonaws.com
+    - host: maily-production-read-2.cluster-ro-abc.us-west-2.rds.amazonaws.com
+
+# Redis configuration
+redis:
+  cluster_mode: true
+  nodes:
+    - host: maily-production-0001.abc.0001.usw2.cache.amazonaws.com
+      port: 6379
+    - host: maily-production-0002.abc.0001.usw2.cache.amazonaws.com
+      port: 6379
+    - host: maily-production-0003.abc.0001.usw2.cache.amazonaws.com
+      port: 6379
+
+# S3 configuration
+s3:
+  buckets:
+    assets: maily-production-assets
+    uploads: maily-production-uploads
+    backups: maily-production-backups
+
+# Domains configuration
+domains:
+  main: maily.ai
+  api: api.maily.ai
+  ai: ai.maily.ai
+  websocket: ws.maily.ai
+  analytics: analytics.maily.ai
+  campaign: campaign.maily.ai
+  email: email.maily.ai
+
+# CDN configuration
+cdn:
+  provider: cloudfront
+  distribution_id: EXXXXXXXXXX
+
+# Security configuration
+security:
+  waf_enabled: true
+  ddos_protection: true
+  ssl_policy: ELBSecurityPolicy-TLS-1-2-2017-01
+
+# Backup configuration
+backups:
+  database:
+    schedule: "0 0 * * *"  # Daily at midnight
+    retention_days: 30
+  s3:
+    schedule: "0 0 * * 0"  # Weekly on Sunday
+    retention_days: 90
+
+# Disaster recovery
+disaster_recovery:
+  rpo_minutes: 15  # Recovery Point Objective
+  rto_minutes: 30  # Recovery Time Objective
+  cross_region_replication: true
+  secondary_region: us-east-1

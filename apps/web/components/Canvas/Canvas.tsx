@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Stage, Layer, Group } from 'react-konva';
 import Konva from 'konva';
 import { canvasPerformance } from '@/utils/canvasPerformance';
+import { canvasBatch } from '@/utils/canvasBatch';
 
 // Types
 interface CanvasProps {
@@ -25,6 +26,10 @@ interface ViewportData {
     y: number;
     width: number;
     height: number;
+  };
+  pointerPosition?: {
+    x: number;
+    y: number;
   };
 }
 
@@ -75,19 +80,23 @@ export const Canvas: React.FC<CanvasProps> = ({
       height: visibleRect.height + (2 * padding) / stageScale,
     };
 
-    setVisibleRect(paddedRect);
+    // Batch the update to avoid multiple renders
+    canvasBatch.queueUpdate('visibleRect', () => {
+      setVisibleRect(paddedRect);
 
-    // Notify parent of viewport change
-    if (onViewportChange) {
-      onViewportChange({
-        x: pos.x,
-        y: pos.y,
-        scale: stageScale,
-        width: dimensions.width,
-        height: dimensions.height,
-        visibleRect: paddedRect,
-      });
-    }
+      // Notify parent of viewport change
+      if (onViewportChange) {
+        onViewportChange({
+          x: pos.x,
+          y: pos.y,
+          scale: stageScale,
+          width: dimensions.width,
+          height: dimensions.height,
+          visibleRect: paddedRect,
+          pointerPosition: stage.getPointerPosition() || undefined,
+        });
+      }
+    });
   }, [dimensions, padding, onViewportChange]);
 
   // Handle window resize
@@ -149,19 +158,22 @@ export const Canvas: React.FC<CanvasProps> = ({
     const MIN_SCALE = 0.1;
     const limitedScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, newScale));
 
-    // Apply new scale and position
-    stage.scale({ x: limitedScale, y: limitedScale });
-
+    // Calculate new position
     const newPos = {
       x: pointer.x - mousePointTo.x * limitedScale,
       y: pointer.y - mousePointTo.y * limitedScale,
     };
 
-    stage.position(newPos);
-
-    // Update state
-    setScale(limitedScale);
-    setPosition(newPos);
+    // Batch the scale and position updates
+    canvasBatch.queueUpdate('zoom', () => {
+      // Apply new scale and position
+      stage.scale({ x: limitedScale, y: limitedScale });
+      stage.position(newPos);
+      
+      // Update state
+      setScale(limitedScale);
+      setPosition(newPos);
+    });
 
     // Measure performance
     const endTime = performance.now();
@@ -181,7 +193,11 @@ export const Canvas: React.FC<CanvasProps> = ({
     const stage = stageRef.current;
     if (!stage) return;
 
-    setPosition(stage.position());
+    // Batch position update
+    canvasBatch.queueUpdate('drag', () => {
+      setPosition(stage.position());
+    });
+
     canvasPerformance.endMetric('interaction.drag');
   }, []);
 

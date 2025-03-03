@@ -1,0 +1,35 @@
+<svg width="600" height="400" viewBox="0 0 600 400" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="600" height="400" fill="#F0F9FF"/>
+  <g transform="translate(100, 50)">
+    <!-- Email Template -->
+    <rect x="0" y="0" width="400" height="300" rx="8" fill="white" stroke="#E5E7EB" stroke-width="2"/>
+    
+    <!-- Email Header -->
+    <rect x="20" y="20" width="360" height="40" rx="4" fill="#EFF6FF"/>
+    <circle cx="40" cy="40" r="10" fill="#3B82F6"/>
+    <rect x="60" y="35" width="120" height="10" rx="2" fill="#3B82F6"/>
+    <rect x="320" y="35" width="40" height="10" rx="2" fill="#3B82F6" opacity="0.5"/>
+    
+    <!-- Email Content -->
+    <rect x="20" y="80" width="360" height="20" rx="2" fill="#DBEAFE"/>
+    <rect x="20" y="110" width="280" height="10" rx="2" fill="#93C5FD" opacity="0.7"/>
+    <rect x="20" y="130" width="320" height="10" rx="2" fill="#93C5FD" opacity="0.5"/>
+    <rect x="20" y="150" width="300" height="10" rx="2" fill="#93C5FD" opacity="0.6"/>
+    
+    <!-- Personalization Elements -->
+    <rect x="20" y="180" width="180" height="40" rx="4" fill="#DBEAFE"/>
+    <rect x="40" y="195" width="140" height="10" rx="2" fill="#2563EB"/>
+    
+    <!-- AI Elements -->
+    <g transform="translate(320, 180)">
+      <circle cx="40" cy="40" r="40" fill="#EFF6FF"/>
+      <path d="M40 20 L60 40 L40 60 L20 40 Z" fill="#3B82F6"/>
+      <circle cx="40" cy="40" r="10" fill="#1E40AF"/>
+    </g>
+    
+    <!-- Personalization Indicators -->
+    <rect x="20" y="240" width="80" height="20" rx="10" fill="#BFDBFE"/>
+    <rect x="110" y="240" width="60" height="20" rx="10" fill="#BFDBFE"/>
+    <rect x="180" y="240" width="100" height="20" rx="10" fill="#BFDBFE"/>
+  </g>
+</svg> 

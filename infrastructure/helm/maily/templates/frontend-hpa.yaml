@@ -24,12 +24,12 @@ spec:
           type: Utilization
           averageUtilization: {{ .Values.frontend.autoscaling.targetCPUUtilizationPercentage }}
     {{- end }}
-    {{- if .Values.frontend.autoscaling.targetMemoryUtilizationPercentage }}
+    {{- if .Values.frontend.autoscaling.{{ PAGERDUTY_SERVICE_KEY }}e }}
     - type: Resource
       resource:
         name: memory
         target:
           type: Utilization
-          averageUtilization: {{ .Values.frontend.autoscaling.targetMemoryUtilizationPercentage }}
+          averageUtilization: {{ .Values.frontend.autoscaling.{{ PAGERDUTY_SERVICE_KEY }}e }}
     {{- end }}
 {{- end }}

@@ -1,0 +1,408 @@
+name: Maily CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      components:
+        description: 'Components to deploy (comma-separated, or "all")'
+        required: true
+        default: 'all'
+      version:
+        description: 'Version to deploy'
+        required: true
+        default: 'latest'
+
+env:
+  NODE_VERSION: '18'
+  PYTHON_VERSION: '3.10'
+  TERRAFORM_VERSION: '1.5.7'
+
+jobs:
+  # Validate code and run tests
+  validate:
+    name: Validate and Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          pip install -r requirements.txt
+          pip install -r requirements-mailyctl.txt
+
+      - name: Lint code
+        run: |
+          npm run lint
+          python -m flake8 ai_service
+
+      - name: Run unit tests
+        run: |
+          npm run test:unit
+          python -m pytest tests/unit
+
+      - name: Run integration tests
+        run: |
+          npm run test:integration
+          python -m pytest tests/integration
+
+  # Build and push Docker images
+  build:
+    name: Build and Push Images
+    needs: validate
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    strategy:
+      matrix:
+        component: [api, ai-service, websocket, blockchain, analytics, campaign, email, workers]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ghcr.io/${{ github.repository }}/${{ matrix.component }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=sha,format=short
+
+      - name: Build and push image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: Dockerfile.${{ matrix.component }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Deploy to Vercel (Frontend)
+  deploy-frontend:
+    name: Deploy Frontend
+    needs: validate
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel
+
+      - name: Deploy to Vercel
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" || "${{ github.event.inputs.environment }}" == "production" ]]; then
+            vercel deploy --prod --token=${{ secrets.VERCEL_TOKEN }}
+          else
+            vercel deploy --token=${{ secrets.VERCEL_TOKEN }}
+          fi
+
+  # Deploy to Kubernetes
+  deploy-kubernetes:
+    name: Deploy to Kubernetes
+    needs: [validate, build]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    env:
+      ENVIRONMENT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'staging') }}
+      COMPONENTS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.components || 'all' }}
+      VERSION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.sha }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements-mailyctl.txt
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-west-2
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --name maily-${{ env.ENVIRONMENT }} --region us-west-2
+
+      - name: Deploy components
+        run: |
+          python mailyctl.py deploy --env ${{ env.ENVIRONMENT }} --version ${{ env.VERSION }} --components ${{ env.COMPONENTS }}
+
+      - name: Verify deployment
+        run: |
+          python mailyctl.py verify --env ${{ env.ENVIRONMENT }} --version ${{ env.VERSION }} --components ${{ env.COMPONENTS }}
+
+  # Run post-deployment tests
+  post-deployment-tests:
+    name: Post-Deployment Tests
+    needs: [deploy-frontend, deploy-kubernetes]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    env:
+      ENVIRONMENT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'staging') }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements-mailyctl.txt
+
+      - name: Run post-deployment tests
+        run: |
+          python mailyctl.py test --env ${{ env.ENVIRONMENT }} --scope post-deployment
+
+  # Update infrastructure with Terraform
+  terraform:
+    name: Update Infrastructure
+    needs: validate
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    env:
+      ENVIRONMENT: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-west-2
+
+      - name: Terraform Init
+        run: |
+          cd infrastructure/terraform
+          terraform init
+
+      - name: Terraform Plan
+        run: |
+          cd infrastructure/terraform
+          terraform plan -var-file=${{ env.ENVIRONMENT }}.tfvars -out=tfplan
+
+      - name: Terraform Apply
+        run: |
+          cd infrastructure/terraform
+          terraform apply -auto-approve tfplan
+
+  # Deploy smart contracts
+  deploy-contracts:
+    name: Deploy Smart Contracts
+    needs: validate
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    env:
+      ENVIRONMENT: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm install -g hardhat
+
+      - name: Compile contracts
+        run: |
+          cd blockchain
+          npx hardhat compile
+
+      - name: Run contract tests
+        run: |
+          cd blockchain
+          npx hardhat test
+
+      - name: Deploy contracts
+        run: |
+          cd blockchain
+          npx hardhat run scripts/deploy.js --network ${{ env.ENVIRONMENT }}
+        env:
+          PRIVATE_KEY: ${{ secrets.BLOCKCHAIN_PRIVATE_KEY }}
+          INFURA_API_KEY: ${{ secrets.INFURA_API_KEY }}
+
+  # Notify on completion
+  notify:
+    name: Send Notifications
+    needs: [post-deployment-tests, terraform, deploy-contracts]
+    runs-on: ubuntu-latest
+    if: always()
+    env:
+      ENVIRONMENT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'staging') }}
+    steps:
+      - name: Check workflow status
+        id: status
+        run: |
+          if [[ "${{ needs.post-deployment-tests.result }}" == "success" && \
+                "${{ needs.terraform.result }}" == "success" && \
+                "${{ needs.deploy-contracts.result }}" == "success" ]]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+          else
+            echo "status=failure" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Send Slack notification
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          payload: |
+            {
+              "text": "Deployment to ${{ env.ENVIRONMENT }} ${{ steps.status.outputs.status == 'success' && 'succeeded' || 'failed' }}",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "Deployment to ${{ env.ENVIRONMENT }} ${{ steps.status.outputs.status == 'success' && 'succeeded' || 'failed' }}",
+                    "emoji": true
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Environment:*\n${{ env.ENVIRONMENT }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Status:*\n${{ steps.status.outputs.status == 'success' && ':white_check_mark: Success' || ':x: Failure' }}"
+                    }
+                  ]
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Triggered by:*\n${{ github.actor }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Workflow:*\n${{ github.workflow }}"
+                    }
+                  ]
+                },
+                {
+                  "type": "actions",
+                  "elements": [
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "View Workflow",
+                        "emoji": true
+                      },
+                      "url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+      - name: Send PagerDuty alert on failure
+        if: steps.status.outputs.status == 'failure' && env.ENVIRONMENT == 'production'
+        run: |
+          curl -X POST \
+            --header "Content-Type: application/json" \
+            --data '{
+              "routing_key": "${{ secrets.PAGERDUTY_ROUTING_KEY }}",
+              "event_action": "trigger",
+              "payload": {
+                "summary": "Deployment to production failed",
+                "source": "GitHub Actions",
+                "severity": "critical",
+                "component": "CI/CD Pipeline",
+                "group": "Maily",
+                "class": "deployment",
+                "custom_details": {
+                  "workflow": "${{ github.workflow }}",
+                  "run_id": "${{ github.run_id }}",
+                  "actor": "${{ github.actor }}",
+                  "repository": "${{ github.repository }}",
+                  "ref": "${{ github.ref }}"
+                }
+              }
+            }' \
+            https://events.pagerduty.com/v2/enqueue

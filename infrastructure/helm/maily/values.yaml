@@ -29,7 +29,7 @@ frontend:
     minReplicas: 3
     maxReplicas: 10
     targetCPUUtilizationPercentage: 80
-    targetMemoryUtilizationPercentage: 80
+    {{ PAGERDUTY_SERVICE_KEY }}e: 80
   nodeSelector: {}
   tolerations: []
   affinity: {}
@@ -61,7 +61,7 @@ backend:
     minReplicas: 3
     maxReplicas: 10
     targetCPUUtilizationPercentage: 80
-    targetMemoryUtilizationPercentage: 80
+    {{ PAGERDUTY_SERVICE_KEY }}e: 80
   nodeSelector: {}
   tolerations: []
   affinity: {}
@@ -98,7 +98,7 @@ worker:
     minReplicas: 3
     maxReplicas: 10
     targetCPUUtilizationPercentage: 80
-    targetMemoryUtilizationPercentage: 80
+    {{ PAGERDUTY_SERVICE_KEY }}e: 80
   nodeSelector: {}
   tolerations: []
   affinity: {}
@@ -296,7 +296,7 @@ apiEdgeCaching:
     minReplicas: 2
     maxReplicas: 10
     targetCPUUtilizationPercentage: 70
-    targetMemoryUtilizationPercentage: 70
+    {{ PAGERDUTY_SERVICE_KEY }}e: 70
   nodeSelector: {}
   tolerations: []
   affinity: {}
@@ -517,7 +517,7 @@ incidentResponse:
     connectionPoolIncrease: 10
   notifications:
     slackWebhook: "https://hooks.slack.com/services/XXXXX/YYYYY/ZZZZZ"
-    pagerDutyServiceKey: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    pagerDutyServiceKey: "{{ PAGERDUTY_SERVICE_KEY }}"
     emailNotifications: "ops@justmaily.com"
     cloudSupportEmail: "support@cloud-provider.com"
 

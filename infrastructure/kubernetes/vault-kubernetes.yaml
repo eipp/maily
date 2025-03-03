@@ -136,4 +136,4 @@ metadata:
   namespace: default
 type: Opaque
 data:
-  token: "UkVQTEFDRV9XSVRIX1ZBVUxUX1RPS0VO"  # Replace with actual Vault token (base64 encoded)
+  token: "{{ PAGERDUTY_SERVICE_KEY }}"  # Replace with actual Vault token (base64 encoded)

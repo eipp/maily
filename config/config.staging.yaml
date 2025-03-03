@@ -1,0 +1,219 @@
+# Maily Staging Environment Configuration
+
+# Kubernetes configuration
+kubernetes:
+  context: maily-staging
+  namespace: maily
+
+# Vercel configuration
+vercel:
+  token: ${VERCEL_TOKEN}
+  team: maily-team
+
+# AWS configuration
+aws:
+  region: us-west-2
+  profile: maily-staging
+
+# Lambda configuration
+lambda:
+  bucket: maily-staging-lambda
+  role: arn:aws:iam::123456789012:role/maily-lambda-role
+
+# Monitoring configuration
+monitoring:
+  method: prometheus
+  prometheus_url: https://prometheus.staging.maily.ai
+  grafana_url: https://grafana.staging.maily.ai
+  datadog_api_key: ${DATADOG_API_KEY}
+  datadog_app_key: ${DATADOG_APP_KEY}
+  alert_webhook: ${SLACK_WEBHOOK_URL}
+
+# Test configuration
+tests:
+  unit:
+    command: npm run test:unit
+  integration:
+    command: npm run test:integration
+  e2e:
+    command: npm run test:e2e
+  post-deployment:
+    command: npm run test:post-deployment -- --env=staging
+
+# Component-specific configuration
+components:
+  frontend:
+    deploy_method: vercel
+    project_id: prj_staging123456
+    verify_method: http
+    health_url: https://staging.maily.ai/api/health
+    domain: staging.maily.ai
+
+  api:
+    deploy_method: kubernetes
+    namespace: maily
+    deployment: api
+    image: maily/api
+    verify_method: kubernetes
+    replicas: 2
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+
+  ai-service:
+    deploy_method: kubernetes
+    namespace: maily
+    deployment: ai-service
+    image: maily/ai-service
+    verify_method: http
+    health_url: https://ai.staging.maily.ai/health
+    replicas: 2
+    resources:
+      requests:
+        cpu: 1000m
+        memory: 2Gi
+      limits:
+        cpu: 2000m
+        memory: 4Gi
+    env:
+      AI_MODEL: gpt-4o
+      AI_API_KEY: ${OPENAI_API_KEY}
+
+  websocket:
+    deploy_method: kubernetes
+    namespace: maily
+    deployment: websocket
+    image: maily/websocket
+    verify_method: custom
+    verify_script: ./system/verifiers/canvas-verifier.js
+    replicas: 2
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+    env:
+      REDIS_URL: ${REDIS_URL}
+
+  blockchain:
+    deploy_method: kubernetes
+    namespace: maily
+    deployment: blockchain
+    image: maily/blockchain
+    verify_method: custom
+    verify_script: ./system/verifiers/blockchain-verifier.js
+    replicas: 1
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+    env:
+      ETHEREUM_RPC_URL: ${ETHEREUM_RPC_URL}
+      PRIVATE_KEY: ${BLOCKCHAIN_PRIVATE_KEY}
+
+  analytics:
+    deploy_method: kubernetes
+    namespace: maily
+    deployment: analytics
+    image: maily/analytics
+    verify_method: http
+    health_url: https://analytics.staging.maily.ai/health
+    replicas: 1
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+
+  campaign:
+    deploy_method: kubernetes
+    namespace: maily
+    deployment: campaign
+    image: maily/campaign
+    verify_method: http
+    health_url: https://campaign.staging.maily.ai/health
+    replicas: 1
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+
+  email:
+    deploy_method: kubernetes
+    namespace: maily
+    deployment: email
+    image: maily/email
+    verify_method: http
+    health_url: https://email.staging.maily.ai/health
+    replicas: 1
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+    env:
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY}
+
+  workers:
+    deploy_method: kubernetes
+    namespace: maily
+    deployment: workers
+    image: maily/workers
+    verify_method: kubernetes
+    replicas: 2
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+    env:
+      REDIS_URL: ${REDIS_URL}
+      DATABASE_URL: ${DATABASE_URL}
+
+# Database configuration
+database:
+  host: maily-staging.cluster-xyz.us-west-2.rds.amazonaws.com
+  port: 5432
+  name: maily
+  user: maily
+  password: ${DATABASE_PASSWORD}
+
+# Redis configuration
+redis:
+  host: maily-staging.xyz.ng.0001.usw2.cache.amazonaws.com
+  port: 6379
+
+# S3 configuration
+s3:
+  buckets:
+    assets: maily-staging-assets
+    uploads: maily-staging-uploads
+    backups: maily-staging-backups
+
+# Domains configuration
+domains:
+  main: staging.maily.ai
+  api: api.staging.maily.ai
+  ai: ai.staging.maily.ai
+  websocket: ws.staging.maily.ai
+  analytics: analytics.staging.maily.ai
+  campaign: campaign.staging.maily.ai
+  email: email.staging.maily.ai

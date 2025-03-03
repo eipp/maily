@@ -2,133 +2,110 @@ import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 
 /**
- * Combines multiple class names or class name objects into a single string
- * using clsx and tailwind-merge for proper handling of Tailwind classes
+ * Combines multiple class names using clsx and tailwind-merge
+ * This allows for conditional classes and proper merging of Tailwind CSS classes
  */
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
 /**
- * Formats a number with thousands separators
+ * Formats a date to a human-readable string
+ */
+export function formatDate(date: Date): string {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(date);
+}
+
+/**
+ * Formats a number with commas for thousands
  */
 export function formatNumber(num: number): string {
-  return new Intl.NumberFormat().format(num);
-}
-
-/**
- * Formats a currency value
- */
-export function formatCurrency(
-  amount: number,
-  currency: string = "USD",
-  locale: string = "en-US"
-): string {
-  return new Intl.NumberFormat(locale, {
-    style: "currency",
-    currency,
-  }).format(amount);
-}
-
-/**
- * Formats a date object or string into a human-readable date
- */
-export function formatDate(
-  date: Date | string,
-  options: Intl.DateTimeFormatOptions = {
-    year: "numeric",
-    month: "short",
-    day: "numeric"
-  }
-): string {
-  const dateObj = typeof date === "string" ? new Date(date) : date;
-  return new Intl.DateTimeFormat("en-US", options).format(dateObj);
+  return new Intl.NumberFormat("en-US").format(num);
 }
 
 /**
  * Truncates a string to a specified length and adds an ellipsis
  */
-export function truncateString(str: string, length: number = 50): string {
+export function truncateString(str: string, length: number): string {
   if (str.length <= length) return str;
-  return `${str.substring(0, length).trim()}...`;
+  return str.slice(0, length) + "...";
 }
 
 /**
- * Generates a random ID (useful for temporary keys)
+ * Generates a random ID
  */
-export function generateId(length: number = 8): string {
-  return Math.random()
-    .toString(36)
-    .substring(2, 2 + length);
+export function generateId(): string {
+  return Math.random().toString(36).substring(2, 9);
 }
 
 /**
- * Debounces a function call
+ * Debounces a function
  */
 export function debounce<T extends (...args: any[]) => any>(
-  fn: T,
-  delay: number
+  func: T,
+  wait: number
 ): (...args: Parameters<T>) => void {
-  let timeoutId: NodeJS.Timeout;
-
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  
   return function(...args: Parameters<T>) {
-    clearTimeout(timeoutId);
-    timeoutId = setTimeout(() => fn(...args), delay);
+    const later = () => {
+      timeout = null;
+      func(...args);
+    };
+    
+    if (timeout !== null) {
+      clearTimeout(timeout);
+    }
+    
+    timeout = setTimeout(later, wait);
   };
 }
 
 /**
- * Simple email validation
+ * Throttles a function
  */
-export function isValidEmail(email: string): boolean {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
+export function throttle<T extends (...args: any[]) => any>(
+  func: T,
+  limit: number
+): (...args: Parameters<T>) => void {
+  let inThrottle = false;
+  
+  return function(...args: Parameters<T>) {
+    if (!inThrottle) {
+      func(...args);
+      inThrottle = true;
+      setTimeout(() => {
+        inThrottle = false;
+      }, limit);
+    }
+  };
 }
 
 /**
- * Convert a string to kebab-case
+ * Checks if an object is empty
  */
-export function toKebabCase(str: string): string {
-  return str
-    .replace(/([a-z])([A-Z])/g, "$1-$2")
-    .replace(/[\s_]+/g, "-")
-    .toLowerCase();
+export function isEmptyObject(obj: Record<string, any>): boolean {
+  return Object.keys(obj).length === 0;
 }
 
 /**
- * Extract initials from a name (up to 2 characters)
+ * Deep clones an object
  */
-export function getInitials(name: string): string {
-  if (!name) return "";
-
-  const parts = name.split(" ").filter(Boolean);
-  if (parts.length === 0) return "";
-  if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
-
-  return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+export function deepClone<T>(obj: T): T {
+  return JSON.parse(JSON.stringify(obj));
 }
 
 /**
- * Delay execution for a specified time
- * @param ms - The number of milliseconds to delay
- * @returns A promise that resolves after the specified time
+ * Converts a hex color to RGBA
  */
-export function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * Truncate a string to a specified length
- * @param str - The string to truncate
- * @param length - The maximum length
- * @param suffix - The suffix to add when truncated (default: '...')
- * @returns The truncated string
- */
-export function truncate(
-  str: string,
-  length: number,
-  suffix: string = "..."
-): string {
-  if (str.length <= length) return str;
-  return str.substring(0, length) + suffix;
+export function hexToRgba(hex: string, alpha: number = 1): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }

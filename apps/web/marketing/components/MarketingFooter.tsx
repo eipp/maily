@@ -12,10 +12,10 @@ const footerSections = [
   {
     title: 'Product',
     links: [
-      { name: 'Features', href: '/features' },
+      { name: 'Features', href: '/#features' },
       { name: 'Pricing', href: '/pricing' },
-      { name: 'Use Cases', href: '/use-cases' },
-      { name: 'Roadmap', href: '/roadmap' },
+      { name: 'Dashboard', href: '/dashboard' },
+      { name: 'Get Started', href: '/auth/signup' },
     ],
   },
   {
@@ -23,34 +23,34 @@ const footerSections = [
     links: [
       { name: 'About', href: '/about' },
       { name: 'Blog', href: '/blog' },
-      { name: 'Careers', href: '/careers' },
       { name: 'Contact', href: '/contact' },
+      { name: 'Support', href: '/support' },
     ],
   },
   {
     title: 'Resources',
     links: [
-      { name: 'Documentation', href: 'https://docs.justmaily.com' },
-      { name: 'API Reference', href: 'https://api.justmaily.com' },
-      { name: 'Status', href: 'https://status.justmaily.com' },
+      { name: 'Documentation', href: '/docs' },
+      { name: 'API Reference', href: '/api' },
+      { name: 'Status', href: '/status' },
       { name: 'Help Center', href: '/help' },
     ],
   },
   {
     title: 'Legal',
     links: [
-      { name: 'Privacy', href: '/privacy' },
-      { name: 'Terms', href: '/terms' },
-      { name: 'Security', href: '/security' },
-      { name: 'GDPR', href: '/gdpr' },
+      { name: 'Privacy', href: '/legal/privacy' },
+      { name: 'Terms', href: '/legal/terms' },
+      { name: 'Security', href: '/legal/security' },
+      { name: 'GDPR', href: '/legal/gdpr' },
     ],
   },
 ];
 
 const socialLinks = [
-  { name: 'Twitter', href: 'https://twitter.com/justmaily', icon: Twitter },
-  { name: 'GitHub', href: 'https://github.com/justmaily', icon: Github },
-  { name: 'LinkedIn', href: 'https://linkedin.com/company/justmaily', icon: Linkedin },
+  { name: 'Twitter', href: 'https://twitter.com', icon: Twitter },
+  { name: 'GitHub', href: 'https://github.com', icon: Github },
+  { name: 'LinkedIn', href: 'https://linkedin.com', icon: Linkedin },
 ];
 
 export function MarketingFooter() {

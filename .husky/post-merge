@@ -1,0 +1,15 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Check if package.json or requirements.txt changed
+if git diff-tree -r --name-only --no-commit-id ORIG_HEAD HEAD | grep -E 'package.json|requirements.txt'; then
+  echo "📦 Dependencies changed, installing updates..."
+  npm install
+  pip install -r requirements.txt
+fi
+
+# Check if there are migrations to run
+if git diff-tree -r --name-only --no-commit-id ORIG_HEAD HEAD | grep -E 'migrations/|alembic/'; then
+  echo "🗃️ Database migrations detected, running migrations..."
+  cd apps/api && python -m scripts.run_migrations
+fi

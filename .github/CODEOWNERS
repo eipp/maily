@@ -1,0 +1,32 @@
+# Global code owners
+* @yourusername
+
+# Frontend code
+/apps/web/ @frontend-team-lead
+/packages/ui/ @frontend-team-lead
+/packages/ui-components/ @frontend-team-lead
+
+# Backend code
+/apps/api/ @backend-team-lead
+/apps/workers/ @backend-team-lead
+
+# AI service
+/apps/ai-service/ @ai-team-lead
+
+# Infrastructure
+/infrastructure/ @devops-team-lead
+/kubernetes/ @devops-team-lead
+/terraform/ @devops-team-lead
+/docker/ @devops-team-lead
+
+# Domain model
+/packages/domain/ @architecture-team-lead
+
+# Configuration
+/packages/config-schema/ @architecture-team-lead
+
+# Testing utilities
+/packages/testing/ @testing-team-lead
+
+# Documentation
+/docs/ @docs-team-lead

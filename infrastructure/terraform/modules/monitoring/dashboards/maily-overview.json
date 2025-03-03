@@ -1,0 +1,834 @@
+{
+  "title": "Maily Platform Overview",
+  "description": "Comprehensive overview of the Maily platform performance and health",
+  "widgets": [
+    {
+      "id": 1,
+      "definition": {
+        "title": "System Health",
+        "type": "group",
+        "layout_type": "ordered",
+        "widgets": [
+          {
+            "id": 2,
+            "definition": {
+              "title": "Service Status",
+              "type": "servicemap",
+              "service": "maily",
+              "filters": ["env:production"]
+            }
+          },
+          {
+            "id": 3,
+            "definition": {
+              "title": "Error Rates",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "q": "sum:maily.errors{service:frontend} by {version}.as_count()",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "warm",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                },
+                {
+                  "q": "sum:maily.errors{service:api} by {version}.as_count()",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "cool",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                },
+                {
+                  "q": "sum:maily.errors{service:ai-service} by {version}.as_count()",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "purple",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                },
+                {
+                  "q": "sum:maily.errors{service:websocket} by {version}.as_count()",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "orange",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                },
+                {
+                  "q": "sum:maily.errors{service:blockchain} by {version}.as_count()",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "grey",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                }
+              ],
+              "yaxis": {
+                "scale": "log",
+                "include_zero": true,
+                "min": "auto",
+                "max": "auto"
+              },
+              "markers": [
+                {
+                  "value": "y = 100",
+                  "display_type": "error dashed",
+                  "label": "Error Threshold"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": 4,
+      "definition": {
+        "title": "Frontend Performance",
+        "type": "group",
+        "layout_type": "ordered",
+        "widgets": [
+          {
+            "id": 5,
+            "definition": {
+              "title": "Page Load Time",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "q": "avg:maily.frontend.page_load_time{*} by {page}.rollup(avg, 60)",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "dog_classic",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                }
+              ],
+              "yaxis": {
+                "scale": "linear",
+                "include_zero": true,
+                "min": "auto",
+                "max": "auto",
+                "label": "seconds"
+              },
+              "markers": [
+                {
+                  "value": "y = 3",
+                  "display_type": "warning dashed",
+                  "label": "Warning Threshold"
+                },
+                {
+                  "value": "y = 5",
+                  "display_type": "error dashed",
+                  "label": "Error Threshold"
+                }
+              ]
+            }
+          },
+          {
+            "id": 6,
+            "definition": {
+              "title": "User Experience Metrics",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "q": "avg:maily.frontend.fcp{*}.rollup(avg, 60)",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "cool",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  },
+                  "metadata": [
+                    {
+                      "expression": "avg:maily.frontend.fcp{*}.rollup(avg, 60)",
+                      "alias_name": "First Contentful Paint"
+                    }
+                  ]
+                },
+                {
+                  "q": "avg:maily.frontend.lcp{*}.rollup(avg, 60)",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "warm",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  },
+                  "metadata": [
+                    {
+                      "expression": "avg:maily.frontend.lcp{*}.rollup(avg, 60)",
+                      "alias_name": "Largest Contentful Paint"
+                    }
+                  ]
+                },
+                {
+                  "q": "avg:maily.frontend.fid{*}.rollup(avg, 60)",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "purple",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  },
+                  "metadata": [
+                    {
+                      "expression": "avg:maily.frontend.fid{*}.rollup(avg, 60)",
+                      "alias_name": "First Input Delay"
+                    }
+                  ]
+                },
+                {
+                  "q": "avg:maily.frontend.cls{*}.rollup(avg, 60)",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "orange",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  },
+                  "metadata": [
+                    {
+                      "expression": "avg:maily.frontend.cls{*}.rollup(avg, 60)",
+                      "alias_name": "Cumulative Layout Shift"
+                    }
+                  ]
+                }
+              ],
+              "yaxis": {
+                "scale": "linear",
+                "include_zero": true,
+                "min": "auto",
+                "max": "auto"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": 7,
+      "definition": {
+        "title": "API Performance",
+        "type": "group",
+        "layout_type": "ordered",
+        "widgets": [
+          {
+            "id": 8,
+            "definition": {
+              "title": "API Request Rate",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "q": "sum:maily.api.requests{*} by {endpoint}.as_rate()",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "dog_classic",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                }
+              ],
+              "yaxis": {
+                "scale": "linear",
+                "include_zero": true,
+                "min": "auto",
+                "max": "auto",
+                "label": "requests/second"
+              }
+            }
+          },
+          {
+            "id": 9,
+            "definition": {
+              "title": "API Response Time",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "q": "avg:maily.api.response_time{*} by {endpoint}.rollup(avg, 60)",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "dog_classic",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                }
+              ],
+              "yaxis": {
+                "scale": "linear",
+                "include_zero": true,
+                "min": "auto",
+                "max": "auto",
+                "label": "milliseconds"
+              },
+              "markers": [
+                {
+                  "value": "y = 500",
+                  "display_type": "warning dashed",
+                  "label": "Warning Threshold"
+                },
+                {
+                  "value": "y = 1000",
+                  "display_type": "error dashed",
+                  "label": "Error Threshold"
+                }
+              ]
+            }
+          },
+          {
+            "id": 10,
+            "definition": {
+              "title": "API Error Rate",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "q": "sum:maily.api.errors{*} by {endpoint}.as_count() / sum:maily.api.requests{*} by {endpoint}.as_count() * 100",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "warm",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                }
+              ],
+              "yaxis": {
+                "scale": "linear",
+                "include_zero": true,
+                "min": "0",
+                "max": "100",
+                "label": "error %"
+              },
+              "markers": [
+                {
+                  "value": "y = 5",
+                  "display_type": "warning dashed",
+                  "label": "Warning Threshold"
+                },
+                {
+                  "value": "y = 10",
+                  "display_type": "error dashed",
+                  "label": "Error Threshold"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": 11,
+      "definition": {
+        "title": "AI Service Performance",
+        "type": "group",
+        "layout_type": "ordered",
+        "widgets": [
+          {
+            "id": 12,
+            "definition": {
+              "title": "AI Service Request Rate",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "q": "sum:maily.ai.requests{*} by {operation}.as_rate()",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "dog_classic",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                }
+              ],
+              "yaxis": {
+                "scale": "linear",
+                "include_zero": true,
+                "min": "auto",
+                "max": "auto",
+                "label": "requests/second"
+              }
+            }
+          },
+          {
+            "id": 13,
+            "definition": {
+              "title": "AI Service Response Time",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "q": "avg:maily.ai.response_time{*} by {operation}.rollup(avg, 60)",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "dog_classic",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                }
+              ],
+              "yaxis": {
+                "scale": "linear",
+                "include_zero": true,
+                "min": "auto",
+                "max": "auto",
+                "label": "seconds"
+              },
+              "markers": [
+                {
+                  "value": "y = 5",
+                  "display_type": "warning dashed",
+                  "label": "Warning Threshold"
+                },
+                {
+                  "value": "y = 10",
+                  "display_type": "error dashed",
+                  "label": "Error Threshold"
+                }
+              ]
+            }
+          },
+          {
+            "id": 14,
+            "definition": {
+              "title": "AI Token Usage",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "q": "sum:maily.ai.token_usage{*} by {model}.rollup(sum, 3600)",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "dog_classic",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                }
+              ],
+              "yaxis": {
+                "scale": "linear",
+                "include_zero": true,
+                "min": "auto",
+                "max": "auto",
+                "label": "tokens/hour"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": 15,
+      "definition": {
+        "title": "WebSocket Performance",
+        "type": "group",
+        "layout_type": "ordered",
+        "widgets": [
+          {
+            "id": 16,
+            "definition": {
+              "title": "Active WebSocket Connections",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "q": "sum:maily.websocket.connections{*}.rollup(avg, 60)",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "dog_classic",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                }
+              ],
+              "yaxis": {
+                "scale": "linear",
+                "include_zero": true,
+                "min": "auto",
+                "max": "auto",
+                "label": "connections"
+              }
+            }
+          },
+          {
+            "id": 17,
+            "definition": {
+              "title": "WebSocket Message Rate",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "q": "sum:maily.websocket.messages{*} by {type}.as_rate()",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "dog_classic",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                }
+              ],
+              "yaxis": {
+                "scale": "linear",
+                "include_zero": true,
+                "min": "auto",
+                "max": "auto",
+                "label": "messages/second"
+              }
+            }
+          },
+          {
+            "id": 18,
+            "definition": {
+              "title": "WebSocket Latency",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "q": "avg:maily.websocket.latency{*}.rollup(avg, 60)",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "dog_classic",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                }
+              ],
+              "yaxis": {
+                "scale": "linear",
+                "include_zero": true,
+                "min": "auto",
+                "max": "auto",
+                "label": "milliseconds"
+              },
+              "markers": [
+                {
+                  "value": "y = 100",
+                  "display_type": "warning dashed",
+                  "label": "Warning Threshold"
+                },
+                {
+                  "value": "y = 200",
+                  "display_type": "error dashed",
+                  "label": "Error Threshold"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": 19,
+      "definition": {
+        "title": "Blockchain Performance",
+        "type": "group",
+        "layout_type": "ordered",
+        "widgets": [
+          {
+            "id": 20,
+            "definition": {
+              "title": "Blockchain Transaction Rate",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "q": "sum:maily.blockchain.transactions{*} by {type}.as_rate()",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "dog_classic",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                }
+              ],
+              "yaxis": {
+                "scale": "linear",
+                "include_zero": true,
+                "min": "auto",
+                "max": "auto",
+                "label": "transactions/second"
+              }
+            }
+          },
+          {
+            "id": 21,
+            "definition": {
+              "title": "Blockchain Gas Usage",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "q": "sum:maily.blockchain.gas_used{*} by {contract}.rollup(sum, 3600)",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "dog_classic",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                }
+              ],
+              "yaxis": {
+                "scale": "linear",
+                "include_zero": true,
+                "min": "auto",
+                "max": "auto",
+                "label": "gas units/hour"
+              }
+            }
+          },
+          {
+            "id": 22,
+            "definition": {
+              "title": "Blockchain Transaction Confirmation Time",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "q": "avg:maily.blockchain.confirmation_time{*} by {network}.rollup(avg, 60)",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "dog_classic",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                }
+              ],
+              "yaxis": {
+                "scale": "linear",
+                "include_zero": true,
+                "min": "auto",
+                "max": "auto",
+                "label": "seconds"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": 23,
+      "definition": {
+        "title": "Infrastructure",
+        "type": "group",
+        "layout_type": "ordered",
+        "widgets": [
+          {
+            "id": 24,
+            "definition": {
+              "title": "Kubernetes Pod Status",
+              "type": "toplist",
+              "requests": [
+                {
+                  "q": "sum:kubernetes.pods.running{cluster:maily-*} by {kube_deployment}",
+                  "conditional_formats": [
+                    {
+                      "comparator": ">",
+                      "value": 0,
+                      "palette": "white_on_green"
+                    },
+                    {
+                      "comparator": "<=",
+                      "value": 0,
+                      "palette": "white_on_red"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "id": 25,
+            "definition": {
+              "title": "CPU Usage by Service",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "q": "avg:kubernetes.cpu.usage.total{cluster:maily-*} by {kube_deployment}.rollup(avg, 60)",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "dog_classic",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                }
+              ],
+              "yaxis": {
+                "scale": "linear",
+                "include_zero": true,
+                "min": "auto",
+                "max": "auto",
+                "label": "CPU cores"
+              }
+            }
+          },
+          {
+            "id": 26,
+            "definition": {
+              "title": "Memory Usage by Service",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "q": "avg:kubernetes.memory.usage{cluster:maily-*} by {kube_deployment}.rollup(avg, 60)",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "dog_classic",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                }
+              ],
+              "yaxis": {
+                "scale": "linear",
+                "include_zero": true,
+                "min": "auto",
+                "max": "auto",
+                "label": "bytes"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": 27,
+      "definition": {
+        "title": "Business Metrics",
+        "type": "group",
+        "layout_type": "ordered",
+        "widgets": [
+          {
+            "id": 28,
+            "definition": {
+              "title": "Active Users",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "q": "sum:maily.users.active{*}.rollup(avg, 3600)",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "dog_classic",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                }
+              ],
+              "yaxis": {
+                "scale": "linear",
+                "include_zero": true,
+                "min": "auto",
+                "max": "auto",
+                "label": "users"
+              }
+            }
+          },
+          {
+            "id": 29,
+            "definition": {
+              "title": "Email Campaigns",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "q": "sum:maily.campaigns.created{*}.as_count()",
+                  "display_type": "bars",
+                  "style": {
+                    "palette": "cool",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                },
+                {
+                  "q": "sum:maily.campaigns.sent{*}.as_count()",
+                  "display_type": "bars",
+                  "style": {
+                    "palette": "warm",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                }
+              ],
+              "yaxis": {
+                "scale": "linear",
+                "include_zero": true,
+                "min": "auto",
+                "max": "auto",
+                "label": "campaigns"
+              }
+            }
+          },
+          {
+            "id": 30,
+            "definition": {
+              "title": "Email Delivery Metrics",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "q": "sum:maily.emails.sent{*}.as_count()",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "cool",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                },
+                {
+                  "q": "sum:maily.emails.delivered{*}.as_count()",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "green",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                },
+                {
+                  "q": "sum:maily.emails.opened{*}.as_count()",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "purple",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                },
+                {
+                  "q": "sum:maily.emails.clicked{*}.as_count()",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "orange",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                },
+                {
+                  "q": "sum:maily.emails.bounced{*}.as_count()",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "warm",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                }
+              ],
+              "yaxis": {
+                "scale": "linear",
+                "include_zero": true,
+                "min": "auto",
+                "max": "auto",
+                "label": "emails"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "template_variables": [
+    {
+      "name": "env",
+      "default": "*",
+      "prefix": "env",
+      "available_values": ["production", "staging", "development"]
+    },
+    {
+      "name": "service",
+      "default": "*",
+      "prefix": "service",
+      "available_values": ["frontend", "api", "ai-service", "websocket", "blockchain", "analytics", "campaign", "email", "workers"]
+    }
+  ],
+  "layout_type": "ordered",
+  "is_read_only": false,
+  "notify_list": [],
+  "reflow_type": "auto"
+}

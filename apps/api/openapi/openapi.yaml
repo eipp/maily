@@ -1,0 +1,1269 @@
+openapi: 3.1.0
+info:
+  title: JustMaily API
+  description: |
+    The JustMaily API provides endpoints for managing email campaigns, templates, analytics, and trust verification.
+    This API documentation follows the OpenAPI 3.1 specification.
+  version: 1.0.0
+  contact:
+    name: JustMaily Support
+    url: https://support.maily.example.com
+    email: support@maily.example.com
+  license:
+    name: Proprietary
+    url: https://maily.example.com/license
+servers:
+  - url: https://api.maily.example.com/v1
+    description: Production server
+  - url: https://api.staging.maily.example.com/v1
+    description: Staging server
+  - url: http://localhost:8000/v1
+    description: Local development server
+tags:
+  - name: Authentication
+    description: Authentication and authorization endpoints
+  - name: Users
+    description: User management endpoints
+  - name: Campaigns
+    description: Email campaign management endpoints
+  - name: Templates
+    description: Email template management endpoints
+  - name: Analytics
+    description: Analytics and reporting endpoints
+  - name: Verification
+    description: Trust verification endpoints
+  - name: AI
+    description: AI-powered content generation endpoints
+  - name: Webhooks
+    description: Webhook management endpoints
+  - name: Health
+    description: Health check endpoints
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      description: Check the health of the API service
+      operationId: healthCheck
+      tags:
+        - Health
+      responses:
+        '200':
+          description: API service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: API service is unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/login:
+    post:
+      summary: User login
+      description: Authenticate a user and get an access token
+      operationId: login
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Too many requests
+          headers:
+            X-RateLimit-Limit:
+              schema:
+                type: integer
+              description: The number of allowed requests in the current period
+            X-RateLimit-Remaining:
+              schema:
+                type: integer
+              description: The number of remaining requests in the current period
+            X-RateLimit-Reset:
+              schema:
+                type: integer
+              description: The time at which the current rate limit window resets in UTC epoch seconds
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/refresh:
+    post:
+      summary: Refresh token
+      description: Get a new access token using a refresh token
+      operationId: refreshToken
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+      responses:
+        '200':
+          description: Token refresh successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshTokenResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Invalid refresh token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/logout:
+    post:
+      summary: User logout
+      description: Invalidate the current access token
+      operationId: logout
+      tags:
+        - Authentication
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Logout successful
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /users:
+    get:
+      summary: List users
+      description: Get a list of users
+      operationId: listUsers
+      tags:
+        - Users
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: search
+          in: query
+          description: Search term for filtering users
+          schema:
+            type: string
+        - name: status
+          in: query
+          description: Filter users by status
+          schema:
+            type: string
+            enum: [active, inactive, pending]
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      summary: Create user
+      description: Create a new user
+      operationId: createUser
+      tags:
+        - Users
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: User already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /users/{userId}:
+    get:
+      summary: Get user
+      description: Get a user by ID
+      operationId: getUser
+      tags:
+        - Users
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          description: User ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: User details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      summary: Update user
+      description: Update a user by ID
+      operationId: updateUser
+      tags:
+        - Users
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          description: User ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        '200':
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: Delete user
+      description: Delete a user by ID
+      operationId: deleteUser
+      tags:
+        - Users
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          description: User ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: User deleted
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /campaigns:
+    get:
+      summary: List campaigns
+      description: Get a list of campaigns
+      operationId: listCampaigns
+      tags:
+        - Campaigns
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: status
+          in: query
+          description: Filter campaigns by status
+          schema:
+            type: string
+            enum: [draft, scheduled, sending, sent, archived]
+        - name: search
+          in: query
+          description: Search term for filtering campaigns
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of campaigns
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      summary: Create campaign
+      description: Create a new campaign
+      operationId: createCampaign
+      tags:
+        - Campaigns
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCampaignRequest'
+      responses:
+        '201':
+          description: Campaign created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /campaigns/{campaignId}:
+    get:
+      summary: Get campaign
+      description: Get a campaign by ID
+      operationId: getCampaign
+      tags:
+        - Campaigns
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: campaignId
+          in: path
+          description: Campaign ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Campaign details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Campaign not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      summary: Update campaign
+      description: Update a campaign by ID
+      operationId: updateCampaign
+      tags:
+        - Campaigns
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: campaignId
+          in: path
+          description: Campaign ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCampaignRequest'
+      responses:
+        '200':
+          description: Campaign updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Campaign not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: Delete campaign
+      description: Delete a campaign by ID
+      operationId: deleteCampaign
+      tags:
+        - Campaigns
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: campaignId
+          in: path
+          description: Campaign ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Campaign deleted
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Campaign not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /campaigns/{campaignId}/send:
+    post:
+      summary: Send campaign
+      description: Send a campaign
+      operationId: sendCampaign
+      tags:
+        - Campaigns
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: campaignId
+          in: path
+          description: Campaign ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendCampaignRequest'
+      responses:
+        '202':
+          description: Campaign sending started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendCampaignResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Campaign not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Campaign already sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /campaigns/{campaignId}/verify:
+    post:
+      summary: Verify campaign
+      description: Verify a campaign for trust and compliance
+      operationId: verifyCampaign
+      tags:
+        - Campaigns
+        - Verification
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: campaignId
+          in: path
+          description: Campaign ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '202':
+          description: Campaign verification started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Campaign not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /campaigns/{campaignId}/analytics:
+    get:
+      summary: Get campaign analytics
+      description: Get analytics for a campaign
+      operationId: getCampaignAnalytics
+      tags:
+        - Campaigns
+        - Analytics
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: campaignId
+          in: path
+          description: Campaign ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: startDate
+          in: query
+          description: Start date for analytics (ISO 8601)
+          schema:
+            type: string
+            format: date-time
+        - name: endDate
+          in: query
+          description: End date for analytics (ISO 8601)
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Campaign analytics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignAnalyticsResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Campaign not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /templates:
+    get:
+      summary: List templates
+      description: Get a list of email templates
+      operationId: listTemplates
+      tags:
+        - Templates
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: category
+          in: query
+          description: Filter templates by category
+          schema:
+            type: string
+        - name: search
+          in: query
+          description: Search term for filtering templates
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of templates
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      summary: Create template
+      description: Create a new email template
+      operationId: createTemplate
+      tags:
+        - Templates
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTemplateRequest'
+      responses:
+        '201':
+          description: Template created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /templates/{templateId}:
+    get:
+      summary: Get template
+      description: Get an email template by ID
+      operationId: getTemplate
+      tags:
+        - Templates
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: templateId
+          in: path
+          description: Template ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Template details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Template not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      summary: Update template
+      description: Update an email template by ID
+      operationId: updateTemplate
+      tags:
+        - Templates
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: templateId
+          in: path
+          description: Template ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTemplateRequest'
+      responses:
+        '200':
+          description: Template updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Template not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: Delete template
+      description: Delete an email template by ID
+      operationId: deleteTemplate
+      tags:
+        - Templates
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: templateId
+          in: path
+          description: Template ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Template deleted
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Template not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /ai/generate:
+    post:
+      summary: Generate content
+      description: Generate content using AI
+      operationId: generateContent
+      tags:
+        - AI
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateContentRequest'
+      responses:
+        '200':
+          description: Generated content
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateContentResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Too many requests
+          headers:
+            X-RateLimit-Limit:
+              schema:
+                type: integer
+              description: The number of allowed requests in the current period
+            X-RateLimit-Remaining:
+              schema:
+                type: integer
+              description: The number of remaining requests in the current period
+            X-RateLimit-Reset:
+              schema:
+                type: integer
+              description: The time at which the current rate limit window resets in UTC epoch seconds
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /ai/analyze:
+    post:
+      summary: Analyze content
+      description: Analyze content using AI
+      operationId: analyzeContent
+      tags:
+        - AI
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalyzeContentRequest'
+      responses:
+        '200':
+          description: Content analysis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyzeContentResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Too many requests
+          headers:
+            X-RateLimit-Limit:
+              schema:
+                type: integer
+              description: The number of allowed requests in the current period
+            X-RateLimit-Remaining:
+              schema:
+                type: integer
+              description: The number of remaining requests in the current period
+            X-RateLimit-Reset:
+              schema:
+                type: integer
+              description: The time at which the current rate limit window resets in UTC epoch seconds
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /verification/certificates:
+    get:
+      summary: List certificates
+      description: Get a list of verification certificates
+      operationId: listCertificates
+      tags:
+        - Verification
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: type
+          in: query
+          description: Filter certificates by type
+          schema:
+            type: string
+            enum: [email, sender, content, domain]
+        - name: status
+          in: query
+          description: Filter certificates by status
+          schema:
+            type: string
+            enum: [valid, expired, revoked]
+      responses:
+        '200':
+          description: List of certificates
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertificateListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      summary: Create certificate
+      description: Create a new verification certificate
+      operationId: createCertificate
+      tags:
+        - Verification
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCertificateRequest'
+      responses:
+        '202':
+          description: Certificate creation started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertificateResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /verification/certificates/{certificateId}:
+    get:
+      summary: Get certificate
+      description: Get a verification certificate by ID
+      operationId: getCertificate
+      tags:
+        - Verification
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: certificateId
+          in: path
+          description: Certificate ID
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Certificate details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertificateResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Certificate not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: Revoke certificate
+      description: Revoke a verification certificate by ID
+      operationId: revokeCertificate
+      tags:
+        - Verification
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: certificateId
+          in: path
+          description: Certificate ID
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeCertificateRequest'
+      responses:
+        '202':
+          description: Certificate revocation started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertificateResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Certificate not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /verification/certificates/{certificateId}/verify:
+    post:
+      summary: Verify certificate
+      description: Verify a certificate's authenticity
+      operationId: verifyCertificate
+      tags:
+        - Verification
+      parameters:
+        - name: certificateId
+          in: path
+          description: Certificate ID
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Certificate verification result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifyCertificateResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Certificate not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /analytics/dashboard:
+    get:
+      summary: Get analytics dashboard
+      description: Get analytics dashboard data
+      operationId: getAnalyticsDashboard
+      tags:
+        - Analytics
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: startDate
+          in: query
+          description: Start date for analytics (ISO 8601)
+          schema:
+            type: string
+            format: date-time
+        - name: endDate
+          in: query
+          description: End date for analytics (ISO 8601)
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Analytics dashboard data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyticsDashboardResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /analytics/reports:
+    get:
+      summary: List reports
+      description: Get a list of analytics reports
+      operationId: listReports
+      tags:
+        - Analytics
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: type
+          in: query
+          description: Filter reports by type
+          schema:
+            type: string
+            enum: [campaign, user, system]
+      responses:
+        '200':
+          description: List

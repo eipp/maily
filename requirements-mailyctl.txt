@@ -1,0 +1,30 @@
+# Maily Control Tool Requirements
+
+# Core dependencies
+docopt>=0.6.2,<0.7.0        # Command-line interface parser
+pyyaml>=6.0,<7.0            # YAML configuration file parsing
+requests>=2.28.0,<3.0.0     # HTTP requests
+colorama>=0.4.6,<0.5.0      # Terminal color output
+
+# Kubernetes dependencies
+kubernetes>=26.1.0,<27.0.0  # Kubernetes Python client
+
+# AWS dependencies
+boto3>=1.26.0,<2.0.0        # AWS SDK for Python
+
+# Monitoring dependencies
+prometheus-client>=0.16.0,<0.17.0  # Prometheus metrics
+datadog>=0.44.0,<0.45.0            # Datadog metrics
+
+# Testing dependencies
+pytest>=7.3.1,<8.0.0        # Testing framework
+pytest-cov>=4.1.0,<5.0.0    # Test coverage
+
+# Blockchain dependencies
+web3>=6.0.0,<7.0.0          # Ethereum interface
+
+# Utility dependencies
+python-dotenv>=1.0.0,<2.0.0  # Environment variable loading
+jsonschema>=4.17.3,<5.0.0    # JSON schema validation
+tabulate>=0.9.0,<0.10.0      # Pretty-print tabular data
+rich>=13.3.5,<14.0.0         # Rich text and formatting in the terminal
