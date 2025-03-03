@@ -7,6 +7,7 @@ It implements connection pooling, ORM capabilities, and migration support.
 
 import os
 import logging
+import uuid
 from typing import Any, Dict, List, Optional, Union
 from contextlib import contextmanager
 from datetime import datetime
@@ -245,6 +246,23 @@ def run_migrations():
         raise
 
 
+from ai_service.utils.resilience import circuit_breaker, CircuitBreakerOpenError
+
+@circuit_breaker(
+    name="database_get_session",
+    failure_threshold=3,
+    recovery_timeout=60.0,
+    fallback_function=lambda session_id: {
+        "id": session_id,
+        "user_id": "unknown",
+        "status": "error",
+        "messages": [],
+        "agents": [],
+        "metadata": {"error": "Database service temporarily unavailable"},
+        "created_at": None,
+        "updated_at": None
+    }
+)
 def get_session(session_id: str) -> Optional[Dict[str, Any]]:
     """
     Get an AI session by ID
@@ -254,6 +272,7 @@ def get_session(session_id: str) -> Optional[Dict[str, Any]]:
         
     Returns:
         The session as a dictionary, or None if not found
+        When the circuit breaker is open, returns a fallback response with error metadata
     """
     try:
         with get_db_session() as session:
@@ -279,6 +298,23 @@ def get_session(session_id: str) -> Optional[Dict[str, Any]]:
         raise
 
 
+@circuit_breaker(
+    name="database_create_session",
+    failure_threshold=3,
+    recovery_timeout=60.0,
+    fallback_function=lambda user_id, metadata=None: {
+        "id": f"fallback-{str(uuid.uuid4())}",
+        "user_id": user_id,
+        "status": "error",
+        "metadata": {
+            **(metadata or {}),
+            "error": "Database service temporarily unavailable",
+            "fallback": True
+        },
+        "created_at": datetime.utcnow().isoformat(),
+        "updated_at": datetime.utcnow().isoformat()
+    }
+)
 def create_session(user_id: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Create a new AI session
@@ -289,6 +325,7 @@ def create_session(user_id: str, metadata: Optional[Dict[str, Any]] = None) -> D
         
     Returns:
         The created session as a dictionary
+        When the circuit breaker is open, returns a fallback response with error metadata
     """
     try:
         import uuid
@@ -311,6 +348,23 @@ def create_session(user_id: str, metadata: Optional[Dict[str, Any]] = None) -> D
         raise
 
 
+@circuit_breaker(
+    name="database_add_message",
+    failure_threshold=3,
+    recovery_timeout=60.0,
+    fallback_function=lambda session_id, role, content, metadata=None: {
+        "id": f"fallback-{str(uuid.uuid4())}",
+        "session_id": session_id,
+        "role": role,
+        "content": content,
+        "metadata": {
+            **(metadata or {}),
+            "error": "Database service temporarily unavailable",
+            "fallback": True
+        },
+        "created_at": datetime.utcnow().isoformat()
+    }
+)
 def add_message(session_id: str, role: str, content: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Add a message to an AI session
@@ -323,6 +377,7 @@ def add_message(session_id: str, role: str, content: str, metadata: Optional[Dic
         
     Returns:
         The created message as a dictionary
+        When the circuit breaker is open, returns a fallback response with error metadata
     """
     try:
         import uuid
@@ -359,6 +414,25 @@ def add_message(session_id: str, role: str, content: str, metadata: Optional[Dic
         raise
 
 
+@circuit_breaker(
+    name="database_add_agent",
+    failure_threshold=3,
+    recovery_timeout=60.0,
+    fallback_function=lambda session_id, name, agent_type, metadata=None: {
+        "id": f"fallback-{str(uuid.uuid4())}",
+        "session_id": session_id,
+        "name": name,
+        "type": agent_type,
+        "status": "error",
+        "metadata": {
+            **(metadata or {}),
+            "error": "Database service temporarily unavailable",
+            "fallback": True
+        },
+        "created_at": datetime.utcnow().isoformat(),
+        "updated_at": datetime.utcnow().isoformat()
+    }
+)
 def add_agent(session_id: str, name: str, agent_type: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Add an agent to an AI session
@@ -371,10 +445,9 @@ def add_agent(session_id: str, name: str, agent_type: str, metadata: Optional[Di
         
     Returns:
         The created agent as a dictionary
+        When the circuit breaker is open, returns a fallback response with error metadata
     """
     try:
-        import uuid
-        
         agent_id = str(uuid.uuid4())
         
         with get_db_session() as session:

@@ -13,6 +13,32 @@ echo -e "${GREEN}====================================${NC}"
 echo "Started at: $(date)"
 echo
 
+# Function to prompt for authentication if needed
+check_k8s_auth() {
+  echo "Checking Kubernetes authentication..."
+  if ! kubectl get nodes &>/dev/null; then
+    echo -e "${YELLOW}Kubernetes authentication required${NC}"
+    echo "Please authenticate with the cluster using one of these methods:"
+    echo "1. AWS CLI: aws eks update-kubeconfig --name maily-production-cluster --region us-east-1"
+    echo "2. Or enter your AWS credentials when prompted"
+    
+    # Ask if user wants to continue with AWS auth
+    read -p "Do you want to try AWS authentication now? (y/n): " auth_choice
+    if [[ "$auth_choice" == "y" ]]; then
+      aws eks update-kubeconfig --name maily-production-cluster --region us-east-1
+      if [ $? -ne 0 ]; then
+        echo -e "${RED}Authentication failed. Please authenticate manually and run this script again.${NC}"
+        exit 1
+      fi
+    else
+      echo -e "${YELLOW}Please authenticate manually and run this script again.${NC}"
+      exit 1
+    fi
+  else
+    echo -e "${GREEN}Kubernetes authentication successful${NC}"
+  fi
+}
+
 # Extract credentials from config/.env.production
 if [ -f "config/.env.production" ]; then
     echo "Extracting API keys from config/.env.production"
@@ -23,16 +49,24 @@ if [ -f "config/.env.production" ]; then
     # Validate extracted keys
     if [ -z "$DATADOG_API_KEY" ] || [ -z "$DATADOG_APP_KEY" ] || [ -z "$VERCEL_TOKEN" ]; then
         echo -e "${YELLOW}Warning: One or more API keys not found in config/.env.production${NC}"
-        # Keep placeholders for missing keys
-        [ -z "$DATADOG_API_KEY" ] && DATADOG_API_KEY="[insert your actual key]"
-        [ -z "$DATADOG_APP_KEY" ] && DATADOG_APP_KEY="[insert your actual key]"
-        [ -z "$VERCEL_TOKEN" ] && VERCEL_TOKEN="[insert your actual token]"
+        echo "Please ensure these keys are set correctly before continuing."
+        
+        # Prompt for manual key entry if missing
+        if [ -z "$DATADOG_API_KEY" ]; then
+            read -p "Enter your Datadog API key: " DATADOG_API_KEY
+        fi
+        if [ -z "$DATADOG_APP_KEY" ]; then
+            read -p "Enter your Datadog App key: " DATADOG_APP_KEY
+        fi
+        if [ -z "$VERCEL_TOKEN" ]; then
+            read -p "Enter your Vercel token: " VERCEL_TOKEN
+        fi
     fi
 else
     echo -e "${YELLOW}Warning: config/.env.production not found for API key extraction${NC}"
-    DATADOG_API_KEY="[insert your actual key]"
-    DATADOG_APP_KEY="[insert your actual key]"
-    VERCEL_TOKEN="[insert your actual token]"
+    read -p "Enter your Datadog API key: " DATADOG_API_KEY
+    read -p "Enter your Datadog App key: " DATADOG_APP_KEY
+    read -p "Enter your Vercel token: " VERCEL_TOKEN
 fi
 
 # Set environment variables
@@ -53,8 +87,26 @@ echo -e "${YELLOW}Step 2: Verifying kubectl configuration${NC}"
 echo "Setting kubectl context to production cluster"
 kubectl config use-context "arn:aws:eks:us-east-1:178967885703:cluster/maily-production-cluster"
 
+# Check Kubernetes authentication
+check_k8s_auth
+
 echo "Verifying existing deployments"
 kubectl get deployments
+
+# Prompt for confirmation before proceeding with deployment
+echo
+echo -e "${YELLOW}Ready to start deployment sequence.${NC}"
+echo "This will deploy the latest Maily platform version to production with:"
+echo "1. Database migrations"
+echo "2. Backend services deployment"
+echo "3. Frontend deployment"
+echo "4. Post-deployment validation"
+
+read -p "Do you want to continue with the deployment? (y/n): " confirm
+if [[ "$confirm" != "y" ]]; then
+    echo "Deployment cancelled."
+    exit 0
+fi
 
 echo
 echo -e "${YELLOW}Step 3: Deployment Sequence${NC}"
@@ -137,6 +189,24 @@ check_ai_latency() {
     fi
 }
 
+# Ask if user wants to monitor for 1 hour
+read -p "Do you want to proceed with 1-hour monitoring? (y/n): " monitor_choice
+if [[ "$monitor_choice" != "y" ]]; then
+    echo "Skipping automatic monitoring. Please monitor the Datadog dashboard manually."
+    echo "Open: https://app.datadoghq.eu/dashboard/maily-production"
+    echo
+    echo -e "${GREEN}Deployment of new Trust Infrastructure completed${NC}"
+    echo "Key features implemented:"
+    echo "- Transaction batching"
+    echo "- Parallel verification workflows"
+    echo "- Memory caching"
+    echo
+    echo -e "${RED}IMPORTANT: Special attention required for blockchain metrics during first few hours${NC}"
+    echo
+    echo "Deployment script completed at: $(date)"
+    exit 0
+fi
+
 # Monitor for 1 hour (in 5-minute intervals)
 echo "Beginning 1-hour monitoring cycle..."
 for i in {1..12}; do
@@ -145,8 +215,14 @@ for i in {1..12}; do
     # Check blockchain verification
     if ! check_blockchain_verification; then
         echo -e "${RED}CRITICAL: Blockchain verification below threshold, initiating rollback...${NC}"
-        ./scripts/rollback-production.sh
-        exit 1
+        read -p "Do you want to proceed with automatic rollback? (y/n): " rollback_choice
+        if [[ "$rollback_choice" == "y" ]]; then
+            ./scripts/rollback-production.sh
+            exit 1
+        else
+            echo "Automatic rollback cancelled. Please monitor the situation manually."
+            echo "You can run the rollback script manually if needed: ./scripts/rollback-production.sh"
+        fi
     fi
     
     # Check AI latency
@@ -158,8 +234,14 @@ for i in {1..12}; do
             sleep 300
             if ! check_ai_latency; then
                 echo -e "${RED}CRITICAL: AI latency persistently high for >10 minutes, initiating rollback...${NC}"
-                ./scripts/rollback-production.sh
-                exit 1
+                read -p "Do you want to proceed with automatic rollback? (y/n): " rollback_choice
+                if [[ "$rollback_choice" == "y" ]]; then
+                    ./scripts/rollback-production.sh
+                    exit 1
+                else
+                    echo "Automatic rollback cancelled. Please monitor the situation manually."
+                    echo "You can run the rollback script manually if needed: ./scripts/rollback-production.sh"
+                fi
             fi
         fi
     fi
