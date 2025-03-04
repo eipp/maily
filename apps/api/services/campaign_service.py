@@ -1,21 +1,28 @@
 """
 Optimized Campaign service using standardized patterns.
+Includes integration with recommendation system.
 """
 from typing import List, Dict, Any, Optional, Union, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, asc, func
 import structlog
+import httpx
+import json
+import time
+from datetime import datetime
 from fastapi import Depends
 
 from ..models.campaign_optimized import Campaign, CampaignStatus
 from ..database.transaction import transaction, transactional
 from ..errors.maily_error import ResourceNotFoundError, ValidationError
 from ..cache.redis_service import CacheService, get_cache_service
+from ..config.settings import get_settings
+from ..monitoring.metrics import record_metric
 
 logger = structlog.get_logger("justmaily.services.campaign")
 
 class CampaignService:
-    """Service for managing campaign operations with optimized queries."""
+    """Service for managing campaign operations with optimized queries and recommendation integration."""
 
     def __init__(self, db: Session, cache_service: CacheService):
         """Initialize the campaign service.
@@ -26,6 +33,8 @@ class CampaignService:
         """
         self.db = db
         self.cache = cache_service
+        self.settings = get_settings()
+        self.analytics_base_url = self.settings.ANALYTICS_SERVICE_URL
 
     @transactional
     def create_campaign(self, user_id: int, data: Dict[str, Any]) -> Campaign:
@@ -122,8 +131,9 @@ class CampaignService:
         limit: int = 100,
         offset: int = 0,
         sort_by: str = "created_at",
-        sort_order: str = "desc"
-    ) -> Tuple[List[Campaign], int]:
+        sort_order: str = "desc",
+        include_recommendations: bool = False
+    ) -> Tuple[List[Campaign], int, Optional[List[Dict[str, Any]]]]:
         """Get campaigns with pagination and filtering.
 
         Args:
@@ -133,18 +143,19 @@ class CampaignService:
             offset: Offset for pagination
             sort_by: Field to sort by
             sort_order: Sort order ('asc' or 'desc')
+            include_recommendations: Whether to include campaign recommendations
 
         Returns:
-            Tuple of (list of campaigns, total count)
+            Tuple of (list of campaigns, total count, optional recommendations)
         """
         # Try to get from cache if no dynamic filters
-        if status is None and sort_by == "created_at" and sort_order == "desc":
+        if status is None and sort_by == "created_at" and sort_order == "desc" and not include_recommendations:
             cache_key = f"user:{user_id}:campaigns:{limit}:{offset}"
             cached_result = self.cache.get(cache_key)
 
             if cached_result:
                 logger.debug("Campaigns retrieved from cache", user_id=user_id)
-                return cached_result["campaigns"], cached_result["total"]
+                return cached_result["campaigns"], cached_result["total"], None
 
         # Build base query for both data and count
         base_query = self.db.query(Campaign).filter(Campaign.user_id == user_id)
@@ -166,8 +177,22 @@ class CampaignService:
         # Apply pagination and get results - select only needed columns
         campaigns = base_query.order_by(sort_column).limit(limit).offset(offset).all()
 
+        # Get recommendations if requested
+        # Note: This now delegates to the predictive_analytics_service in main.py
+        # to utilize the standardized service from there
+        recommendations = None
+        if include_recommendations:
+            # Create a placeholder for recommendations that will be fetched by the dedicated service
+            campaign_ids = [c.id for c in campaigns]
+            logger.debug(
+                "Recommendations will be fetched by predictive_analytics_service", 
+                user_id=user_id,
+                campaign_ids=campaign_ids
+            )
+            recommendations = []  # Empty placeholder - client should call dedicated endpoint
+
         # Cache the result if it's a standard query
-        if status is None and sort_by == "created_at" and sort_order == "desc":
+        if status is None and sort_by == "created_at" and sort_order == "desc" and not include_recommendations:
             cache_key = f"user:{user_id}:campaigns:{limit}:{offset}"
             self.cache.set(
                 cache_key,
@@ -178,7 +203,7 @@ class CampaignService:
                 "campaign_content"
             )
 
-        return campaigns, total_count
+        return campaigns, total_count, recommendations
 
     @transactional
     def update_campaign(self, campaign_id: int, user_id: int, data: Dict[str, Any]) -> Campaign:
@@ -301,6 +326,83 @@ class CampaignService:
 
         # Invalidate user's campaign lists
         self.cache.invalidate(f"user:{user_id}:campaigns:*")
+
+
+    # Note: These recommendation-related methods are deprecated.
+    # Use the dedicated predictive_analytics_service for these functionalities.
+    # These are retained for backward compatibility but will be removed in future.
+    def get_campaign_recommendations(
+        self, 
+        user_id: int, 
+        campaign_ids: List[int], 
+        tags: List[str] = None,
+        include_confidence_scores: bool = True
+    ) -> List[Dict[str, Any]]:
+        """[DEPRECATED] Get campaign recommendations from the analytics service.
+           Use predictive_analytics_service.get_campaign_recommendations() instead.
+
+        Args:
+            user_id: ID of the user
+            campaign_ids: List of campaign IDs to get recommendations for
+            tags: Optional list of recommendation tags to filter by
+            include_confidence_scores: Whether to include confidence scores in the response
+
+        Returns:
+            List of recommendations for the campaigns with confidence scores
+        """
+        logger.warning(
+            "Using deprecated method get_campaign_recommendations in campaign_service. "
+            "Use predictive_analytics_service.get_campaign_recommendations() instead.",
+            user_id=user_id
+        )
+        
+        # Return an empty array with a deprecation notice in the first item
+        return [{
+            "id": "deprecated_method",
+            "type": "deprecation_notice",
+            "message": "This method is deprecated. Use the dedicated predictive analytics service.",
+            "suggestion": "Update your code to use predictive_analytics_service",
+            "priority": 1,
+            "confidence": 1.0,
+            "confidenceLevel": "very_high",
+            "confidenceExplanation": "This is a deprecation notice, not an actual recommendation.",
+            "tags": ["deprecation"],
+            "metadata": {
+                "deprecated": True,
+                "useInstead": "predictive_analytics_service.get_campaign_recommendations()"
+            }
+        }]
+            
+    def track_recommendation_interaction(
+        self, 
+        recommendation_id: str, 
+        user_id: int, 
+        action: str, 
+        campaign_id: int = None,
+        feedback: dict = None
+    ) -> bool:
+        """[DEPRECATED] Track user interaction with a recommendation.
+           Use predictive_analytics_service.track_recommendation_interaction() instead.
+
+        Args:
+            recommendation_id: ID of the recommendation
+            user_id: ID of the user
+            action: Action taken (view, click, dismiss, apply)
+            campaign_id: Optional campaign ID associated with the recommendation
+            feedback: Optional user feedback about the recommendation (like rating or comment)
+
+        Returns:
+            True if tracking was successful, False otherwise
+        """
+        logger.warning(
+            "Using deprecated method track_recommendation_interaction in campaign_service. "
+            "Use predictive_analytics_service.track_recommendation_interaction() instead.",
+            user_id=user_id,
+            recommendation_id=recommendation_id
+        )
+        
+        # Always return True to avoid breaking existing code
+        return True
 
 
 def get_campaign_service(

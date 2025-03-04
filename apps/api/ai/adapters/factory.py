@@ -17,7 +17,7 @@ from .openai_adapter import OpenAIAdapter
 from .anthropic_adapter import AnthropicAdapter
 from .google_adapter import GoogleAIAdapter
 from .deepseek_adapter import DeepSeekAdapter
-from apps.api.errors.ai_service_errors import UnsupportedModelError, AIServiceError
+from packages.error_handling.python.error import UnsupportedModelError, AIError as AIServiceError
 
 logger = logging.getLogger(__name__)
 

@@ -10,7 +10,7 @@ from apps.api.services.api_key_service import (
     revoke_api_key,
     list_api_keys
 )
-from apps.api.errors.exceptions import NotFoundError, AuthenticationError
+from packages.error_handling.python.error import ResourceNotFoundError as NotFoundError, AuthenticationError
 
 
 @pytest.mark.asyncio

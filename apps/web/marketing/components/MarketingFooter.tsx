@@ -65,9 +65,20 @@ export function MarketingFooter() {
     try {
       setSubscribeStatus('loading');
 
-      // TODO: Implement newsletter subscription
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const response = await fetch('/api/newsletter/subscribe', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email }),
+      });
 
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to subscribe to newsletter');
+      }
+
+      // Track the event in analytics
       analyticsService.trackEvent('newsletter_subscribe', { email });
 
       setSubscribeStatus('success');
@@ -75,6 +86,7 @@ export function MarketingFooter() {
 
       setTimeout(() => setSubscribeStatus('idle'), 3000);
     } catch (error) {
+      console.error('Newsletter subscription error:', error);
       setSubscribeStatus('error');
       setTimeout(() => setSubscribeStatus('idle'), 3000);
     }

@@ -31,7 +31,19 @@ class MemoryIndexingSystem:
     def __init__(self):
         """Initialize the memory indexing system"""
         self.redis = get_redis_client()
+        self.update_callback = None  # Callback for memory updates
         
+    def set_update_callback(self, callback):
+        """
+        Set a callback function for memory updates
+        
+        Args:
+            callback: Function to call when a memory item is added, updated, or removed
+                     Signature: async def callback(network_id, memory_id, update_type, memory_data)
+        """
+        self.update_callback = callback
+        logger.info("Memory update callback registered")
+    
     async def add_memory_to_index(
         self, 
         network_id: str, 
@@ -90,6 +102,30 @@ class MemoryIndexingSystem:
             
             # Execute all operations
             await pipeline.execute()
+            
+            # Notify via callback if registered
+            if self.update_callback:
+                # Create memory data for callback
+                memory_data = {
+                    "id": memory_id,
+                    "type": memory_type,
+                    "content": content,
+                    "metadata": metadata,
+                    "network_id": network_id,
+                    "created_at": datetime.utcnow().isoformat(),
+                    "keywords": list(keywords),
+                    "ttl": ttl
+                }
+                
+                # Call the callback in a separate task to avoid blocking
+                asyncio.create_task(
+                    self.update_callback(
+                        network_id=network_id,
+                        memory_id=memory_id,
+                        update_type="memory_added",
+                        memory_data=memory_data
+                    )
+                )
             
             return True
             
@@ -270,6 +306,7 @@ class MemoryIndexingSystem:
             memory = json.loads(memory_data)
             memory_type = memory.get("type", "fact")
             content = memory.get("content", "")
+            metadata = memory.get("metadata", {})
             
             # Extract keywords from content
             keywords = self._extract_keywords(content)
@@ -297,10 +334,189 @@ class MemoryIndexingSystem:
             # Execute all operations
             await pipeline.execute()
             
+            # Notify via callback if registered
+            if self.update_callback:
+                # Create memory data for callback
+                callback_data = {
+                    "id": memory_id,
+                    "type": memory_type,
+                    "content": content,
+                    "metadata": metadata,
+                    "network_id": network_id,
+                    "removed_at": datetime.utcnow().isoformat()
+                }
+                
+                # Call the callback in a separate task to avoid blocking
+                asyncio.create_task(
+                    self.update_callback(
+                        network_id=network_id,
+                        memory_id=memory_id,
+                        update_type="memory_removed",
+                        memory_data=callback_data
+                    )
+                )
+            
             return True
             
         except Exception as e:
             logger.error(f"Failed to remove memory from index: {e}")
+            return False
+    
+    async def update_memory(
+        self,
+        network_id: str,
+        memory_id: str,
+        content: Optional[str] = None,
+        memory_type: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        ttl: Optional[int] = None
+    ) -> bool:
+        """
+        Update an existing memory item
+        
+        Args:
+            network_id: ID of the network
+            memory_id: ID of the memory item
+            content: New content (if None, will not be updated)
+            memory_type: New memory type (if None, will not be updated)
+            metadata: New metadata (if None, will not be updated)
+            ttl: New TTL in seconds (if None, will not change expiration)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Get current memory data
+            memory_key = f"{MEMORY_KEY_PREFIX}{memory_id}"
+            current_data = await self.redis.get(memory_key)
+            
+            if not current_data:
+                logger.warning(f"Memory {memory_id} not found for update")
+                return False
+            
+            # Parse current data
+            memory = json.loads(current_data)
+            
+            # Store original values for callback
+            original_content = memory.get("content", "")
+            original_type = memory.get("type", "fact")
+            original_metadata = memory.get("metadata", {})
+            
+            # Track what was updated
+            updates = []
+            
+            # Update data if new values provided
+            if content is not None and content != original_content:
+                # Content changed, need to reindex
+                memory["content"] = content
+                updates.append("content")
+                
+                # Remove old keywords and add new ones
+                old_keywords = self._extract_keywords(original_content)
+                new_keywords = self._extract_keywords(content)
+                
+                # Keywords to remove (in old but not in new)
+                remove_keywords = old_keywords - new_keywords
+                # Keywords to add (in new but not in old)
+                add_keywords = new_keywords - old_keywords
+                
+                pipeline = self.redis.pipeline()
+                
+                # Remove old keywords
+                for keyword in remove_keywords:
+                    keyword_index_key = f"{MEMORY_INDEX_PREFIX}{network_id}:{keyword}"
+                    pipeline.lrem(keyword_index_key, 0, memory_id)
+                
+                # Add new keywords
+                for keyword in add_keywords:
+                    keyword_index_key = f"{MEMORY_INDEX_PREFIX}{network_id}:{keyword}"
+                    pipeline.lpush(keyword_index_key, memory_id)
+                
+                # Execute keyword updates
+                await pipeline.execute()
+            
+            # Update memory type if provided
+            if memory_type is not None and memory_type != original_type:
+                # Type changed, need to update type index
+                memory["type"] = memory_type
+                updates.append("type")
+                
+                pipeline = self.redis.pipeline()
+                
+                # Remove from old type index
+                old_type_index_key = f"{MEMORY_TYPE_INDEX_PREFIX}{network_id}:{original_type}"
+                pipeline.lrem(old_type_index_key, 0, memory_id)
+                
+                # Add to new type index
+                new_type_index_key = f"{MEMORY_TYPE_INDEX_PREFIX}{network_id}:{memory_type}"
+                pipeline.lpush(new_type_index_key, memory_id)
+                
+                # Execute type updates
+                await pipeline.execute()
+            
+            # Update metadata if provided
+            if metadata is not None:
+                memory["metadata"] = metadata
+                updates.append("metadata")
+            
+            # Update TTL if provided
+            if ttl is not None:
+                pipeline = self.redis.pipeline()
+                
+                # Current time
+                current_time = time.time()
+                
+                # Calculate expiration timestamp
+                expiration_time = current_time + ttl
+                
+                # Store expiration info
+                expiration_key = f"{MEMORY_EXPIRATION_PREFIX}{network_id}"
+                pipeline.zadd(expiration_key, {memory_id: expiration_time})
+                
+                # Execute TTL update
+                await pipeline.execute()
+                
+                updates.append("ttl")
+            
+            # Update timestamp
+            memory["updated_at"] = datetime.utcnow().isoformat()
+            updates.append("updated_at")
+            
+            # Save updated memory
+            await self.redis.set(memory_key, json.dumps(memory))
+            
+            # Notify via callback if registered and changes were made
+            if self.update_callback and updates:
+                # Create memory data for callback
+                callback_data = {
+                    "id": memory_id,
+                    "type": memory["type"],
+                    "content": memory["content"],
+                    "metadata": memory["metadata"],
+                    "network_id": network_id,
+                    "updated_at": memory["updated_at"],
+                    "updates": updates,
+                    "previous": {
+                        "content": original_content if "content" in updates else None,
+                        "type": original_type if "type" in updates else None,
+                        "metadata": original_metadata if "metadata" in updates else None
+                    }
+                }
+                
+                # Call the callback in a separate task to avoid blocking
+                asyncio.create_task(
+                    self.update_callback(
+                        network_id=network_id,
+                        memory_id=memory_id,
+                        update_type="memory_updated",
+                        memory_data=callback_data
+                    )
+                )
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to update memory: {e}")
             return False
     
     async def get_memory_stats(self, network_id: str) -> Dict[str, Any]:
@@ -376,12 +592,40 @@ class MemoryIndexingSystem:
             
             # Remove each expired memory
             for memory_id in expired_memories:
+                # Get memory content before removal for callback
+                memory_key = f"{MEMORY_KEY_PREFIX}{memory_id}"
+                memory_data = await self.redis.get(memory_key)
+                
                 # Remove from index
                 await self.remove_memory_from_index(network_id, memory_id)
                 
                 # Remove the actual memory
-                memory_key = f"{MEMORY_KEY_PREFIX}{memory_id}"
                 await self.redis.delete(memory_key)
+                
+                # Notify via callback about expiration if registered
+                if self.update_callback and memory_data:
+                    try:
+                        memory = json.loads(memory_data)
+                        callback_data = {
+                            "id": memory_id,
+                            "type": memory.get("type", "unknown"),
+                            "content": memory.get("content", ""),
+                            "metadata": memory.get("metadata", {}),
+                            "network_id": network_id,
+                            "expired_at": datetime.utcnow().isoformat()
+                        }
+                        
+                        # Call the callback in a separate task to avoid blocking
+                        asyncio.create_task(
+                            self.update_callback(
+                                network_id=network_id,
+                                memory_id=memory_id,
+                                update_type="memory_expired",
+                                memory_data=callback_data
+                            )
+                        )
+                    except Exception as callback_err:
+                        logger.error(f"Error in expiration callback: {callback_err}")
             
             logger.info(f"Successfully removed {len(expired_memories)} expired memories")
             

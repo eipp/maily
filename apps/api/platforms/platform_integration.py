@@ -277,7 +277,7 @@ class EmailAdapter(PlatformAdapter):
         elif platform_name == "mailgun":
             # Initialize Mailgun client
             try:
-                import requests
+                import httpx
                 return {
                     "api_key": self.credentials.api_key,
                     "session": requests.Session(),
@@ -363,7 +363,7 @@ class EmailAdapter(PlatformAdapter):
 
             elif platform_name == "mailgun":
                 # Send with Mailgun
-                import requests
+                import httpx
 
                 domain = self.client["domain"]
                 auth = ("api", self.client["api_key"])
@@ -566,7 +566,7 @@ class EmailAdapter(PlatformAdapter):
 
             elif platform_name == "mailgun":
                 # Verify Mailgun credentials by making a simple API call
-                import requests
+                import httpx
 
                 domain = self.client["domain"]
                 auth = ("api", self.client["api_key"])

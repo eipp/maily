@@ -1,0 +1,324 @@
+openapi: 3.1.0
+info:
+  title: Recommendation API Endpoints
+  description: |
+    API endpoints for campaign recommendations and suggestion features
+  version: 1.0.0
+
+paths:
+  /recommendations:
+    get:
+      summary: Get recommendations
+      description: Get a list of recommendations
+      operationId: getRecommendations
+      tags:
+        - Recommendations
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: entityType
+          in: query
+          description: Filter recommendations by entity type
+          schema:
+            type: string
+            enum: [campaign, template, content]
+        - name: entityId
+          in: query
+          description: Filter recommendations for a specific entity ID
+          schema:
+            type: string
+        - name: tags
+          in: query
+          description: Filter recommendations by tags (comma-separated)
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Maximum number of recommendations to return
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 50
+        - name: priority
+          in: query
+          description: Only return recommendations with priority equal or higher than this value
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10
+      responses:
+        '200':
+          description: List of recommendations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Recommendation'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /recommendations/{recommendationId}/track:
+    post:
+      summary: Track recommendation interaction
+      description: Track user interaction with a recommendation
+      operationId: trackRecommendationInteraction
+      tags:
+        - Recommendations
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: recommendationId
+          in: path
+          description: Recommendation ID
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - action
+              properties:
+                action:
+                  type: string
+                  enum: [view, click, dismiss, apply]
+                  description: The type of interaction
+                entityId:
+                  type: string
+                  description: Optional entity ID associated with this interaction
+                metadata:
+                  type: object
+                  description: Additional metadata about the interaction
+      responses:
+        '200':
+          description: Interaction tracked successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        example: "rec_interaction_1234"
+                      timestamp:
+                        type: string
+                        format: date-time
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Recommendation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /campaigns/{campaignId}/recommendations:
+    get:
+      summary: Get campaign recommendations
+      description: Get recommendations for a specific campaign
+      operationId: getCampaignRecommendations
+      tags:
+        - Campaigns
+        - Recommendations
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: campaignId
+          in: path
+          description: Campaign ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: tags
+          in: query
+          description: Filter recommendations by tags (comma-separated)
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Maximum number of recommendations to return
+          schema:
+            type: integer
+            default: 5
+            minimum: 1
+            maximum: 20
+      responses:
+        '200':
+          description: List of campaign recommendations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Recommendation'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Campaign not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    Recommendation:
+      type: object
+      required:
+        - id
+        - ruleId
+        - ruleName
+        - type
+        - message
+        - suggestion
+        - context
+        - priority
+        - timestamp
+      properties:
+        id:
+          type: string
+          example: "rec_1234"
+        ruleId:
+          type: string
+          example: "rule_performance_threshold"
+        ruleName:
+          type: string
+          example: "Performance Improvement"
+        type:
+          type: string
+          enum: [threshold, trend, anomaly, comparison, ai_generated]
+          example: "trend"
+        message:
+          type: string
+          example: "Your open rate is declining by 5% per week"
+        suggestion:
+          type: string
+          example: "Consider running an A/B test on your subject lines"
+        context:
+          type: object
+          required:
+            - metric
+            - value
+            - confidence
+          properties:
+            metric:
+              type: string
+              example: "open_rate"
+            value:
+              type: number
+              example: 15.2
+            confidence:
+              type: number
+              example: 0.85
+            threshold:
+              type: number
+              example: 20
+            previousValue:
+              type: number
+              example: 20.3
+            changePercent:
+              type: number
+              example: -5.1
+            metadata:
+              type: object
+              example: {
+                "timeframe": "last_2_weeks",
+                "sampleSize": 2500
+              }
+        priority:
+          type: integer
+          minimum: 1
+          maximum: 10
+          example: 8
+        tags:
+          type: array
+          items:
+            type: string
+          example: ["performance", "engagement", "subject_line"]
+        entityType:
+          type: string
+          example: "campaign"
+        entityId:
+          type: string
+          example: "campaign_5678"
+        timestamp:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        dismissed:
+          type: boolean
+          default: false
+        applied:
+          type: boolean
+          default: false
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              example: "invalid_request"
+            message:
+              type: string
+              example: "Invalid request parameters"
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    example: "action"
+                  message:
+                    type: string
+                    example: "Must be one of: view, click, dismiss, apply"

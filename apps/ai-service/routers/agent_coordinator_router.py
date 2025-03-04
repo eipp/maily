@@ -419,6 +419,112 @@ async def add_memory(
             detail=f"Failed to add memory: {str(e)}"
         )
 
+class UpdateMemoryRequest(BaseModel):
+    content: Optional[str] = Field(None, description="Content of the memory item")
+    memory_type: Optional[str] = Field(None, description="Type of memory (fact, context, decision, feedback)")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
+    ttl: Optional[int] = Field(None, description="Time-to-live in seconds")
+
+class UpdateMemoryResponse(BaseModel):
+    memory_id: str = Field(..., description="ID of the updated memory item")
+    network_id: str = Field(..., description="ID of the network")
+    type: str = Field(..., description="Type of the memory item")
+    updated_at: str = Field(..., description="Update timestamp")
+    updates: List[str] = Field(..., description="Fields that were updated")
+
+@router.patch("/mesh/networks/{network_id}/memory/{memory_id}", response_model=UpdateMemoryResponse, tags=["AI Mesh Network"])
+async def update_memory(
+    request: UpdateMemoryRequest,
+    network_id: str = Path(..., description="ID of the network"),
+    memory_id: str = Path(..., description="ID of the memory item"),
+    coordinator: AgentCoordinator = Depends(get_coordinator)
+):
+    """Update a memory item in the shared memory"""
+    try:
+        # Access the memory indexing system to perform the update
+        from ..implementations.memory.memory_indexing import get_memory_indexing_system
+        memory_indexing = get_memory_indexing_system()
+        
+        # Verify network exists
+        network = await coordinator.get_network(network_id)
+        if not network:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Network {network_id} not found"
+            )
+        
+        # Get current memory item to check if it exists
+        memory = await coordinator._get_memory(memory_id)
+        if not memory:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Memory item {memory_id} not found"
+            )
+        
+        # Check if the memory belongs to this network
+        if memory.get("network_id") != network_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Memory item {memory_id} not found in network {network_id}"
+            )
+        
+        # Track what gets updated
+        updates = []
+        if request.content is not None:
+            updates.append("content")
+        if request.memory_type is not None:
+            updates.append("type")
+        if request.metadata is not None:
+            updates.append("metadata")
+        if request.ttl is not None:
+            updates.append("ttl")
+        
+        if not updates:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No updates provided"
+            )
+        
+        # Perform the update
+        success = await memory_indexing.update_memory(
+            network_id=network_id,
+            memory_id=memory_id,
+            content=request.content,
+            memory_type=request.memory_type,
+            metadata=request.metadata,
+            ttl=request.ttl
+        )
+        
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update memory item"
+            )
+        
+        # Get updated memory details
+        updated_memory = await coordinator._get_memory(memory_id)
+        
+        return {
+            "memory_id": memory_id,
+            "network_id": network_id,
+            "type": updated_memory["type"],
+            "updated_at": updated_memory["updated_at"],
+            "updates": updates
+        }
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Failed to update memory: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update memory: {str(e)}"
+        )
+
 @router.get("/mesh/networks/{network_id}/memory", tags=["AI Mesh Network"])
 async def get_memory(
     network_id: str = Path(..., description="ID of the network"),

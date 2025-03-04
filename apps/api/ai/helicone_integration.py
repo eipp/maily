@@ -3,7 +3,7 @@
 import os
 import logging
 from typing import Dict, Any, Optional, List, Union
-import aiohttp
+import httpx
 from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)

@@ -10,9 +10,9 @@ from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_excep
 
 from .base import BaseModelAdapter, ModelRequest, ModelResponse
 from .adapter_utils import AdapterInitializer, ResponseIteratorFactory, CommonModelHelpers
-from apps.api.errors.ai_service_errors import (
-    AIServiceError,
-    RateLimitError,
+from packages.error_handling.python.error import (
+    AIError as AIServiceError,
+    RateLimitExceededError as RateLimitError,
     AuthenticationError,
     ValidationError,
     ServerError,

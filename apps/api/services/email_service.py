@@ -8,8 +8,8 @@ import time
 import uuid
 from typing import Dict, Any, Optional
 
-import requests
-from requests.exceptions import RequestException
+import httpx
+from httpx import RequestException
 
 # Configure logging
 logging.basicConfig(

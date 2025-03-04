@@ -2,12 +2,22 @@ from typing import Dict, List, Any, Optional, Union, Tuple
 import asyncio
 import json
 import uuid
-from loguru import logger
+import logging
 from datetime import datetime
 
 from ..models.canvas import CanvasOperation, OperationTransform, CanvasState
 from ..database.mongodb import get_database
-from ..cache.redis_client import get_redis_client
+from packages.database.src.redis import redis_client
+from packages.error_handling.python.errors import (
+    NotFoundError, 
+    DatabaseError, 
+    InfrastructureError,
+    ValidationError,
+    ApplicationError
+)
+
+# Configure logger
+logger = logging.getLogger(__name__)
 
 class CanvasService:
     """
@@ -17,21 +27,23 @@ class CanvasService:
 
     def __init__(self):
         self.db = None
-        self.redis = None
         self.lock = asyncio.Lock()
         self.canvas_locks = {}  # Per-canvas locks
 
     async def initialize(self):
         """Initialize the service with database and cache connections"""
-        self.db = await get_database()
-        self.redis = await get_redis_client()
-        logger.info("Canvas service initialized")
+        try:
+            self.db = await get_database()
+            logger.info("Canvas service initialized")
+        except Exception as e:
+            logger.error(f"Failed to initialize Canvas service: {str(e)}")
+            raise InfrastructureError(
+                message="Failed to initialize Canvas service",
+                details={"error": str(e)}
+            )
 
     async def close(self):
         """Close connections"""
-        # No explicit close needed for MongoDB client
-        if self.redis:
-            await self.redis.close()
         logger.info("Canvas service connections closed")
 
     async def get_canvas_lock(self, canvas_id: str) -> asyncio.Lock:
@@ -46,7 +58,7 @@ class CanvasService:
         try:
             # Try from Redis cache first
             cache_key = f"canvas:state:{canvas_id}"
-            cached_state = await self.redis.get(cache_key)
+            cached_state = await redis_client.get(cache_key)
 
             if cached_state:
                 return json.loads(cached_state)
@@ -60,16 +72,19 @@ class CanvasService:
                 return {"id": canvas_id, "version": 0, "elements": {}}
 
             # Cache for future requests (60 seconds TTL)
-            await self.redis.set(
+            await redis_client.set(
                 cache_key,
                 json.dumps(canvas),
-                expire=60
+                ttl=60
             )
 
             return canvas
         except Exception as e:
             logger.error(f"Error getting canvas state: {e}")
-            return {"id": canvas_id, "version": 0, "error": str(e)}
+            raise DatabaseError(
+                message=f"Failed to get canvas state for canvas ID: {canvas_id}",
+                details={"canvas_id": canvas_id, "error": str(e)}
+            )
 
     async def get_operations_since(self, canvas_id: str, version: int) -> List[Dict[str, Any]]:
         """Get all operations for a canvas since a specific version"""
@@ -82,7 +97,10 @@ class CanvasService:
             return operations
         except Exception as e:
             logger.error(f"Error getting operations: {e}")
-            return []
+            raise DatabaseError(
+                message=f"Failed to get operations for canvas ID: {canvas_id}",
+                details={"canvas_id": canvas_id, "version": version, "error": str(e)}
+            )
 
     async def save_canvas_state(self, canvas_id: str, state: Dict[str, Any]):
         """Save canvas state to database and update cache"""
@@ -101,17 +119,20 @@ class CanvasService:
 
             # Update cache
             cache_key = f"canvas:state:{canvas_id}"
-            await self.redis.set(
+            await redis_client.set(
                 cache_key,
                 json.dumps(state),
-                expire=60
+                ttl=60
             )
 
             logger.debug(f"Canvas state saved for {canvas_id}, version {state.get('version', 0)}")
             return True
         except Exception as e:
             logger.error(f"Error saving canvas state: {e}")
-            return False
+            raise DatabaseError(
+                message=f"Failed to save canvas state for canvas ID: {canvas_id}",
+                details={"canvas_id": canvas_id, "error": str(e)}
+            )
 
     async def save_operations(self, canvas_id: str, operations: List[CanvasOperation], base_version: int, new_version: int):
         """Save operations to the database"""
@@ -137,7 +158,16 @@ class CanvasService:
             return True
         except Exception as e:
             logger.error(f"Error saving operations: {e}")
-            return False
+            raise DatabaseError(
+                message=f"Failed to save operations for canvas ID: {canvas_id}",
+                details={
+                    "canvas_id": canvas_id, 
+                    "base_version": base_version,
+                    "new_version": new_version,
+                    "operation_count": len(operations),
+                    "error": str(e)
+                }
+            )
 
     async def apply_operations(
         self,
@@ -160,7 +190,14 @@ class CanvasService:
                 # Check if operations are already applied or need transformation
                 if base_version > current_version:
                     logger.warning(f"Base version {base_version} is higher than current version {current_version}")
-                    return None
+                    raise ValidationError(
+                        message="Invalid base version for canvas operations",
+                        details={
+                            "canvas_id": canvas_id,
+                            "base_version": base_version,
+                            "current_version": current_version
+                        }
+                    )
 
                 # Check if base version is outdated
                 needs_transform = base_version < current_version
@@ -190,9 +227,7 @@ class CanvasService:
                 new_state["version"] = new_version
 
                 # Save updated state
-                success = await self.save_canvas_state(canvas_id, new_state)
-                if not success:
-                    return None
+                await self.save_canvas_state(canvas_id, new_state)
 
                 # Save operations to history
                 await self.save_operations(canvas_id, operations, base_version, new_version)
@@ -206,9 +241,20 @@ class CanvasService:
                     conflicts=errors
                 )
 
+            except ApplicationError:
+                # Re-raise application errors
+                raise
             except Exception as e:
                 logger.error(f"Error applying operations: {e}")
-                return None
+                raise InfrastructureError(
+                    message="Failed to apply canvas operations",
+                    details={
+                        "canvas_id": canvas_id, 
+                        "base_version": base_version,
+                        "operation_count": len(operations),
+                        "error": str(e)
+                    }
+                )
 
     async def _transform_operations(
         self,

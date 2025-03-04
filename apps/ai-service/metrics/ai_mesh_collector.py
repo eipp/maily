@@ -12,7 +12,7 @@ import json
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 
-from ..utils.redis_client import get_redis_client
+from packages.database.src.redis import get_redis_client
 from .ai_mesh_metrics import (
     update_memory_metrics, 
     update_network_info,
@@ -44,7 +44,8 @@ class AINetworkMetricsCollector:
         Args:
             collection_interval: Time between metric collections in seconds
         """
-        self.redis = get_redis_client()
+        # Initialize as None - will be set in start()
+        self.redis = None
         self.collection_interval = collection_interval
         self.running = False
         self.task = None
@@ -54,6 +55,9 @@ class AINetworkMetricsCollector:
         if self.running:
             logger.warning("Metrics collector already running")
             return
+        
+        # Initialize Redis client
+        self.redis = await get_redis_client()
         
         self.running = True
         self.task = asyncio.create_task(self._collection_loop())

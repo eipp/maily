@@ -1,0 +1,222 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: ai-mesh-sla-rules
+  namespace: monitoring
+  labels:
+    prometheus: k8s
+    role: alert-rules
+spec:
+  groups:
+  - name: ai-mesh-network-alerts
+    rules:
+      # Task queue backlog alerts
+      - alert: AIMeshTaskQueueBacklog
+        expr: sum(ai_mesh_task_queue_size) > 100
+        for: 5m
+        labels:
+          severity: warning
+          service: ai-service
+        annotations:
+          summary: "AI Mesh task queue backlog detected"
+          description: "The AI Mesh Network has {{ $value }} tasks in the queue, which is above the warning threshold (100) for more than 5 minutes."
+          runbook_url: "https://wiki.mailyapp.com/runbooks/ai-mesh/task-queue-issues"
+
+      - alert: AIMeshTaskQueueCriticalBacklog
+        expr: sum(ai_mesh_task_queue_size) > 500
+        for: 2m
+        labels:
+          severity: critical
+          service: ai-service
+        annotations:
+          summary: "AI Mesh task queue critical backlog"
+          description: "The AI Mesh Network has {{ $value }} tasks in the queue, which is above the critical threshold (500) for more than 2 minutes."
+          runbook_url: "https://wiki.mailyapp.com/runbooks/ai-mesh/task-queue-issues"
+
+      # Agent failure rate alerts
+      - alert: AIMeshAgentHighFailureRate
+        expr: sum(rate(ai_mesh_agent_tasks_total{status="failed"}[5m])) / sum(rate(ai_mesh_agent_tasks_total[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: ai-service
+          component: agent
+        annotations:
+          summary: "High failure rate for AI Mesh agents"
+          description: "The AI Mesh Network has a {{ $value | humanizePercentage }} failure rate for agent tasks over the last 5 minutes."
+          runbook_url: "https://wiki.mailyapp.com/runbooks/ai-mesh/agent-issues"
+
+      - alert: AIMeshAgentCriticalFailureRate
+        expr: sum(rate(ai_mesh_agent_tasks_total{status="failed"}[5m])) / sum(rate(ai_mesh_agent_tasks_total[5m])) > 0.25
+        for: 2m
+        labels:
+          severity: critical
+          service: ai-service
+          component: agent
+        annotations:
+          summary: "Critical failure rate for AI Mesh agents"
+          description: "The AI Mesh Network has a {{ $value | humanizePercentage }} failure rate for agent tasks over the last 5 minutes."
+          runbook_url: "https://wiki.mailyapp.com/runbooks/ai-mesh/agent-issues"
+
+      # Model error rate alerts
+      - alert: AIMeshModelHighErrorRate
+        expr: sum(rate(ai_mesh_model_errors_total[5m])) / sum(rate(ai_mesh_model_usage_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          service: ai-service
+          component: llm
+        annotations:
+          summary: "High LLM API error rate in AI Mesh"
+          description: "The AI Mesh Network LLM API calls have a {{ $value | humanizePercentage }} error rate over the last 5 minutes."
+          runbook_url: "https://wiki.mailyapp.com/runbooks/ai-mesh/llm-issues"
+
+      - alert: AIMeshModelCriticalErrorRate
+        expr: sum(rate(ai_mesh_model_errors_total[5m])) / sum(rate(ai_mesh_model_usage_total[5m])) > 0.15
+        for: 2m
+        labels:
+          severity: critical
+          service: ai-service
+          component: llm
+        annotations:
+          summary: "Critical LLM API error rate in AI Mesh"
+          description: "The AI Mesh Network LLM API calls have a {{ $value | humanizePercentage }} error rate over the last 5 minutes."
+          runbook_url: "https://wiki.mailyapp.com/runbooks/ai-mesh/llm-issues"
+          
+      # Memory retrieval latency alerts
+      - alert: AIMeshMemoryHighLatency
+        expr: histogram_quantile(0.95, sum(rate(ai_mesh_memory_retrieval_seconds_bucket[5m])) by (le)) > 1
+        for: 5m
+        labels:
+          severity: warning
+          service: ai-service
+          component: memory
+        annotations:
+          summary: "High memory retrieval latency in AI Mesh"
+          description: "The AI Mesh Network memory retrieval p95 latency is {{ $value }}s over the last 5 minutes."
+          runbook_url: "https://wiki.mailyapp.com/runbooks/ai-mesh/memory-issues"
+
+      - alert: AIMeshMemoryCriticalLatency
+        expr: histogram_quantile(0.95, sum(rate(ai_mesh_memory_retrieval_seconds_bucket[5m])) by (le)) > 3
+        for: 2m
+        labels:
+          severity: critical
+          service: ai-service
+          component: memory
+        annotations:
+          summary: "Critical memory retrieval latency in AI Mesh"
+          description: "The AI Mesh Network memory retrieval p95 latency is {{ $value }}s over the last 5 minutes."
+          runbook_url: "https://wiki.mailyapp.com/runbooks/ai-mesh/memory-issues"
+
+      # High cost alerts
+      - alert: AIMeshHighCostRate
+        expr: sum(rate(ai_mesh_model_cost_total[1h])) * 3600 > 50
+        for: 30m
+        labels:
+          severity: warning
+          service: ai-service
+          component: cost
+        annotations:
+          summary: "High AI Mesh cost rate detected"
+          description: "The AI Mesh Network is spending at a rate of ${{ $value | humanize }} per hour, which is above the warning threshold ($50)."
+          runbook_url: "https://wiki.mailyapp.com/runbooks/ai-mesh/cost-issues"
+
+      - alert: AIMeshCriticalCostRate
+        expr: sum(rate(ai_mesh_model_cost_total[1h])) * 3600 > 200
+        for: 15m
+        labels:
+          severity: critical
+          service: ai-service
+          component: cost
+        annotations:
+          summary: "Critical AI Mesh cost rate detected"
+          description: "The AI Mesh Network is spending at a rate of ${{ $value | humanize }} per hour, which is above the critical threshold ($200)."
+          runbook_url: "https://wiki.mailyapp.com/runbooks/ai-mesh/cost-issues"
+
+      # Service health alerts
+      - alert: AIMeshWebSocketConnectionsDown
+        expr: sum(ai_mesh_websocket_connections) == 0
+        for: 5m
+        labels:
+          severity: warning
+          service: ai-service
+          component: websocket
+        annotations:
+          summary: "No active WebSocket connections in AI Mesh"
+          description: "The AI Mesh Network has no active WebSocket connections for more than 5 minutes."
+          runbook_url: "https://wiki.mailyapp.com/runbooks/ai-mesh/websocket-issues"
+
+      - alert: AIMeshModelApiUnavailable
+        expr: increase(ai_mesh_model_errors_total{error_type=~"connection|timeout|unavailable"}[15m]) > 50
+        for: 5m
+        labels:
+          severity: critical
+          service: ai-service
+          component: llm
+        annotations:
+          summary: "AI Mesh LLM API connectivity issues detected"
+          description: "The AI Mesh Network has {{ $value }} LLM API connection errors in the last 15 minutes."
+          runbook_url: "https://wiki.mailyapp.com/runbooks/ai-mesh/llm-issues"
+          
+  - name: ai-mesh-service-slas
+    rules:
+    # Performance metrics recording rules
+    - record: ai_mesh:sla:api_availability:5m
+      expr: sum(rate(http_requests_total{service="ai-service", code=~"2..|3.."}[5m])) / sum(rate(http_requests_total{service="ai-service"}[5m]))
+    
+    - record: ai_mesh:sla:api_latency_p95:5m
+      expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{service="ai-service"}[5m])) by (le))
+    
+    - record: ai_mesh:sla:websocket_success:5m
+      expr: sum(rate(websocket_connections_total{service="ai-service", status="success"}[5m])) / sum(rate(websocket_connections_total{service="ai-service"}[5m]))
+    
+    - record: ai_mesh:sla:memory_operation_latency:5m
+      expr: histogram_quantile(0.95, sum(rate(memory_operation_duration_seconds_bucket{service="ai-service"}[5m])) by (le, operation))
+    
+    # Health metrics recording rules
+    - record: ai_mesh:health:memory_utilization
+      expr: sum(container_memory_usage_bytes{pod=~"ai-service-.*"}) / sum(container_memory_limit_bytes{pod=~"ai-service-.*"})
+    
+    - record: ai_mesh:health:cpu_utilization
+      expr: sum(rate(container_cpu_usage_seconds_total{pod=~"ai-service-.*"}[5m])) / sum(container_cpu_limit_cores{pod=~"ai-service-.*"})
+    
+    - record: ai_mesh:health:redis_connection_failures:5m
+      expr: sum(rate(ai_service_redis_connection_failures_total[5m]))
+    
+    # Business metrics recording rules
+    - record: ai_mesh:business:llm_tokens_per_second:5m
+      expr: sum(rate(ai_service_llm_tokens_total[5m]))
+    
+    - record: ai_mesh:business:generation_success_rate:5m
+      expr: sum(rate(ai_service_generation_total{status="success"}[5m])) / sum(rate(ai_service_generation_total[5m]))
+    
+    - record: ai_mesh:business:streaming_success_rate:5m
+      expr: sum(rate(ai_service_streaming_total{status="success"}[5m])) / sum(rate(ai_service_streaming_total[5m]))
+    
+    # Alerts
+    
+    # API availability alerts
+    - alert: AiMeshApiAvailabilityLow
+      expr: ai_mesh:sla:api_availability:5m < 0.995
+      for: 5m
+      labels:
+        severity: warning
+        service: ai-service
+        sla: availability
+      annotations:
+        summary: "AI Mesh API availability below 99.5%"
+        description: "The AI Mesh service availability is {{ $value | humanizePercentage }} over the last 5 minutes, which is below the SLA target of 99.5%."
+        runbook_url: "https://wiki.mailyapp.com/runbooks/ai-mesh/availability-issues"
+    
+    # WebSocket alerts
+    - alert: AiMeshWebSocketFailureRateHigh
+      expr: ai_mesh:sla:websocket_success:5m < 0.95
+      for: 5m
+      labels:
+        severity: warning
+        service: ai-service
+        component: websocket
+      annotations:
+        summary: "AI Mesh WebSocket success rate below 95%"
+        description: "The AI Mesh WebSocket connection success rate is {{ $value | humanizePercentage }} over the last 5 minutes, which is below the SLA target of 95%."
+        runbook_url: "https://wiki.mailyapp.com/runbooks/ai-mesh/websocket-issues"

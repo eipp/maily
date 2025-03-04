@@ -655,6 +655,114 @@ monitoring:
         cpu: 100m
         memory: 128Mi
 
+# Email Service configuration
+emailService:
+  enabled: true
+  replicas: 1
+  image:
+    repository: maily/email-service
+    tag: latest
+    pullPolicy: Always
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: 80
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  env: {}
+
+# Analytics Service configuration
+analyticsService:
+  enabled: true
+  replicas: 1
+  image:
+    repository: maily/analytics-service
+    tag: latest
+    pullPolicy: Always
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: 80
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  env: {}
+  
+# AI Service configuration
+aiService:
+  enabled: true
+  replicas: 2
+  image:
+    repository: ghcr.io/maily/ai-service
+    tag: latest
+    pullPolicy: Always
+  logLevel: "info"
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8001
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  livenessProbe:
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readinessProbe:
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  websocket:
+    enabled: true
+    maxConnections: 1000
+    pingInterval: 30
+    messageQueueLimit: 100
+  memory:
+    enabled: true
+    persistenceEnabled: true
+    vectorStore: redis
+    cacheExpiration: 86400
+    embeddingDimension: 1536
+  env:
+    MODEL_CONFIG_SERVICE_URL: "http://{{ .Release.Name }}-backend/api/v1/models/config"
+    TRUST_VERIFICATION_URL: "http://{{ .Release.Name }}-backend/api/v1/trust"
+    STREAMING_ENABLED: "true"
+    ENABLE_MEMORY: "true"
+
 # AI Operations Configuration
 aiOperations:
   enabled: true

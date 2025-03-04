@@ -974,7 +974,7 @@ class ThrottlingService:
             details: Additional alert details
         """
         try:
-            import requests
+            import httpx
             
             # Format Slack message
             color = "#ff0000" if severity == "high" else "#ffcc00" if severity == "medium" else "#36a64f"

@@ -14,8 +14,8 @@ from typing import Dict, List, Optional, Any, Union, AsyncIterator, TypeVar, Gen
 from pydantic import BaseModel
 from enum import Enum
 
-from apps.api.errors.ai_service_errors import (
-    AIServiceError,
+from packages.error_handling.python.error import (
+    AIError as AIServiceError,
     AuthenticationError,
     ValidationError,
     map_provider_error

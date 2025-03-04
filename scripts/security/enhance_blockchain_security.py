@@ -41,7 +41,7 @@ BLOCKCHAIN_FILES = {
 # Vault integration code template
 VAULT_INTEGRATION_CODE = """
 from apps.api.services.vault_service import VaultService
-from apps.api.errors.exceptions import SecurityError
+from packages.error_handling.python.error import BlockchainError as SecurityError
 from web3 import Web3
 from web3.middleware import geth_poa_middleware
 import logging

@@ -1,0 +1,154 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-email-service
+  labels:
+    app: email-service
+    part-of: maily
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 3000
+    protocol: TCP
+    name: http
+  selector:
+    app: email-service
+    release: {{ .Release.Name }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-email-service
+  labels:
+    app: email-service
+    part-of: maily
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  replicas: {{ .Values.emailService.replicas }}
+  selector:
+    matchLabels:
+      app: email-service
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: email-service
+        release: {{ .Release.Name }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3000"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: email-service
+        image: "{{ .Values.emailService.image.repository }}:{{ .Values.emailService.image.tag }}"
+        imagePullPolicy: {{ .Values.emailService.image.pullPolicy }}
+        ports:
+        - containerPort: 3000
+          name: http
+        env:
+        - name: NODE_ENV
+          value: {{ .Values.environment }}
+        - name: PORT
+          value: "3000"
+        - name: API_URL
+          value: http://{{ .Release.Name }}-backend:80
+        - name: REDIS_URL
+          value: redis://{{ .Release.Name }}-redis:6379
+        {{- if .Values.emailService.env }}
+        {{- range $key, $value := .Values.emailService.env }}
+        - name: {{ $key }}
+          value: {{ $value | quote }}
+        {{- end }}
+        {{- end }}
+        resources:
+          limits:
+            cpu: {{ .Values.emailService.resources.limits.cpu }}
+            memory: {{ .Values.emailService.resources.limits.memory }}
+          requests:
+            cpu: {{ .Values.emailService.resources.requests.cpu }}
+            memory: {{ .Values.emailService.resources.requests.memory }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+      {{- with .Values.emailService.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.emailService.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.emailService.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+{{- if .Values.emailService.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ .Release.Name }}-email-service
+  labels:
+    app: email-service
+    part-of: maily
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ .Release.Name }}-email-service
+  minReplicas: {{ .Values.emailService.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.emailService.autoscaling.maxReplicas }}
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: {{ .Values.emailService.autoscaling.targetCPUUtilizationPercentage }}
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: {{ .Values.emailService.autoscaling.targetMemoryUtilizationPercentage }}
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 20
+        periodSeconds: 60
+      - type: Pods
+        value: 2
+        periodSeconds: 60
+      selectPolicy: Max
+{{- end }}

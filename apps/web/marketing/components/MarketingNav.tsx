@@ -1,12 +1,23 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X, ChevronDown, ArrowRight } from 'lucide-react';
+import { Menu, X, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/Button';
-import { analyticsService } from '@/services/analytics';
+
+// Dynamically import analytics service to reduce initial load time
+const analyticsService = dynamic(() => import('@/services/analytics').then(mod => mod.analyticsService), {
+  ssr: false,
+  loading: () => null,
+});
+
+// Lazy load non-critical icon
+const ArrowRight = dynamic(() => import('lucide-react').then(mod => mod.ArrowRight), {
+  loading: () => <span className="w-4 h-4" />,
+});
 
 const navItems = [
   {
@@ -78,23 +89,35 @@ export function MarketingNav() {
     <motion.nav
       initial={{ y: -100 }}
       animate={{ y: 0 }}
-      className={`fixed left-0 right-0 top-0 z-50 transition-all duration-200 ${
+      transition={{ duration: 0.4, ease: "easeOut" }}
+      className={`fixed left-0 right-0 top-0 z-50 transition-all duration-300 ${
         scrolled
-          ? 'bg-white/80 shadow backdrop-blur-sm dark:bg-gray-900/80'
+          ? 'bg-white/90 shadow-md backdrop-blur-lg dark:bg-gray-900/90 shadow-gray-200/20 dark:shadow-black/20'
           : 'bg-white dark:bg-gray-900'
       }`}
     >
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
-          {/* Logo */}
+          {/* Logo with subtle animation */}
           <Link
             href="/"
-            className="flex items-center"
+            className="group flex items-center"
             onClick={() => handleNavigation('/')}
           >
-            <span className="text-2xl font-bold text-primary-600 dark:text-primary-500">
+            <motion.span 
+              className="text-2xl font-bold bg-gradient-to-r from-primary-600 to-primary-500 bg-clip-text text-transparent dark:from-primary-500 dark:to-primary-400"
+              whileHover={{ scale: 1.05 }}
+              transition={{ type: "spring", stiffness: 400, damping: 10 }}
+            >
               Maily
-            </span>
+            </motion.span>
+            <motion.span 
+              className="ml-1 text-xs font-semibold text-gray-500 dark:text-gray-400"
+              animate={{ opacity: [0, 1], y: [5, 0] }}
+              transition={{ delay: 0.3, duration: 0.5 }}
+            >
+              BETA
+            </motion.span>
           </Link>
 
           {/* Desktop Navigation */}
@@ -166,23 +189,36 @@ export function MarketingNav() {
               </div>
             ))}
 
-            {/* CTA Buttons */}
+            {/* CTA Buttons with enhanced styling and animations */}
             <div className="flex items-center space-x-4">
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => handleNavigation('/auth/login')}
                 asChild
+                className="relative overflow-hidden transition-all duration-300 hover:text-primary-600 dark:hover:text-primary-400"
               >
-                <Link href="/auth/login">Sign in</Link>
+                <Link href="/auth/login">
+                  <span className="relative z-10">Sign in</span>
+                  <span className="absolute inset-0 bg-primary-50 dark:bg-primary-900/30 scale-x-0 transform origin-left transition-transform duration-300 ease-out group-hover:scale-x-100"></span>
+                </Link>
               </Button>
               <Button
                 variant="primary"
                 size="sm"
                 onClick={() => handleNavigation('/auth/signup')}
                 asChild
+                className="relative overflow-hidden shadow-lg hover:shadow-primary-600/20 transition-all duration-300 bg-gradient-to-r from-primary-600 to-primary-500 hover:-translate-y-0.5"
               >
-                <Link href="/auth/signup">Get started</Link>
+                <Link href="/auth/signup">
+                  <span className="relative z-10 flex items-center">
+                    Get started
+                    <svg className="ml-1 h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                    </svg>
+                  </span>
+                  <span className="absolute inset-0 bg-gradient-to-r from-primary-500 to-primary-400 opacity-0 transition-opacity duration-300 group-hover:opacity-100"></span>
+                </Link>
               </Button>
             </div>
           </div>

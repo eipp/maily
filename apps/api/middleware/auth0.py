@@ -3,7 +3,7 @@ import json
 from typing import Dict, List, Optional, Union
 
 import jwt
-import requests
+import httpx
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import jwt, JWTError

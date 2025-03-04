@@ -22,12 +22,15 @@ WORKDIR /app
 COPY --from=build /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=build /usr/local/bin /usr/local/bin
 
-# Copy application code
-COPY apps/api /app
+# Copy application code and shared packages
+COPY apps/api /app/apps/api
+COPY packages /app/packages
 
 # Set environment variables
 ENV PYTHONPATH=/app
 ENV PORT=8000
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
 # Run as non-root user
 RUN useradd -m appuser
@@ -36,5 +39,9 @@ USER appuser
 # Expose port
 EXPOSE 8000
 
+# Add healthcheck
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8000/api/health || exit 1
+
 # Command to run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "apps.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

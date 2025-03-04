@@ -41,6 +41,13 @@ The AI Mesh Network exposes the following REST API endpoints:
 - `GET /api/mesh/networks/{network_id}/tasks/{task_id}`: Get details of a task
 - `GET /api/mesh/networks/{network_id}/tasks`: List tasks for a network
 
+### Streaming Endpoints
+
+- `POST /api/mesh/networks/{network_id}/tasks/stream`: Submit a task with streaming response
+- `GET /api/mesh/tasks/{task_id}/stream`: Get streaming updates for a task
+- `GET /api/mesh/tasks/{task_id}/events`: Get SSE events for a task
+- `POST /api/mesh/generate/stream`: Direct streaming from LLMs
+
 ### Agents
 
 - `POST /api/mesh/networks/{network_id}/agents`: Add an agent to a network
@@ -52,9 +59,21 @@ The AI Mesh Network exposes the following REST API endpoints:
 - `POST /api/mesh/networks/{network_id}/memory`: Add a memory item to the shared memory
 - `GET /api/mesh/networks/{network_id}/memory`: Get shared memory for a network
 
-### Health
+### Health and Stats
 
 - `GET /api/mesh/health`: Check health of the AI Mesh Network service
+- `GET /api/mesh/stats/cost`: Get cost statistics for models, users, and networks
+- `GET /api/mesh/stats/usage`: Get usage statistics for models and API calls
+- `GET /api/mesh/stats/models`: Get detailed information about available models and their capabilities
+
+### Security
+
+- `POST /api/mesh/security/api-keys`: Create a new API key
+- `GET /api/mesh/security/api-keys`: List API keys for a user (admin only)
+- `DELETE /api/mesh/security/api-keys/{api_key}`: Revoke an API key
+- `GET /api/mesh/security/audit-logs`: Get audit logs with filtering (admin only)
+- `POST /api/mesh/security/retention-policy`: Set data retention policy (admin only)
+- `GET /api/mesh/security/retention-policy`: Get current data retention policy
 
 ## Usage Examples
 
@@ -68,6 +87,26 @@ curl -X POST http://localhost:8080/api/mesh/networks \
     "description": "AI network for creating and optimizing email campaigns",
     "max_iterations": 10,
     "timeout_seconds": 300
+  }'
+```
+
+### Using Intelligent Model Selection
+
+```bash
+curl -X POST http://localhost:8080/api/mesh/networks/{network_id}/tasks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task": "Create an email campaign for a new product launch",
+    "context": {
+      "product_name": "TechPro X1",
+      "product_description": "Advanced AI-powered development tool"
+    },
+    "model_selection": {
+      "task_complexity": "MEDIUM",
+      "requires_vision": false,
+      "requires_function_calling": false,
+      "cost_sensitive": true
+    }
   }'
 ```
 
@@ -98,6 +137,115 @@ curl -X POST http://localhost:8080/api/mesh/networks/{network_id}/tasks/{task_id
 
 ```bash
 curl -X GET http://localhost:8080/api/mesh/networks/{network_id}/tasks/{task_id}
+```
+
+### Using Streaming Responses
+
+```bash
+# Submit a task with streaming response
+curl -N -X POST http://localhost:8080/api/mesh/networks/{network_id}/tasks/stream \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task": "Create an email campaign for a new product launch",
+    "context": {
+      "product_name": "TechPro X1",
+      "target_audience": "Software developers"
+    },
+    "priority": 1
+  }'
+```
+
+### Using Server-Sent Events (SSE)
+
+```javascript
+// JavaScript example using EventSource
+const eventSource = new EventSource(`http://localhost:8080/api/mesh/tasks/${taskId}/events`);
+
+eventSource.addEventListener('started', (event) => {
+  const data = JSON.parse(event.data);
+  console.log('Task started:', data);
+});
+
+eventSource.addEventListener('result', (event) => {
+  const data = JSON.parse(event.data);
+  console.log('Task result:', data);
+});
+
+eventSource.addEventListener('complete', (event) => {
+  const data = JSON.parse(event.data);
+  console.log('Task completed:', data);
+  eventSource.close();
+});
+
+eventSource.addEventListener('error', (event) => {
+  console.error('Error in SSE stream:', event);
+  eventSource.close();
+});
+```
+
+### Using Direct LLM Streaming
+
+```bash
+# Stream directly from an LLM
+curl -N -X POST http://localhost:8080/api/mesh/generate/stream \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Write a short introduction email for TechPro X1",
+    "model": "claude-3-7-sonnet",
+    "temperature": 0.7,
+    "max_tokens": 1000
+  }'
+```
+
+### Retrieving Cost and Usage Statistics
+
+```bash
+curl -X GET http://localhost:8080/api/mesh/stats/cost
+```
+
+Sample response:
+```json
+{
+  "total_cost": 1.28,
+  "per_model": {
+    "claude-3-7-sonnet": 0.65,
+    "gpt-4o": 0.45,
+    "gemini-1.5-pro": 0.18
+  },
+  "per_user": {
+    "user123": 0.85,
+    "user456": 0.43
+  },
+  "per_network": {
+    "network-1": 0.76,
+    "network-2": 0.52
+  },
+  "time_period": "2025-03-01T00:00:00Z to 2025-03-05T23:59:59Z"
+}
+```
+
+```bash
+curl -X GET http://localhost:8080/api/mesh/stats/usage
+```
+
+Sample response:
+```json
+{
+  "total_calls": 256,
+  "successful_calls": 245,
+  "failed_calls": 11,
+  "per_model": {
+    "claude-3-7-sonnet": 120,
+    "gpt-4o": 98,
+    "gemini-1.5-pro": 38
+  },
+  "average_latency": {
+    "claude-3-7-sonnet": 0.85,
+    "gpt-4o": 0.92,
+    "gemini-1.5-pro": 0.75
+  },
+  "time_period": "2025-03-01T00:00:00Z to 2025-03-05T23:59:59Z"
+}
 ```
 
 ## Default Agents
@@ -143,13 +291,44 @@ The shared memory system supports the following types of memory items:
 - **decision**: Decisions made during task processing
 - **feedback**: Feedback on previous actions or results
 
-## Model Fallback Chain
+## Model Selection and Optimization
+
+The AI Mesh Network includes advanced model selection and optimization capabilities:
+
+### Intelligent Model Selection
+
+The system automatically selects the most appropriate model based on:
+
+- **Task Complexity**: Matches model capabilities to the complexity of the task (LOW, MEDIUM, HIGH)
+- **Required Capabilities**: Filters models based on required capabilities (e.g., vision, function calling)
+- **Cost Sensitivity**: Optimizes for cost when budget is a priority
+- **Performance History**: Uses historical performance data to refine selection
+
+### Model Fallback Chain
 
 The AI Mesh Network supports a fallback chain for LLM models in case the primary model is unavailable:
 
 1. Claude 3.7 Sonnet (Primary)
 2. GPT-4o (Fallback 1)
 3. Gemini 2.0 (Fallback 2)
+
+### Provider-Specific Optimizations
+
+Each LLM provider has dedicated optimizations:
+
+- **Claude**: Optimized for detailed reasoning and creative tasks with enhanced JSON mode
+- **GPT**: Fine-tuned for function calling and structured outputs
+- **Gemini**: Optimized for multimodal inputs and long context processing
+- **Groq**: Configured for low-latency, cost-effective processing
+
+### Cost Tracking
+
+The system provides comprehensive cost tracking:
+
+- **Per-Model Tracking**: Tracks costs for each model separately
+- **Per-User Attribution**: Attributes costs to specific users
+- **Budget Controls**: Automatically selects more cost-effective models when needed
+- **Usage Reports**: Provides detailed usage and cost reports
 
 ## Performance Considerations
 
@@ -167,12 +346,84 @@ The AI Mesh Network can be integrated with other services in the Maily platform:
 - **Campaign Service**: For managing and tracking email campaigns
 - **User Service**: For accessing user preferences and data
 
-## Security Considerations
+## Security Features
 
-- **API Authentication**: All API endpoints require authentication
-- **Data Isolation**: Each network's data is isolated from other networks
-- **Input Validation**: All inputs are validated to prevent injection attacks
-- **Content Safety**: Content generated by agents is filtered for safety and compliance
+The AI Mesh Network implements robust security features:
+
+### Authentication & Authorization
+
+- **API Key Authentication**: HMAC-based API keys with strong cryptographic security
+- **Role-Based Access Control**: Fine-grained permissions with user, admin, and service roles
+- **Scoped Permissions**: Granular permission scopes (read, write, create, delete, admin)
+- **Key Management**: API for creating, listing, and revoking API keys
+- **Authorization Checks**: Comprehensive authorization checks for all operations
+
+### Audit Logging
+
+- **Comprehensive Audit Trail**: All operations are logged for accountability
+- **Operation Tracking**: Detailed logging of who did what and when
+- **Searchable Logs**: Query interface for filtering and retrieving audit logs
+- **Enhanced Metadata**: Client IP, session ID, and operation details are captured
+- **Structured Format**: JSON-formatted logs for easy analysis
+
+### Data Retention
+
+- **Configurable Policies**: Customizable retention periods for all data types
+- **Automatic Cleanup**: Background process to clean up expired data
+- **TTL-Based Storage**: All data stored with appropriate time-to-live settings
+- **Resource Cleanup**: Automatic cleanup of associated resources when deleting networks
+- **Admin Controls**: Administrative API for setting and viewing retention policies
+
+### Input Validation & Sanitization
+
+- **Strict Validation**: Comprehensive validation for all input parameters
+- **Pattern Detection**: Detection of potentially dangerous patterns in inputs
+- **Context Sanitization**: Sanitization of user-provided contexts to prevent injection
+- **Error Reporting**: Clear error messages for validation failures
+- **Security Headers**: Protection against common web vulnerabilities
+
+### Example: Using API Key Authentication
+
+```bash
+# Create a new API key
+curl -X POST http://localhost:8080/api/mesh/security/api-keys \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer admin-api-key" \
+  -d '{
+    "user_id": "user123",
+    "role": "user",
+    "scopes": ["read", "write"]
+  }'
+
+# Use the API key for operations
+curl -X POST http://localhost:8080/api/mesh/networks \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: user123.1709747200.a1b2c3d4" \
+  -d '{
+    "name": "Secure Network",
+    "description": "Network with strong security"
+  }'
+```
+
+### Example: Viewing Audit Logs
+
+```bash
+# Get audit logs with filtering
+curl -X GET "http://localhost:8080/api/mesh/security/audit-logs?user_id=user123&resource_type=network&action=create_network&limit=10" \
+  -H "Authorization: Bearer admin-api-key"
+```
+
+### Example: Setting Data Retention Policy
+
+```bash
+# Set data retention policy
+curl -X POST http://localhost:8080/api/mesh/security/retention-policy \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer admin-api-key" \
+  -d '{
+    "retention_days": 180
+  }'
+```
 
 ## Monitoring and Observability
 
@@ -192,3 +443,7 @@ Planned enhancements for the AI Mesh Network include:
 - **External Tool Integration**: Allowing agents to use external tools and APIs
 - **User Feedback Loop**: Incorporating user feedback to improve agent performance
 - **Advanced Visualization**: Visual representation of agent interactions and task flows
+- **Rate Limiting**: Advanced token bucket algorithm for API rate limiting
+- **Long-term Memory**: Persistent memory storage beyond current retention periods
+- **Advanced Testing**: Load testing and chaos testing frameworks
+- **Enhanced Documentation**: Complete OpenAPI 3.1 specification and developer guides

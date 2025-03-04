@@ -2,7 +2,7 @@
 
 import logging
 import asyncio
-import aiohttp
+import httpx
 import json
 import re
 from typing import Dict, Any, List, Optional

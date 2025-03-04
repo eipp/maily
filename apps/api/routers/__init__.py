@@ -14,6 +14,7 @@ from .graphql import router as graphql_router
 from .websocket import router as websocket_router
 from .canvas import router as canvas_router
 from .api_keys import router as api_keys_router
+from .analytics_router import router as analytics_router
 
 router = APIRouter()
 
@@ -31,5 +32,6 @@ router.include_router(graphql_router, tags=["GraphQL"])
 router.include_router(websocket_router, tags=["WebSocket"])
 router.include_router(canvas_router, tags=["Canvas"])
 router.include_router(api_keys_router, tags=["API Keys"])
+router.include_router(analytics_router, tags=["Analytics"])
 
 __all__ = ["router"]

@@ -19,11 +19,13 @@ const navLinks = [
       { label: 'Automation', href: '/marketing/solutions/automation' },
       { label: 'Analytics', href: '/marketing/solutions/analytics' },
       { label: 'Templates', href: '/marketing/solutions/templates' },
+      { label: 'Cognitive Canvas', href: '/cognitive-canvas' },
     ],
   },
   { href: '/marketing/pricing', label: 'Pricing' },
   { href: '/marketing/blog', label: 'Blog' },
   { href: '/marketing/about', label: 'About' },
+  { href: '/cognitive-canvas', label: 'Canvas' },
 ];
 
 export function Navbar() {

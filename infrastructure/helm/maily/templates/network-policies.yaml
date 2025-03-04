@@ -1,0 +1,289 @@
+{{- if .Values.security.networkPolicies.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-default-deny
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-frontend
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend
+      release: {{ .Release.Name }}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 3000
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: backend
+          release: {{ .Release.Name }}
+    ports:
+    - protocol: TCP
+      port: 8000
+  - to:
+    - podSelector:
+        matchLabels:
+          app: ai-service
+          release: {{ .Release.Name }}
+    ports:
+    - protocol: TCP
+      port: 8001
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-backend
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+      release: {{ .Release.Name }}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: frontend
+          release: {{ .Release.Name }}
+    - podSelector:
+        matchLabels:
+          app: api-edge-caching
+          release: {{ .Release.Name }}
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 8000
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: redis
+          release: {{ .Release.Name }}
+    ports:
+    - protocol: TCP
+      port: 6379
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgresql
+          release: {{ .Release.Name }}
+    ports:
+    - protocol: TCP
+      port: 5432
+  - to:
+    - podSelector:
+        matchLabels:
+          app: rabbitmq
+          release: {{ .Release.Name }}
+    ports:
+    - protocol: TCP
+      port: 5672
+  - to:
+    - podSelector:
+        matchLabels:
+          app: ai-service
+          release: {{ .Release.Name }}
+    ports:
+    - protocol: TCP
+      port: 8001
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-ai-service
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: ai-service
+      release: {{ .Release.Name }}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: frontend
+          release: {{ .Release.Name }}
+    - podSelector:
+        matchLabels:
+          app: backend
+          release: {{ .Release.Name }}
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 8001
+    - protocol: TCP
+      port: 8002  # WebSocket port
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: redis
+          release: {{ .Release.Name }}
+    ports:
+    - protocol: TCP
+      port: 6379
+  - to:
+    - podSelector:
+        matchLabels:
+          app: backend
+          release: {{ .Release.Name }}
+    ports:
+    - protocol: TCP
+      port: 8000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-redis
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: redis
+      release: {{ .Release.Name }}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: backend
+          release: {{ .Release.Name }}
+    - podSelector:
+        matchLabels:
+          app: worker
+          release: {{ .Release.Name }}
+    - podSelector:
+        matchLabels:
+          app: ai-service
+          release: {{ .Release.Name }}
+    - podSelector:
+        matchLabels:
+          app: email-service
+          release: {{ .Release.Name }}
+    - podSelector:
+        matchLabels:
+          app: analytics-service
+          release: {{ .Release.Name }}
+    ports:
+    - protocol: TCP
+      port: 6379
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-postgresql
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: postgresql
+      release: {{ .Release.Name }}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: backend
+          release: {{ .Release.Name }}
+    - podSelector:
+        matchLabels:
+          app: worker
+          release: {{ .Release.Name }}
+    ports:
+    - protocol: TCP
+      port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-rabbitmq
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: rabbitmq
+      release: {{ .Release.Name }}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: backend
+          release: {{ .Release.Name }}
+    - podSelector:
+        matchLabels:
+          app: worker
+          release: {{ .Release.Name }}
+    - podSelector:
+        matchLabels:
+          app: email-service
+          release: {{ .Release.Name }}
+    - podSelector:
+        matchLabels:
+          app: analytics-service
+          release: {{ .Release.Name }}
+    ports:
+    - protocol: TCP
+      port: 5672
+    - protocol: TCP
+      port: 15672
+{{- end }}

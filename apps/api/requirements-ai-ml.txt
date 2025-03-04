@@ -24,4 +24,3 @@ litellm==1.10.0
 pillow==10.0.0
 
 # Async Support
-asyncio==3.4.3

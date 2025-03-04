@@ -1,0 +1,381 @@
+openapi: 3.1.0
+info:
+  title: Predictive Analytics API Endpoints
+  description: |
+    API endpoints for predictive analytics and AI-powered insights
+  version: 1.0.0
+
+paths:
+  /predictive/insights:
+    get:
+      summary: Get predictive insights
+      description: Get predictive insights and analytics forecasts
+      operationId: getPredictiveInsights
+      tags:
+        - Predictive Analytics
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: metric
+          in: query
+          description: Metrics to get predictions for (comma-separated)
+          schema:
+            type: string
+            example: "open_rate,click_rate,conversion_rate"
+        - name: horizon
+          in: query
+          description: Prediction horizon (e.g., 1d, 7d, 30d)
+          schema:
+            type: string
+            default: "7d"
+        - name: confidenceInterval
+          in: query
+          description: Confidence interval for predictions (0-1)
+          schema:
+            type: number
+            minimum: 0
+            maximum: 1
+            default: 0.95
+      responses:
+        '200':
+          description: Predictive insights data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      insights:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/PredictiveInsight'
+                      metrics:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/MetricPrediction'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /predictive/anomalies:
+    get:
+      summary: Get detected anomalies
+      description: Get anomalies detected in various metrics
+      operationId: getAnomalies
+      tags:
+        - Predictive Analytics
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: startDate
+          in: query
+          description: Start date for anomaly detection (ISO 8601)
+          schema:
+            type: string
+            format: date-time
+        - name: endDate
+          in: query
+          description: End date for anomaly detection (ISO 8601)
+          schema:
+            type: string
+            format: date-time
+        - name: metric
+          in: query
+          description: Metrics to get anomalies for (comma-separated)
+          schema:
+            type: string
+            example: "open_rate,click_rate,conversion_rate"
+        - name: sensitivity
+          in: query
+          description: Anomaly detection sensitivity (0-1)
+          schema:
+            type: number
+            minimum: 0
+            maximum: 1
+            default: 0.8
+      responses:
+        '200':
+          description: Detected anomalies
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Anomaly'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /predictive/campaigns/{campaignId}/forecast:
+    get:
+      summary: Get campaign performance forecast
+      description: Get AI-powered forecast for campaign performance
+      operationId: getCampaignForecast
+      tags:
+        - Predictive Analytics
+        - Campaigns
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: campaignId
+          in: path
+          description: Campaign ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: metrics
+          in: query
+          description: Metrics to forecast (comma-separated)
+          schema:
+            type: string
+            default: "open_rate,click_rate,conversion_rate,revenue"
+      responses:
+        '200':
+          description: Campaign forecast data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      forecast:
+                        type: object
+                        properties:
+                          expectedDeliveryRate:
+                            type: number
+                            example: 98.5
+                          expectedOpenRate:
+                            type: number
+                            example: 22.3
+                          expectedClickRate:
+                            type: number
+                            example: 4.8
+                          expectedConversionRate:
+                            type: number
+                            example: 1.2
+                          expectedRevenue:
+                            type: number
+                            example: 2450.75
+                          confidence:
+                            type: number
+                            example: 0.85
+                      risks:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            type:
+                              type: string
+                              example: "spam_filter"
+                            probability:
+                              type: number
+                              example: 0.15
+                            impact:
+                              type: string
+                              example: "medium"
+                            message:
+                              type: string
+                              example: "There's a 15% chance your campaign may trigger spam filters due to specific content patterns"
+                      optimizations:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            type:
+                              type: string
+                              example: "subject_line"
+                            expectedImprovement:
+                              type: number
+                              example: 3.5
+                            confidence:
+                              type: number
+                              example: 0.78
+                            suggestion:
+                              type: string
+                              example: "Add personalization to your subject line to improve open rates by approximately 3.5%"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Campaign not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    PredictiveInsight:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "insight_1234"
+        type:
+          type: string
+          enum: [trend, seasonal, correlation, forecasting]
+          example: "trend"
+        metric:
+          type: string
+          example: "open_rate"
+        message:
+          type: string
+          example: "Your open rates are trending up 2.3% month-over-month"
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+          example: 0.92
+        affectedMetrics:
+          type: array
+          items:
+            type: string
+          example: ["open_rate", "revenue"]
+        recommendations:
+          type: array
+          items:
+            type: object
+            properties:
+              action:
+                type: string
+                example: "Maintain current subject line strategy"
+              impact:
+                type: string
+                example: "high"
+              confidence:
+                type: number
+                example: 0.85
+        timestamp:
+          type: string
+          format: date-time
+
+    MetricPrediction:
+      type: object
+      properties:
+        metric:
+          type: string
+          example: "open_rate"
+        currentValue:
+          type: number
+          example: 24.7
+        predictedValue:
+          type: number
+          example: 26.1
+        predictionDate:
+          type: string
+          format: date-time
+        confidenceInterval:
+          type: object
+          properties:
+            lower:
+              type: number
+              example: 25.3
+            upper:
+              type: number
+              example: 27.0
+        trend:
+          type: string
+          enum: [increasing, decreasing, stable]
+          example: "increasing"
+        percentChange:
+          type: number
+          example: 5.7
+
+    Anomaly:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "anomaly_5678"
+        metric:
+          type: string
+          example: "bounce_rate"
+        timestamp:
+          type: string
+          format: date-time
+        expectedValue:
+          type: number
+          example: 1.2
+        actualValue:
+          type: number
+          example: 4.7
+        deviationScore:
+          type: number
+          example: 3.8
+        severity:
+          type: string
+          enum: [low, medium, high, critical]
+          example: "high"
+        possibleCauses:
+          type: array
+          items:
+            type: string
+          example: ["List quality issues", "Technical delivery problems"]
+        recommendation:
+          type: string
+          example: "Review your contact list for potential issues with email addresses or list hygiene"
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              example: "invalid_request"
+            message:
+              type: string
+              example: "Invalid request parameters"
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    example: "metric"
+                  message:
+                    type: string
+                    example: "Unknown metric specified"

@@ -16,7 +16,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime, timedelta
 from pydantic import BaseModel
 
-from ..cache.redis_client import get_redis_client
+from packages.database.src.redis import get_redis_client, RedisClient
 from ..utils.encryption import encrypt_data, decrypt_data
 from ..services.blockchain_service import get_blockchain_service
 from ..utils.concurrent_verification import (
@@ -57,11 +57,16 @@ class TrustVerificationService:
     """Service for providing trust verification"""
     
     def __init__(self):
-        self.redis = get_redis_client()
+        self.redis = None  # Will be initialized in initialize() method
         self.blockchain_service = get_blockchain_service()
         self.verification_cache = {}
         self.cache_expiration = 3600  # 1 hour in seconds
         self.certificate_verification_circuit_breaker = CircuitBreaker(failure_threshold=5, reset_timeout=300)
+        
+    async def initialize(self):
+        """Initialize the service with Redis client"""
+        self.redis = await get_redis_client()
+        logger.info("Trust verification service initialized")
         
     async def get_verification_status(self, canvas_id: str) -> Dict[str, Any]:
         """Get verification status for a canvas"""

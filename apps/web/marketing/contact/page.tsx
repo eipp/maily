@@ -84,8 +84,19 @@ export default function Contact() {
     setSubmitStatus(null);
 
     try {
-      // TODO: Implement form submission logic
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
+      const response = await fetch('/api/contact', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData),
+      });
+      
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to submit contact form');
+      }
+      
       setSubmitStatus('success');
       setFormData({
         name: '',
@@ -95,6 +106,7 @@ export default function Contact() {
         message: '',
       });
     } catch (error) {
+      console.error('Form submission error:', error);
       setSubmitStatus('error');
     } finally {
       setIsSubmitting(false);

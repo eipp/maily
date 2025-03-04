@@ -4,7 +4,7 @@ import json
 import logging
 from typing import Any, Dict, List, Optional, Union
 
-import requests
+import httpx
 from fastapi import HTTPException, status
 
 from config.opa import opa_settings

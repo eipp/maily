@@ -5,8 +5,11 @@ platform, including request latency, model performance, and cache efficiency.
 """
 
 from prometheus_client import Counter, Histogram, Gauge, Info
-from typing import Dict, Optional
+from typing import Dict, Optional, Any, Union
 import time
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Request metrics
 REQUEST_COUNT = Counter(
@@ -74,6 +77,44 @@ CAMPAIGN_UNSUBSCRIBES = Counter(
     'maily_campaign_unsubscribes_total',
     'Total number of unsubscribes per campaign',
     ['campaign_id']
+)
+
+# Recommendation Metrics
+RECOMMENDATION_VIEWS = Counter(
+    'maily_recommendation_views_total',
+    'Total number of recommendation views',
+    ['user_id', 'recommendation_type']
+)
+
+RECOMMENDATION_CLICKS = Counter(
+    'maily_recommendation_clicks_total',
+    'Total number of recommendation clicks',
+    ['user_id', 'recommendation_type']
+)
+
+RECOMMENDATION_APPLIES = Counter(
+    'maily_recommendation_applies_total',
+    'Total number of recommendation applications',
+    ['user_id', 'recommendation_type']
+)
+
+RECOMMENDATION_DISMISSES = Counter(
+    'maily_recommendation_dismisses_total',
+    'Total number of recommendation dismissals',
+    ['user_id', 'recommendation_type']
+)
+
+RECOMMENDATION_FEEDBACK = Counter(
+    'maily_recommendation_feedback_total',
+    'Total number of recommendation feedback submissions',
+    ['user_id', 'recommendation_type', 'rating']
+)
+
+RECOMMENDATION_CONFIDENCE = Histogram(
+    'maily_recommendation_confidence',
+    'Confidence distribution of recommendations',
+    ['recommendation_type'],
+    buckets=[0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99]
 )
 
 # AI Model Metrics
@@ -268,3 +309,123 @@ class MetricsManager:
             GDPR_REQUESTS.labels(
                 request_type=request_type or "unknown"
             ).inc()
+            
+    def record_recommendation_interaction(
+        self,
+        action: str,
+        user_id: str,
+        recommendation_type: str,
+        rating: Optional[int] = None
+    ) -> None:
+        """Record recommendation interaction metrics.
+        
+        Args:
+            action: Interaction type (view, click, apply, dismiss)
+            user_id: User ID
+            recommendation_type: Type of recommendation
+            rating: Optional rating (1-5)
+        """
+        try:
+            if action == "view":
+                RECOMMENDATION_VIEWS.labels(
+                    user_id=user_id,
+                    recommendation_type=recommendation_type
+                ).inc()
+            elif action == "click":
+                RECOMMENDATION_CLICKS.labels(
+                    user_id=user_id,
+                    recommendation_type=recommendation_type
+                ).inc()
+            elif action == "apply":
+                RECOMMENDATION_APPLIES.labels(
+                    user_id=user_id,
+                    recommendation_type=recommendation_type
+                ).inc()
+            elif action == "dismiss":
+                RECOMMENDATION_DISMISSES.labels(
+                    user_id=user_id,
+                    recommendation_type=recommendation_type
+                ).inc()
+                
+            # Record feedback if rating provided
+            if rating is not None:
+                RECOMMENDATION_FEEDBACK.labels(
+                    user_id=user_id,
+                    recommendation_type=recommendation_type,
+                    rating=str(rating)
+                ).inc()
+        except Exception as e:
+            logger.error(f"Error recording recommendation interaction: {str(e)}")
+            
+    def record_recommendation_confidence(
+        self,
+        recommendation_type: str,
+        confidence: float
+    ) -> None:
+        """Record confidence score for a recommendation.
+        
+        Args:
+            recommendation_type: Type of recommendation
+            confidence: Confidence score (0-1)
+        """
+        try:
+            RECOMMENDATION_CONFIDENCE.labels(
+                recommendation_type=recommendation_type
+            ).observe(confidence)
+        except Exception as e:
+            logger.error(f"Error recording recommendation confidence: {str(e)}")
+            
+
+# Helper function for recording metrics
+def record_metric(
+    metric_name: str, 
+    value: Union[int, float], 
+    labels: Dict[str, Any] = None
+) -> None:
+    """Record a metric value with optional labels.
+    
+    Args:
+        metric_name: Name of the metric to record
+        value: Value to record
+        labels: Optional dictionary of label values
+    """
+    try:
+        labels = labels or {}
+        
+        # Common metric types
+        if metric_name.startswith("recommendation."):
+            # Handle recommendation metrics
+            if metric_name == "recommendation.view":
+                RECOMMENDATION_VIEWS.labels(
+                    user_id=str(labels.get("user_id", "unknown")),
+                    recommendation_type=labels.get("type", "unknown")
+                ).inc(value)
+            elif metric_name == "recommendation.click":
+                RECOMMENDATION_CLICKS.labels(
+                    user_id=str(labels.get("user_id", "unknown")),
+                    recommendation_type=labels.get("type", "unknown")
+                ).inc(value)
+            elif metric_name == "recommendation.apply":
+                RECOMMENDATION_APPLIES.labels(
+                    user_id=str(labels.get("user_id", "unknown")),
+                    recommendation_type=labels.get("type", "unknown")
+                ).inc(value)
+            elif metric_name == "recommendation.dismiss":
+                RECOMMENDATION_DISMISSES.labels(
+                    user_id=str(labels.get("user_id", "unknown")),
+                    recommendation_type=labels.get("type", "unknown")
+                ).inc(value)
+            elif metric_name == "recommendation.confidence":
+                RECOMMENDATION_CONFIDENCE.labels(
+                    recommendation_type=labels.get("type", "unknown")
+                ).observe(value)
+        elif metric_name.startswith("cache."):
+            # Handle cache metrics
+            if metric_name == "cache.hit":
+                CACHE_HITS.inc(value)
+            elif metric_name == "cache.miss":
+                CACHE_MISSES.inc(value)
+        
+        # Log unhandled metrics for now, can add more handlers as needed
+    except Exception as e:
+        logger.error(f"Error recording metric {metric_name}: {str(e)}")

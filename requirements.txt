@@ -25,18 +25,19 @@ aioredis==2.0.1
 pika==1.3.2
 
 # HTTP & API
-requests==2.30.0
-aiohttp==3.8.5
+httpx==0.24.0  # Standardized HTTP client
+
+# Legacy HTTP clients (maintained for backwards compatibility)
+requests==2.30.0  # DEPRECATED: Use httpx instead
+aiohttp==3.8.5  # DEPRECATED: Use httpx instead
 
 # Testing
-httpx==0.24.0
 factory-boy==3.3.0
 
 # Monitoring
 prometheus-client==0.20.0
 prometheus-fastapi-instrumentator==7.0.0
-opentelemetry-api==1.23.0
-opentelemetry-sdk==1.23.0
+-r packages/config/monitoring/telemetry-requirements.txt
 
 # Utilities
 loguru==0.7.0

@@ -56,7 +56,18 @@ python -m flake8 .    # Python linter
 - Python: `from packages.error_handling.python.errors import ValidationError, NotFoundError`
 
 ## Standardized Libraries
-- **HTTP Client**: Use `httpx` for all HTTP requests in Python code
+- **HTTP Client**: Use the standardized HTTP client from `packages/error-handling/python/http_client`
+  ```python
+  from packages.error_handling.python.http_client import get, post, HttpClient
+  
+  # Using convenience functions
+  response = await get("https://api.example.com/data", params={"limit": 10})
+  data = response.json()
+  
+  # Or create a client with a base URL
+  client = HttpClient(base_url="https://api.example.com")
+  response = await client.async_get("/data", params={"limit": 10})
+  ```
 - **Testing**: Use Vitest for JavaScript/TypeScript tests (Jest is deprecated)
 - **Redis**: Import from `packages/database/src/redis`
   ```python

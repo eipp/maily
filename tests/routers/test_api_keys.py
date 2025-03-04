@@ -5,7 +5,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from apps.api.routers.api_keys import router
-from apps.api.errors.exceptions import NotFoundError, DatabaseError, AuthenticationError
+from packages.error_handling.python.error import ResourceNotFoundError as NotFoundError, DatabaseError, AuthenticationError
 
 
 @pytest.fixture

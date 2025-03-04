@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Canvas } from '@/components/Canvas';
+import { CognitiveCanvas } from '@/components/CognitiveCanvas';
 import { Button } from '@/components/Button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/Tabs';
 import { Input } from '@/components/Input';
@@ -294,7 +295,10 @@ export function MailyDocsCanvas({
           {/* Canvas integration */}
           <div className="border rounded-md p-4">
             <h3 className="text-lg font-medium mb-2">Visual Editor</h3>
-            <Canvas />
+            <CognitiveCanvas 
+              documentId={documentTitle ? `${documentType}-${documentTitle.replace(/\s+/g, '-').toLowerCase()}` : undefined}
+              userId={`editor-${Date.now()}`}
+            />
           </div>
         </TabsContent>
 

@@ -15,9 +15,9 @@ from typing import Dict, Any
 from apps.api.ai.adapters.base import ModelRequest, ModelResponse, BaseModelAdapter
 from apps.api.ai.adapters.factory import ModelAdapterFactory
 from apps.api.ai.adapters.openai_adapter import OpenAIAdapter
-from apps.api.errors.ai_service_errors import (
-    AIServiceError,
-    RateLimitError,
+from packages.error_handling.python.error import (
+    AIError as AIServiceError,
+    RateLimitExceededError as RateLimitError,
     AuthenticationError,
     ValidationError,
     ServerError

@@ -15,8 +15,7 @@ export function ResetPasswordForm() {
     const email = formData.get('email') as string;
 
     try {
-      // TODO: Implement actual password reset logic
-      const response = await fetch('/api/auth/reset-password', {
+      const response = await fetch('/api/auth/password-reset', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),

@@ -3,7 +3,13 @@ WebSocket Router for AI Mesh Network
 
 This module provides WebSocket endpoints for real-time communication
 with the AI Mesh Network, allowing clients to receive real-time updates
-on agent activities, task progress, and results.
+on agent activities, task progress, and results. The implementation supports:
+
+1. Real-time task updates
+2. Agent status monitoring 
+3. Memory changes notification
+4. Network-wide broadcasts
+5. Session management with authentication
 """
 
 import logging
@@ -579,12 +585,195 @@ async def broadcast_network_update(
     }
     await pubsub.publish(channel, message)
 
+@router.get("/mesh/networks/{network_id}/memory", tags=["AI Mesh Network - WebSocket"])
+async def get_memory_ws_endpoint(
+    network_id: str = Path(..., description="ID of the network"),
+    coordinator: AgentCoordinator = Depends(get_agent_coordinator)
+):
+    """Get WebSocket connection info for memory updates"""
+    try:
+        # Verify network exists
+        network = await coordinator.get_network(network_id)
+        if not network:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Network {network_id} not found"
+            )
+        
+        # Return WebSocket connection info
+        return {
+            "websocket_url": f"/api/mesh/network/{network_id}/ws",
+            "memory_channel": f"memory:{network_id}",
+            "connection_type": "websocket",
+            "protocol_version": "1.0"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get memory WebSocket endpoint: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get memory WebSocket endpoint: {str(e)}"
+        )
+
+@router.websocket("/mesh/memory/{network_id}/ws")
+async def memory_websocket(
+    websocket: WebSocket,
+    network_id: str,
+    user_id: Optional[str] = Query(None),
+    coordinator: AgentCoordinator = Depends(get_agent_coordinator)
+):
+    """WebSocket endpoint for real-time memory updates"""
+    
+    # Verify network exists
+    try:
+        network = await coordinator.get_network(network_id)
+        if not network:
+            await websocket.close(code=4004, reason="Network not found")
+            return
+    except Exception as e:
+        logger.error(f"Error verifying network {network_id}: {e}")
+        await websocket.close(code=4004, reason="Network not found")
+        return
+    
+    # Accept connection
+    await websocket.accept()
+    
+    # Generate connection ID
+    connection_id = f"memory_{network_id}_{int(time.time())}_{id(websocket)}"
+    
+    # Send initial connection message
+    await websocket.send_json({
+        "type": "connected",
+        "network_id": network_id,
+        "connection_id": connection_id,
+        "timestamp": datetime.utcnow().isoformat(),
+        "protocol": "memory"
+    })
+    
+    # Subscribe to memory events
+    memory_channel = f"memory:{network_id}"
+    
+    # Create callback for memory events
+    async def memory_callback(data):
+        try:
+            await websocket.send_json(data)
+        except Exception as e:
+            logger.error(f"Error in memory callback for {connection_id}: {e}")
+    
+    # Set connection ID attribute on callback
+    setattr(memory_callback, "__connection_id", connection_id)
+    
+    # Subscribe to memory events
+    await pubsub.subscribe(memory_channel, connection_id, memory_callback)
+    
+    try:
+        # Immediately send current memory items
+        try:
+            memories = await coordinator.get_network_memory(
+                network_id=network_id,
+                limit=50
+            )
+            
+            await websocket.send_json({
+                "type": "memory_snapshot",
+                "network_id": network_id,
+                "memories": memories,
+                "timestamp": datetime.utcnow().isoformat(),
+                "count": len(memories)
+            })
+        except Exception as e:
+            logger.error(f"Error sending memory snapshot: {e}")
+        
+        # Handle incoming messages (simple commands and ping)
+        while True:
+            data = await websocket.receive_text()
+            try:
+                message = json.loads(data)
+                
+                # Handle ping
+                if message.get("type") == "ping":
+                    await websocket.send_json({
+                        "type": "pong",
+                        "timestamp": datetime.utcnow().isoformat()
+                    })
+                    continue
+                
+                # Handle memory query
+                if message.get("type") == "memory_query":
+                    query = message.get("query", "")
+                    memory_type = message.get("memory_type")
+                    limit = min(message.get("limit", 20), 100)  # Cap at 100 items max
+                    
+                    memories = await coordinator.get_network_memory(
+                        network_id=network_id,
+                        memory_type=memory_type,
+                        query=query,
+                        limit=limit,
+                        search_mode=message.get("search_mode", "semantic")
+                    )
+                    
+                    await websocket.send_json({
+                        "type": "memory_query_results",
+                        "query": query,
+                        "results": memories,
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "count": len(memories)
+                    })
+                    continue
+            except json.JSONDecodeError:
+                await websocket.send_json({
+                    "type": "error",
+                    "error": "Invalid JSON",
+                    "timestamp": datetime.utcnow().isoformat()
+                })
+            except Exception as e:
+                logger.error(f"Error handling memory WebSocket message: {e}")
+                await websocket.send_json({
+                    "type": "error",
+                    "error": f"Server error: {str(e)}",
+                    "timestamp": datetime.utcnow().isoformat()
+                })
+    
+    except WebSocketDisconnect:
+        logger.debug(f"Memory WebSocket disconnect for {connection_id}")
+    except Exception as e:
+        logger.error(f"Memory WebSocket error for {connection_id}: {e}")
+    finally:
+        # Clean up
+        await pubsub.unsubscribe_connection(connection_id)
+
+# Helper function to broadcast memory updates
+async def broadcast_memory_update(
+    network_id: str,
+    memory_id: str,
+    update_type: str,
+    memory_data: Dict[str, Any]
+):
+    """Broadcast a memory update to all subscribed clients"""
+    channel = f"memory:{network_id}"
+    message = {
+        "type": update_type,
+        "network_id": network_id,
+        "memory_id": memory_id,
+        "data": memory_data,
+        "timestamp": datetime.utcnow().isoformat()
+    }
+    await pubsub.publish(channel, message)
+
 @router.on_event("startup")
 async def startup_pubsub():
     """Initialize the PubSub system on startup"""
     logger.info("Initializing AI Mesh Network WebSocket PubSub system")
     # Ensure pubsub is initialized
     await pubsub._ensure_initialized()
+    
+    # Register memory update handler
+    from ..implementations.memory.memory_indexing import get_memory_indexing_system
+    memory_indexing = get_memory_indexing_system()
+    memory_indexing.set_update_callback(broadcast_memory_update)
+    
+    logger.info("Memory update broadcast handler registered")
 
 @router.on_event("shutdown")
 async def shutdown_pubsub():

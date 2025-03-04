@@ -2,7 +2,7 @@ from typing import Dict, Any, Optional
 import os
 import time
 import logging
-import aiohttp
+import httpx
 from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)

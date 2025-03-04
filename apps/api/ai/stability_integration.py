@@ -4,7 +4,7 @@ import os
 import logging
 import base64
 from typing import Dict, Any, Optional, List, Union
-import aiohttp
+import httpx
 import io
 from PIL import Image
 
