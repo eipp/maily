@@ -1,4 +1,4 @@
-# Maily
+# Maily Platform
 
 Maily is an AI-powered email campaign platform with advanced features including AI mesh networking, cognitive canvas, and predictive analytics.
 
@@ -13,6 +13,8 @@ Maily is an AI-powered email campaign platform with advanced features including 
 
 ## 📋 Project Structure
 
+The repository follows a standardized structure:
+
 ```
 maily/
 ├── apps/                   # Application services
@@ -20,22 +22,18 @@ maily/
 │   ├── api/                # Main API backend
 │   ├── web/                # Web frontend (Next.js)
 │   ├── email-service/      # Email delivery service
-│   ├── analytics-service/  # Analytics processing
-│   ├── campaign-service/   # Campaign management
 │   └── workers/            # Background task workers
 ├── packages/               # Shared packages
-│   ├── ui/                 # UI components
-│   ├── utils/              # Shared utilities
-│   ├── config/             # Configuration
-│   ├── domain/             # Shared domain models
-│   ├── testing/            # Testing utilities
-│   └── config-schema/      # Configuration schema
+│   ├── database/           # Database utilities
+│   ├── error-handling/     # Error handling utilities
+│   ├── ui-components/      # UI components
+│   └── utils/              # Shared utilities
+├── config/                 # Centralized configuration
 ├── docker/                 # Docker configuration
-├── infrastructure/         # Infrastructure as code
-├── kubernetes/             # Kubernetes configuration
-├── docs/                   # Documentation
-└── scripts/                # Utility scripts
+└── kubernetes/             # Kubernetes configuration
 ```
+
+For a complete overview of the repository structure, see [REPOSITORY-STRUCTURE.md](./REPOSITORY-STRUCTURE.md).
 
 ## 🔧 Development
 
@@ -53,9 +51,12 @@ npm install
 
 # Set up environment
 cp .env.example .env
+
+# Start services with Docker Compose
+docker-compose up
 ```
 
-### Running locally
+### Running Locally
 
 ```bash
 # Start all services
@@ -76,33 +77,7 @@ npm test -- -t "test name"
 
 # Run Python tests
 cd apps/api && pytest
-
-# Run end-to-end tests against staging environment
-npm run test:e2e:staging
-
-# Run smoke tests
-npm run test:smoke
-
-# Run deployment verification
-npm run test:verify
 ```
-
-### Deployment Testing
-
-The deployment process includes comprehensive verification steps:
-
-1. **Smoke Testing**: Basic functionality checks using `enhanced-smoke-test.js`
-2. **Deployment Verification**: Resource validation using `verify-deployment.js`  
-3. **End-to-End Testing**: Complete workflow testing using `e2e-staging-test.js`
-
-End-to-end tests validate:
-- Infrastructure health
-- User authentication
-- Email campaign flows
-- AI integration
-- Database integrity
-- Performance metrics
-- Error handling
 
 ## 📚 Documentation
 
@@ -116,7 +91,43 @@ pip install mkdocs mkdocs-material
 mkdocs serve
 ```
 
-Or visit our [documentation site](https://docs.maily.com).
+## 🧪 Code Style
+
+The codebase follows standardized conventions:
+
+- **TypeScript**: Strict mode, avoid 'any', PascalCase for components/types, camelCase for variables
+- **Python**: Type annotations required, single responsibility, clean architecture with DI
+- **Formatting**: 2 spaces, 100 char line limit, single quotes, trailing commas
+- **Imports**: Use path aliases (@/* for imports), organize imports (isort for Python)
+- **Error Handling**: Use standardized error handling from packages/error-handling
+
+For complete code style guidelines, see [CLAUDE.md](./CLAUDE.md).
+
+## 🏗️ Building and Deployment
+
+### Building
+
+```bash
+# Build all packages
+npm run build
+
+# Build specific package
+npm run build --filter=web
+```
+
+### Deployment
+
+Deployment is handled through Kubernetes:
+
+```bash
+# Deploy to staging
+scripts/deploy/staging.sh
+
+# Deploy to production
+scripts/deploy/production.sh
+```
+
+For detailed deployment instructions, see the [Production Deployment Guide](docs/production-deployment-guide.md).
 
 ## 🤝 Contributing
 
@@ -125,11 +136,3 @@ Please read our [Contributing Guide](.github/docs/CONTRIBUTING.md) to get starte
 ## 📄 License
 
 This project is licensed under the terms of the [MIT license](LICENSE).
-
-## 🔗 Links
-
-- [Production Deployment Guide](docs/production-deployment-guide.md)
-- [API Documentation](docs/api/overview.md)
-- [Architecture Overview](docs/internal/architecture-overview.md)# Repository Organization Improvements
-
-The repository has been thoroughly reorganized following state-of-the-art practices. All details can be found in [REPO-IMPROVEMENTS.md](REPO-IMPROVEMENTS.md)
