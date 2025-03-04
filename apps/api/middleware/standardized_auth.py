@@ -6,7 +6,8 @@ from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from errors.exceptions import AuthenticationError
+from packages.error_handling.python.error import UnauthorizedError, ForbiddenError
+from packages.error_handling.python.middleware import setup_error_handling
 
 logger = logging.getLogger(__name__)
 
@@ -198,11 +199,11 @@ async def require_auth(request: Request) -> Dict[str, Any]:
         The authenticated user.
 
     Raises:
-        AuthenticationError: If no authenticated user is found.
+        UnauthorizedError: If no authenticated user is found.
     """
     user = getattr(request.state, "user", None)
     if not user:
-        raise AuthenticationError("Not authenticated")
+        raise UnauthorizedError("Not authenticated")
     return user
 
 
@@ -216,11 +217,12 @@ async def require_admin(request: Request) -> Dict[str, Any]:
         The authenticated admin user.
 
     Raises:
-        AuthenticationError: If no authenticated user is found or user is not admin.
+        UnauthorizedError: If no authenticated user is found.
+        ForbiddenError: If user does not have admin privileges.
     """
     user = await require_auth(request)
     if not user.get("is_admin"):
-        raise AuthenticationError("Admin privileges required")
+        raise ForbiddenError("Admin privileges required")
     return user
 
 
@@ -237,7 +239,7 @@ async def optional_auth(request: Request) -> Optional[Dict[str, Any]]:
 
 
 # Helper function to convert exceptions to responses
-async def auth_exception_handler(request: Request, exc: AuthenticationError) -> Response:
+async def auth_exception_handler(request: Request, exc: Exception) -> Response:
     """Handle authentication errors.
 
     Args:
@@ -247,11 +249,21 @@ async def auth_exception_handler(request: Request, exc: AuthenticationError) -> 
     Returns:
         A JSON response with the error details.
     """
-    status_code = 401
-    if "Admin privileges required" in str(exc):
+    if isinstance(exc, UnauthorizedError):
+        status_code = 401
+        error_code = "unauthorized"
+    elif isinstance(exc, ForbiddenError):
         status_code = 403
+        error_code = "forbidden"
+    else:
+        status_code = 500
+        error_code = "server_error"
 
     return JSONResponse(
         status_code=status_code,
-        content={"error": str(exc), "code": "unauthorized"}
+        content={
+            "error": str(exc),
+            "code": error_code,
+            "trace_id": getattr(request.state, "trace_id", "unknown")
+        }
     )

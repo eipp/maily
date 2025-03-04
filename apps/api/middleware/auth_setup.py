@@ -10,7 +10,7 @@ from .standardized_auth import (
     auth_exception_handler,
 )
 from .providers import Auth0JWTProvider, DatabaseAPIKeyProvider, VaultServiceTokenProvider
-from errors.exceptions import AuthenticationError
+from packages.error_handling.python.error import UnauthorizedError
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ def setup_auth_middleware(app: FastAPI) -> None:
     app.add_middleware(AuthMiddleware, providers=providers)
 
     # Register authentication exception handler
-    app.add_exception_handler(AuthenticationError, auth_exception_handler)
+    app.add_exception_handler(UnauthorizedError, auth_exception_handler)
 
     logger.info(f"Authentication middleware set up with {len(providers)} providers")
 

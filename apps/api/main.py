@@ -58,8 +58,12 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
 # Import standardized error handling
-from packages.error_handling.python.errors import MailyError
-from packages.error_handling.python.middleware import setup_error_handling
+from packages.error_handling.python.error import (
+    MailyError, ValidationError, ResourceNotFoundError, 
+    DatabaseError, UnauthorizedError, ForbiddenError,
+    ServerError, RateLimitExceededError, AIError
+)
+from packages.error_handling.python.middleware import setup_error_handling, handle_common_exceptions
 
 # Import project modules
 try:
@@ -370,6 +374,7 @@ class ModelConfigResponse(BaseModel):
 
 
 # Dependency functions
+@handle_common_exceptions
 async def verify_api_key(api_key: str = Depends(api_key_header)) -> str:
     """
     Verifies that the API key is valid.
@@ -381,13 +386,12 @@ async def verify_api_key(api_key: str = Depends(api_key_header)) -> str:
         The validated API key if valid.
         
     Raises:
-        HTTPException: If the API key is invalid or missing.
+        UnauthorizedError: If the API key is invalid or missing.
     """
     if api_key is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="API key is required",
-            headers={"WWW-Authenticate": "APIKey"},
+        raise UnauthorizedError(
+            message="API key is required",
+            error_code="MISSING_API_KEY"
         )
     
     # Import database services here to avoid circular imports
@@ -398,10 +402,9 @@ async def verify_api_key(api_key: str = Depends(api_key_header)) -> str:
         is_valid, api_key_record = await validate_api_key(api_key)
         
         if not is_valid:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid API key",
-                headers={"WWW-Authenticate": "APIKey"},
+            raise UnauthorizedError(
+                message="Invalid API key",
+                error_code="INVALID_API_KEY"
             )
         
         # Get API key scopes for authorization
@@ -418,17 +421,16 @@ async def verify_api_key(api_key: str = Depends(api_key_header)) -> str:
         # Fallback for development/testing only
         if os.environ.get("ENVIRONMENT") == "production":
             error("API key service not available in production")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Authentication service unavailable",
+            raise ServerError(
+                message="Authentication service unavailable",
+                error_code="AUTH_SERVICE_UNAVAILABLE"
             )
         
         warning("Using development API key validation")
         if not api_key or len(api_key) < 8:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid API key",
-                headers={"WWW-Authenticate": "APIKey"},
+            raise UnauthorizedError(
+                message="Invalid API key",
+                error_code="INVALID_API_KEY"
             )
         
         return api_key
@@ -436,6 +438,7 @@ async def verify_api_key(api_key: str = Depends(api_key_header)) -> str:
 
 # Routes
 @app.get("/health", response_model=HealthResponse, tags=["System"])
+@handle_common_exceptions
 async def check_health():
     """
     Checks the health of the API and its dependencies.
@@ -481,6 +484,7 @@ async def check_health():
 
 
 @app.post("/configure_model", response_model=ModelConfigResponse, tags=["AI Models"])
+@handle_common_exceptions
 async def configure_model(config: ModelConfig, api_key: str = Depends(verify_api_key)):
     """
     Configures an AI model for use with the API.
@@ -524,13 +528,14 @@ async def configure_model(config: ModelConfig, api_key: str = Depends(verify_api
         )
     except Exception as e:
         error(f"Error configuring model: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error configuring model: {str(e)}"
+        raise ServerError(
+            message=f"Error configuring model: {str(e)}",
+            error_code="MODEL_CONFIG_ERROR"
         )
 
 
 @app.post("/create_campaign", response_model=CampaignResponse, tags=["Campaigns"])
+@handle_common_exceptions
 async def create_campaign(
     campaign: CampaignRequest,
     background_tasks: BackgroundTasks,
@@ -576,18 +581,19 @@ async def create_campaign(
             estimated_audience=audience_size,
         )
     except ValidationError as e:
-        # Catch Pydantic validation errors
+        # Catch validation errors using standardized error handling
         error(f"Validation error in campaign creation: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(e),
+        raise ValidationError(
+            message=str(e),
+            error_code="CAMPAIGN_VALIDATION_ERROR",
+            details={"campaign_id": campaign_id}
         )
     except Exception as e:
-        # Log unexpected errors
+        # Log unexpected errors using standardized error handling
         exception(f"Error creating campaign: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error during campaign creation",
+        raise ServerError(
+            message="Internal server error during campaign creation",
+            error_code="CAMPAIGN_CREATION_ERROR"
         )
 
 

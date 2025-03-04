@@ -9,7 +9,7 @@ from datetime import datetime
 
 from models.user import User
 from database.session import get_db
-from errors.exceptions import NotFoundError, DatabaseError
+from packages.error_handling.python.error import ResourceNotFoundError, DatabaseError
 from ..cache.tiered_cache_service import TieredCacheService, get_tiered_cache_service, CacheTier
 from ..monitoring.performance_metrics import (
     PerformanceMetricsService,
@@ -119,9 +119,9 @@ class UserService:
                     )
                     user = result.scalars().first()
                     if not user:
-                        raise NotFoundError(f"User with ID {user_id} not found")
+                        raise ResourceNotFoundError(f"User with ID {user_id} not found")
                     return user
-                except NotFoundError:
+                except ResourceNotFoundError:
                     raise
                 except Exception as e:
                     logger.error(f"Error getting user by ID: {str(e)}")
@@ -145,7 +145,7 @@ class UserService:
             )
 
             return user
-        except NotFoundError:
+        except ResourceNotFoundError:
             # Pass through not found errors
             raise
         except Exception as e:
@@ -232,7 +232,7 @@ class UserService:
                 await self._invalidate_user_cache(user)
 
                 return user
-            except NotFoundError:
+            except ResourceNotFoundError:
                 raise
             except Exception as e:
                 await self.db.rollback()
@@ -305,7 +305,7 @@ async def get_user_by_id(user_id: str, db: Optional[AsyncSession] = None) -> Use
         The user.
 
     Raises:
-        NotFoundError: If the user is not found.
+        ResourceNotFoundError: If the user is not found.
     """
     service = await get_user_service(db)
     return await service.get_user_by_id(user_id)
