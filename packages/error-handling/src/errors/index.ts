@@ -1,5 +1,15 @@
-// Export all error classes and types
+/**
+ * Error handling package exports
+ */
+
+// Base error class
 export * from './ApplicationError';
-export * from './ErrorTypes';
+
+// HTTP-specific errors
 export * from './HttpErrors';
+
+// Domain-specific errors
 export * from './DomainErrors';
+
+// Error types
+export * from './ErrorTypes';

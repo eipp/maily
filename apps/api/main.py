@@ -4,6 +4,7 @@ Main application for the Maily API.
 
 This module serves as the entry point for the Maily API, implementing a hexagonal
 architecture with clear separation between domain logic and external adapters.
+It combines the best features from all implementation variants.
 """
 
 import asyncio
@@ -56,29 +57,49 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
+# Import standardized error handling
+from packages.error_handling.python.errors import MailyError
+from packages.error_handling.python.middleware import setup_error_handling
+
 # Import project modules
 try:
     # Try to import from apps.api
     from apps.api.config import Settings
+    from apps.api.config.settings import get_settings
     from apps.api.routers import router
     from apps.api.middleware.security import (
         security_middleware,
         waf_middleware,
     )
-    from apps.api.middleware.rate_limiting import add_rate_limiting_middleware
+    from apps.api.middleware.rate_limiting import add_rate_limiting_middleware, rate_limit_middleware
     from apps.api.middleware.owasp_middleware import setup_owasp_middleware
     from apps.api.middleware.security_headers import EnhancedSecurityHeadersMiddleware, SecurityConfig
     from apps.api.utils.openapi_generator import setup_openapi_documentation
     from apps.api.monitoring.metrics import MetricsManager
-    from apps.api.config.settings import get_settings
     from apps.api.routers import (
         integrations, auth, policies, campaigns, templates,
         health, privacy, models, platforms, contacts, canvas, websocket,
-        ai, ai_cached, blockchain, mailydocs_certificates,
+        ai, ai_cached, blockchain, mailydocs_certificates, documents, 
+        conversation, api_keys, evaluation, graphql, analytics_router
     )
     from apps.api.endpoints import users, analytics, mailydocs
     from apps.api.metrics.prometheus import initialize_metrics_endpoint
     from apps.api.ai.monitoring.ai_dashboard import register_ai_dashboard
+
+    # Import adapter-related modules if available
+    try:
+        from apps.api.services.api_adapter_service import (
+            AuthAdapter,
+            ModelAdapter,
+            ResponseAdapter,
+            AuthMiddleware
+        )
+        from apps.api.adapter_bridge import create_adapter_app
+        from apps.api.api_standardization import apply_standardization
+        adapter_modules_available = True
+    except ImportError:
+        adapter_modules_available = False
+
 except ImportError:
     # Mock imports if not available
     class Settings:
@@ -89,6 +110,7 @@ except ImportError:
             self.version = os.environ.get("VERSION", "0.1.0")
             self.api_prefix = os.environ.get("API_PREFIX", "/api/v1")
             self.allowed_hosts = os.environ.get("ALLOWED_HOSTS", "*").split(",")
+            self.cors_allowed_origins = os.environ.get("CORS_ORIGINS", "*").split(",")
 
     def get_settings():
         return Settings()
@@ -104,6 +126,8 @@ except ImportError:
     async def waf_middleware(request, call_next):
         return await call_next(request)
 
+    def add_rate_limiting_middleware(app): pass
+
     class MetricsManager:
         def __init__(self): pass
         def setup_metrics(self, app): pass
@@ -117,6 +141,8 @@ except ImportError:
 
     class SecurityConfig: pass
     class EnhancedSecurityHeadersMiddleware: pass
+    
+    adapter_modules_available = False
 
 # Try to import AI service
 try:
@@ -139,11 +165,20 @@ settings = get_settings()
 # API key authentication
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
+# Check for app mode
+APP_MODE = os.environ.get("APP_MODE", "standard").lower()
+valid_modes = ["standard", "secured", "adapter", "fixed"]
+if APP_MODE not in valid_modes:
+    warning(f"Invalid APP_MODE: {APP_MODE}. Using 'standard' instead.")
+    APP_MODE = "standard"
+
+info(f"Starting Maily API in '{APP_MODE}' mode")
+
 # Create lifespan context manager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup activities
-    info("Starting Maily API service")
+    info(f"Starting Maily API service in {APP_MODE} mode")
     
     # Initialize services and connections
     try:
@@ -213,7 +248,26 @@ setup_owasp_middleware(app)
 # 6. Add rate limiting (needs to be before application-specific middleware)
 add_rate_limiting_middleware(app)
 
-# 7. Tracing for APM (after security, before app-specific)
+# 7. Add Auth middleware if in secured mode
+if APP_MODE == "secured":
+    try:
+        from apps.api.middleware.auth_setup import setup_auth_middleware
+        setup_auth_middleware(app)
+    except ImportError:
+        warning("Auth middleware setup failed, continuing without it")
+
+# 8. Add adapter middleware if in adapter mode
+if APP_MODE == "adapter" and adapter_modules_available:
+    try:
+        auth_adapter = AuthAdapter()
+        app.add_middleware(
+            AuthMiddleware,
+            auth_adapter=auth_adapter
+        )
+    except Exception as e:
+        warning(f"Failed to add adapter middleware: {str(e)}")
+
+# 9. Tracing for APM (after security, before app-specific)
 @app.middleware("http")
 async def tracing_middleware_wrapper(request: Request, call_next):
     with info(f"Processing request: {request.method} {request.url.path}"):
@@ -228,7 +282,7 @@ async def tracing_middleware_wrapper(request: Request, call_next):
             exception("Request processing exception")
             raise
 
-# 8. WAF (web application firewall) middleware
+# 10. WAF (web application firewall) middleware
 @app.middleware("http")
 async def waf_middleware_wrapper(request: Request, call_next):
     try:
@@ -240,7 +294,7 @@ async def waf_middleware_wrapper(request: Request, call_next):
             content={"detail": "Invalid request detected by security filters"}
         )
 
-# 9. Security middleware (authentication, etc.)
+# 11. Security middleware (authentication, etc.)
 @app.middleware("http")
 async def security_middleware_wrapper(request: Request, call_next):
     try:
@@ -255,7 +309,7 @@ async def security_middleware_wrapper(request: Request, call_next):
             content={"detail": "Authentication error"}
         )
 
-# 10. Rate limit middleware
+# 12. Rate limit middleware
 @app.middleware("http")
 async def rate_limit_middleware_wrapper(request: Request, call_next):
     try:
@@ -441,8 +495,8 @@ async def configure_model(config: ModelConfig, api_key: str = Depends(verify_api
     try:
         # Get the user ID if available
         user_id = None
-        if hasattr(request.state, "user_id"):
-            user_id = request.state.user_id
+        if hasattr(Request.scope.get("fastapi_astack")[-1]["request"].state, "user_id"):
+            user_id = Request.scope.get("fastapi_astack")[-1]["request"].state.user_id
         
         # Import model config service
         from apps.api.services.model_config_service import get_model_config_service
@@ -451,7 +505,7 @@ async def configure_model(config: ModelConfig, api_key: str = Depends(verify_api
         # Create the configuration
         model_config = await model_config_service.create_model_config(
             model_name=config.model_name,
-            provider=config.provider,
+            provider=getattr(config, "provider", "anthropic"),  # Default to anthropic if not provided
             api_key=config.api_key,
             user_id=user_id,
             temperature=config.temperature,
@@ -669,66 +723,16 @@ async def generate_campaign_content(campaign_id: str, task: str, model_name: str
         exception(f"Content generation error for campaign {campaign_id}")
 
 
-# Exception handlers
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request, exc):
-    """
-    Handles HTTP exceptions with structured error responses.
-    
-    Args:
-        request: The incoming request.
-        exc: The HTTP exception.
-        
-    Returns:
-        A JSON response with error details.
-    """
-    # Log the exception with appropriate level based on status code
-    if exc.status_code >= 500:
-        error(f"HTTP 5xx error: {exc.detail}", status_code=exc.status_code, path=request.url.path)
-    elif exc.status_code >= 400:
-        warning(f"HTTP 4xx error: {exc.detail}", status_code=exc.status_code, path=request.url.path)
-    
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={
-            "detail": exc.detail,
-            "status_code": exc.status_code,
-            "request_id": request.headers.get("X-Request-ID", "unknown"),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        },
-    )
-
-
-@app.exception_handler(Exception)
-async def general_exception_handler(request, exc):
-    """
-    Handles all uncaught exceptions with structured error responses.
-    
-    Args:
-        request: The incoming request.
-        exc: The exception.
-        
-    Returns:
-        A JSON response with error details.
-    """
-    # Log the exception
-    exception(f"Unhandled exception: {str(exc)}", path=request.url.path)
-    
-    # Don't expose internal error details in production
-    if settings.environment == "production":
-        error_detail = "Internal server error"
-    else:
-        error_detail = str(exc)
-    
-    return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={
-            "detail": error_detail,
-            "status_code": status.HTTP_500_INTERNAL_SERVER_ERROR,
-            "request_id": request.headers.get("X-Request-ID", "unknown"),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        },
-    )
+# Set up standardized error handling
+error_handler = setup_error_handling(
+    app=app,
+    include_debug_info=settings.environment != "production",
+    documentation_url_base="https://docs.maily.com/errors",
+    on_error_callbacks=[
+        # Add any error callbacks here if needed
+        # For example, to notify monitoring services
+    ]
+)
 
 
 # Startup and shutdown events
@@ -757,7 +761,7 @@ async def startup_event():
     if router:
         app.include_router(router)
     
-    info("Maily API started successfully")
+    info(f"Maily API started successfully in {APP_MODE} mode")
 
 
 @app.on_event("shutdown")
@@ -786,21 +790,8 @@ def cleanup():
 
 atexit.register(cleanup)
 
-# If running as main script
-if __name__ == "__main__":
-    import uvicorn
-    
-    # Start the server
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=int(os.environ.get("PORT", 8000)),
-        reload=settings.debug,
-    )
-
 # Include routers
 app.include_router(auth.router)
-app.include_router(users.router)
 app.include_router(health.router)
 app.include_router(ai.router)
 app.include_router(ai_cached.router)
@@ -815,6 +806,24 @@ app.include_router(contacts.router)
 app.include_router(canvas.router)
 app.include_router(websocket.router)
 app.include_router(analytics.router)
+app.include_router(analytics_router.router)
 app.include_router(mailydocs.router)
 app.include_router(blockchain.router)
 app.include_router(mailydocs_certificates.router)
+app.include_router(documents.router)
+app.include_router(conversation.router)
+app.include_router(api_keys.router)
+app.include_router(evaluation.router)
+app.include_router(graphql.router)
+
+# If running as main script
+if __name__ == "__main__":
+    import uvicorn
+    
+    # Start the server
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", 8000)),
+        reload=settings.debug,
+    )

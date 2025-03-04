@@ -6,6 +6,8 @@ npm run build         # Build all packages (Turbo)
 npm run build:web     # Build web app specifically
 npm run dev           # Run development server
 npm run start:web     # Start web app in production mode
+npm run start:email   # Start email service in production mode
+npm run clean         # Clean build artifacts
 ```
 
 ## Test Commands
@@ -13,45 +15,62 @@ npm run start:web     # Start web app in production mode
 npm run test          # Run all tests
 npm test -- -t "test name" # Run specific JS test 
 npm test -- --watch   # Run tests in watch mode
+npm test -- --coverage # Run tests with coverage reports
 pytest tests/unit/test_file.py::test_function -v  # Run specific Python test
 pytest -xvs -m unit tests/  # Run all unit tests
 pytest --cov=. --cov-report=html tests/  # Run tests with coverage
 npm run test:e2e      # Run E2E tests
-npm run test:smoke    # Run smoke tests
-npm run test:verify   # Verify deployment
+npm run test:e2e:staging # Run E2E tests against staging
 ```
 
-## Lint & Format Commands
+## Lint & Type Check Commands
 ```bash
 npm run lint          # Run ESLint on all packages
 npm run format        # Run Prettier on all files
+npx tsc --noEmit     # Run TypeScript type checking
+python -m black .     # Format Python code
+python -m isort .     # Sort Python imports
+python -m mypy .      # Python type checking
+python -m flake8 .    # Python linter
 ```
 
 ## Code Style Guidelines
 - **TypeScript**: Strict mode, avoid 'any', PascalCase for components/types, camelCase for variables
 - **Python**: Type annotations required, single responsibility, clean architecture with DI
 - **Formatting**: 2 spaces, 100 char line limit, single quotes, trailing commas
-- **Imports**: Use path aliases (@/* for imports), organize imports (isort for Python)
+- **Imports**: Use path aliases (@/* for imports), organize imports with isort
 - **Components**: Functional components with React hooks, small and focused
-- **Error Handling**: Use standardized error handling from packages/error-handling
+- **Error Handling**: Use standardized error classes from packages/error-handling
 - **Git Commits**: Follow conventional commits format (feat/fix/docs/chore/test)
-- **Node/NPM**: Requires Node ≥20.11.1, NPM ≥8.0.0
 - **Testing**: Use appropriate markers (unit/integration/e2e), mock external dependencies
-- **Python Testing**: Use pytest fixtures, parametrize for multiple test cases
 - **Convention**: Follow existing patterns from neighboring files when adding new code
+
+## Error Handling
+- Use appropriate error classes: `ApplicationError` (TS/JS) or `MailyError` subclasses (Python)
+- Include error codes, status codes, and detailed messages
+- React components: Wrap with `ErrorBoundary` from `packages/error-handling/src/react`
+- FastAPI: Use error middleware from `packages/error_handling/python/middleware`
+- Map external service errors to internal error types using `handleHttpError` (TS) or appropriate mappers (Python)
+- Maintain consistent error response format with trace IDs
+- JavaScript: `import { ValidationError, NotFoundError } from '@maily/error-handling';`
+- Python: `from packages.error_handling.python.errors import ValidationError, NotFoundError`
 
 ## Standardized Libraries
 - **HTTP Client**: Use `httpx` for all HTTP requests in Python code
 - **Testing**: Use Vitest for JavaScript/TypeScript tests (Jest is deprecated)
-- **Redis**: Use shared Redis client from `packages/database/src/redis/redis_client.py`
+- **Redis**: Import from `packages/database/src/redis`
+  ```python
+  from packages.database.src.redis import redis_client, get, set, delete
+  
+  # Using the client
+  await redis_client.set("key", "value")
+  value = await redis_client.get("key")
+  ```
 - **GraphQL**: Use Apollo Client for GraphQL in JavaScript/TypeScript
-- **Telemetry**: Use OpenTelemetry packages from `packages/config/monitoring/telemetry-requirements.txt`
-- **Error Handling**: Use standardized error hierarchy from `packages/error-handling`
+- **Telemetry**: Use OpenTelemetry packages from `packages/config/monitoring`
 
 ## Deprecated Modules
-The following modules are deprecated and should not be used in new code:
 - `apps/api/cache/redis.py` - Use `packages/database/src/redis/redis_client.py` instead
 - `apps/api/cache/redis_service.py` - Use implementations based on standardized client
 - `apps/web/jest.config.js` - Use Vitest instead
 - HTTP Libraries: `requests`, `aiohttp`, `urllib3` - Use `httpx` instead
-- Multiple OpenTelemetry versions - Use centralized requirements instead

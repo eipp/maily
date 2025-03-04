@@ -1,3 +1,6 @@
-// Export React error handling components
+/**
+ * React error handling components
+ */
+
 export * from './ErrorBoundary';
-export * from './useErrorHandler';
+export * from './ErrorFallback';

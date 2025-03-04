@@ -1,200 +1,95 @@
-import { ErrorCode, ErrorDetail, ErrorResponse } from './ErrorTypes';
-
 /**
- * Base error class for all application errors
+ * Base class for all application errors
+ * 
+ * This provides a standardized way to create and handle errors throughout
+ * the application with consistent properties and serialization.
  */
 export class ApplicationError extends Error {
   /**
-   * Error code that can be used for error handling
+   * The unique error code (e.g., 'RESOURCE_NOT_FOUND', 'VALIDATION_ERROR')
    */
-  public readonly errorCode: ErrorCode | string;
-  
+  public readonly code: string;
+
   /**
-   * HTTP status code to be used in API responses
+   * HTTP status code associated with this error
    */
   public readonly statusCode: number;
-  
+
   /**
-   * Additional error details
+   * Additional details about the error (e.g., validation issues, field-specific errors)
    */
-  public readonly details: ErrorDetail[];
-  
+  public readonly details?: Record<string, any>;
+
   /**
-   * Trace ID for error tracking
+   * A trace ID to correlate logs with error responses
    */
-  public readonly traceId: string;
-  
+  public readonly traceId?: string;
+
   /**
-   * Request ID if available
-   */
-  public readonly requestId?: string;
-  
-  /**
-   * Provider information (e.g., API provider)
-   */
-  public readonly provider?: string;
-  
-  /**
-   * Timestamp when the error occurred
-   */
-  public readonly timestamp: number;
-  
-  /**
-   * Base URL for error documentation
-   */
-  protected readonly documentationUrlBase: string = 'https://docs.maily.com/errors';
-  
-  /**
-   * Create a new ApplicationError instance
+   * Create a new application error
    * 
-   * @param message - Error message
-   * @param errorCode - Error code from ErrorCode enum or string
-   * @param statusCode - HTTP status code
-   * @param details - Error details as array of ErrorDetail objects or single object
-   * @param traceId - Trace ID for error tracking
-   * @param requestId - Request ID if available
-   * @param provider - Provider information (e.g., API provider)
+   * @param message Human-readable error message
+   * @param code Unique error code for programmatic handling
+   * @param statusCode HTTP status code
+   * @param details Additional error details
    */
   constructor(
     message: string,
-    errorCode: ErrorCode | string = ErrorCode.INTERNAL_ERROR,
+    code: string,
     statusCode: number = 500,
-    details?: ErrorDetail[] | Record<string, any>,
-    traceId?: string,
-    requestId?: string,
-    provider?: string
+    details?: Record<string, any>,
+    traceId?: string
   ) {
     super(message);
+
+    // Maintain proper prototype chain for instanceof checks
+    Object.setPrototypeOf(this, ApplicationError.prototype);
+    
     this.name = this.constructor.name;
-    this.errorCode = errorCode;
+    this.code = code;
     this.statusCode = statusCode;
-    this.timestamp = Date.now();
-    this.traceId = traceId || this.generateTraceId();
-    this.requestId = requestId;
-    this.provider = provider;
-    
-    // Process details
-    if (!details) {
-      this.details = [];
-    } else if (Array.isArray(details)) {
-      this.details = details;
-    } else {
-      this.details = [{
-        code: `${this.errorCode}.details`,
-        message: 'Error details',
-        info: details
-      }];
-    }
-    
-    // Ensure the stack trace includes this constructor
+    this.details = details;
+    this.traceId = traceId;
+
+    // Capture stack trace
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, this.constructor);
     }
-    
-    // Log the error
-    this.logError();
   }
-  
+
   /**
-   * Log the error to the console with appropriate level
-   */
-  protected logError(): void {
-    const context = {
-      errorType: this.name,
-      errorCode: this.errorCode,
-      traceId: this.traceId,
-      statusCode: this.statusCode
-    };
-    
-    if (this.statusCode >= 500) {
-      console.error(`[ERROR] ${this.errorCode}: ${this.message}`, context);
-    } else {
-      console.warn(`[WARN] ${this.errorCode}: ${this.message}`, context);
-    }
-  }
-  
-  /**
-   * Convert the error to a plain object for logging or serialization
-   * 
-   * @returns Plain object representation of the error
+   * Convert the error to a plain object for serialization
    */
   public toJSON(): Record<string, any> {
+    const errorResponse: Record<string, any> = {
+      error: {
+        code: this.code,
+        message: this.message,
+        statusCode: this.statusCode,
+      }
+    };
+
+    if (this.details) {
+      errorResponse.error.details = this.details;
+    }
+
+    if (this.traceId) {
+      errorResponse.error.traceId = this.traceId;
+    }
+
+    return errorResponse;
+  }
+
+  /**
+   * Convert the error to a response format suitable for API responses
+   */
+  public toResponse(): {
+    statusCode: number;
+    body: Record<string, any>;
+  } {
     return {
-      name: this.name,
-      message: this.message,
-      errorCode: this.errorCode,
       statusCode: this.statusCode,
-      details: this.details,
-      traceId: this.traceId,
-      requestId: this.requestId,
-      provider: this.provider,
-      timestamp: this.timestamp,
-      stack: this.stack
+      body: this.toJSON(),
     };
-  }
-  
-  /**
-   * Create a standardized error response object
-   * 
-   * @returns Standardized error response
-   */
-  public toResponse(): ErrorResponse {
-    const response: ErrorResponse = {
-      error: true,
-      error_code: this.errorCode.toString(),
-      message: this.message,
-      status_code: this.statusCode,
-      trace_id: this.traceId,
-      timestamp: this.timestamp,
-      documentation_url: `${this.documentationUrlBase}/${this.errorCode}`
-    };
-    
-    if (this.requestId) {
-      response.request_id = this.requestId;
-    }
-    
-    if (this.details && this.details.length > 0) {
-      response.details = this.details;
-    }
-    
-    return response;
-  }
-  
-  /**
-   * Generate a unique trace ID for the error
-   * 
-   * @returns Unique trace ID
-   */
-  private generateTraceId(): string {
-    return `err_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-  }
-  
-  /**
-   * Create an ApplicationError from another error
-   * 
-   * @param error - Original error
-   * @param options - Additional options
-   * @returns New ApplicationError instance
-   */
-  public static fromError(
-    error: Error, 
-    options: {
-      errorCode?: ErrorCode | string,
-      statusCode?: number,
-      details?: ErrorDetail[] | Record<string, any>,
-      traceId?: string,
-      requestId?: string,
-      provider?: string
-    } = {}
-  ): ApplicationError {
-    return new ApplicationError(
-      error.message || 'An unknown error occurred',
-      options.errorCode || ErrorCode.INTERNAL_ERROR,
-      options.statusCode || 500,
-      options.details || { originalError: error.toString(), stack: error.stack },
-      options.traceId,
-      options.requestId,
-      options.provider
-    );
   }
 }

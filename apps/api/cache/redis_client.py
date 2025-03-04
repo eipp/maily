@@ -15,10 +15,9 @@ from typing import Any, Dict, List, Optional, Union
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../")))
 
 # Import the standardized Redis client
-from packages.database.src.redis-client import (
+from packages.database.src.redis import (
     RedisClient as StandardRedisClient,
-    get_redis_client as get_standard_redis_client,
-    DummyRedisClient
+    redis_client as standard_redis_client
 )
 
 class RedisClient:
@@ -43,13 +42,11 @@ class RedisClient:
         if self._client_instance is None:
             # Use the standardized client with the same params
             self._client_instance = StandardRedisClient(
-                url=self._client_params["url"],
                 db=self._client_params["db"],
                 password=self._client_params["password"],
                 host=self._client_params["host"],
                 port=self._client_params["port"]
             )
-            await self._client_instance.connect()
         return self._client_instance
     
     async def get(self, key: str) -> Optional[str]:
@@ -145,30 +142,16 @@ class RedisClient:
     async def disconnect(self):
         """Disconnect from Redis"""
         if self._client_instance:
-            await self._client_instance.disconnect()
+            await self._client_instance.close()
             self._client_instance = None
 
 # Simplified API for backward compatibility
-async def get_redis_client() -> Union[RedisClient, DummyRedisClient]:
+async def get_redis_client() -> RedisClient:
     """
     Get a Redis client instance. For backward compatibility.
-    New code should import get_redis_client from packages/database/src/redis-client.
+    New code should import redis_client from packages/database/src/redis.
     """
-    # First try to get the standardized client
-    try:
-        standard_client = await get_standard_redis_client()
-        if isinstance(standard_client, DummyRedisClient):
-            # Return a dummy client with our wrapper interface
-            return DummyRedisClient()
-            
-        # Create a wrapper around the standardized client
-        wrapper = RedisClient()
-        wrapper._client_instance = standard_client
-        return wrapper
-    except Exception as e:
-        import logging
-        logging.getLogger("maily.api.cache.redis_client").error(
-            f"Failed to get standardized Redis client: {e}. Falling back to new instance."
-        )
-        # Fall back to creating a new instance
-        return RedisClient()
+    # Create a wrapper around the standardized client
+    wrapper = RedisClient()
+    wrapper._client_instance = standard_redis_client
+    return wrapper

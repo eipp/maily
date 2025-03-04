@@ -1,306 +1,173 @@
+/**
+ * HTTP-specific error classes
+ * 
+ * These classes represent common HTTP errors with appropriate status codes
+ * and standardized error messages. They should be used when returning HTTP
+ * responses to clients.
+ */
+
 import { ApplicationError } from './ApplicationError';
-import { ErrorCode, ErrorDetail } from './ErrorTypes';
 
 /**
- * Base class for HTTP 400 Bad Request errors
+ * 400 Bad Request
+ * Used when the client sends a request with invalid data
  */
 export class BadRequestError extends ApplicationError {
   constructor(
-    message: string = 'The request was invalid',
-    details?: ErrorDetail[] | Record<string, any>,
-    traceId?: string,
-    requestId?: string,
-    provider?: string
+    message: string = 'Bad request',
+    code: string = 'BAD_REQUEST',
+    details?: Record<string, any>,
+    traceId?: string
   ) {
-    super(
-      message,
-      ErrorCode.BAD_REQUEST,
-      400,
-      details,
-      traceId,
-      requestId,
-      provider
-    );
+    super(message, code, 400, details, traceId);
   }
 }
 
 /**
- * Error for validation failures
- */
-export class ValidationError extends BadRequestError {
-  constructor(
-    message: string = 'Validation error',
-    details?: ErrorDetail[] | Record<string, any>,
-    traceId?: string,
-    requestId?: string,
-    provider?: string
-  ) {
-    super(
-      message,
-      details,
-      traceId,
-      requestId,
-      provider
-    );
-    this.errorCode = ErrorCode.VALIDATION_ERROR;
-  }
-}
-
-/**
- * Error for duplicate resources
- */
-export class DuplicateResourceError extends BadRequestError {
-  constructor(
-    message: string = 'Resource already exists',
-    details?: ErrorDetail[] | Record<string, any>,
-    traceId?: string,
-    requestId?: string,
-    provider?: string
-  ) {
-    super(
-      message,
-      details,
-      traceId,
-      requestId,
-      provider
-    );
-    this.errorCode = ErrorCode.ALREADY_EXISTS;
-    this.statusCode = 409;
-  }
-}
-
-/**
- * Error for conflicting resources
- */
-export class ConflictError extends BadRequestError {
-  constructor(
-    message: string = 'The request conflicts with the current state',
-    details?: ErrorDetail[] | Record<string, any>,
-    traceId?: string,
-    requestId?: string,
-    provider?: string
-  ) {
-    super(
-      message,
-      details,
-      traceId,
-      requestId,
-      provider
-    );
-    this.errorCode = ErrorCode.CONFLICT;
-    this.statusCode = 409;
-  }
-}
-
-/**
- * Error for rate limit exceeded
- */
-export class RateLimitExceededError extends BadRequestError {
-  constructor(
-    message: string = 'Rate limit exceeded',
-    details?: ErrorDetail[] | Record<string, any>,
-    traceId?: string,
-    requestId?: string,
-    provider?: string
-  ) {
-    super(
-      message,
-      details,
-      traceId,
-      requestId,
-      provider
-    );
-    this.errorCode = ErrorCode.RATE_LIMIT_EXCEEDED;
-    this.statusCode = 429;
-  }
-}
-
-/**
- * Error for too many requests
- */
-export class TooManyRequestsError extends BadRequestError {
-  constructor(
-    message: string = 'Too many requests, please try again later',
-    details?: ErrorDetail[] | Record<string, any>,
-    traceId?: string,
-    requestId?: string,
-    provider?: string
-  ) {
-    super(
-      message,
-      details,
-      traceId,
-      requestId,
-      provider
-    );
-    this.errorCode = ErrorCode.TOO_MANY_REQUESTS;
-    this.statusCode = 429;
-  }
-}
-
-/**
- * Error for unauthorized access (not authenticated)
+ * 401 Unauthorized
+ * Used when authentication is required but not provided or invalid
  */
 export class UnauthorizedError extends ApplicationError {
   constructor(
-    message: string = 'Authentication is required',
-    details?: ErrorDetail[] | Record<string, any>,
-    traceId?: string,
-    requestId?: string,
-    provider?: string
+    message: string = 'Authentication required',
+    code: string = 'UNAUTHORIZED',
+    details?: Record<string, any>,
+    traceId?: string
   ) {
-    super(
-      message,
-      ErrorCode.UNAUTHORIZED,
-      401,
-      details,
-      traceId,
-      requestId,
-      provider
-    );
+    super(message, code, 401, details, traceId);
   }
 }
 
 /**
- * Error for forbidden access (authenticated but not authorized)
+ * 403 Forbidden
+ * Used when the authenticated user doesn't have permission to access a resource
  */
 export class ForbiddenError extends ApplicationError {
   constructor(
-    message: string = 'You do not have permission to perform this action',
-    details?: ErrorDetail[] | Record<string, any>,
-    traceId?: string,
-    requestId?: string,
-    provider?: string
+    message: string = 'Access denied',
+    code: string = 'FORBIDDEN',
+    details?: Record<string, any>,
+    traceId?: string
   ) {
-    super(
-      message,
-      ErrorCode.FORBIDDEN,
-      403,
-      details,
-      traceId,
-      requestId,
-      provider
-    );
+    super(message, code, 403, details, traceId);
   }
 }
 
 /**
- * Error for disabled features
- */
-export class FeatureDisabledError extends ForbiddenError {
-  constructor(
-    message: string = 'This feature is currently disabled',
-    details?: ErrorDetail[] | Record<string, any>,
-    traceId?: string,
-    requestId?: string,
-    provider?: string
-  ) {
-    super(
-      message,
-      details,
-      traceId,
-      requestId,
-      provider
-    );
-    this.errorCode = ErrorCode.FEATURE_DISABLED;
-  }
-}
-
-/**
- * Error for resources that don't exist
+ * 404 Not Found
+ * Used when a requested resource doesn't exist
  */
 export class NotFoundError extends ApplicationError {
   constructor(
-    message: string = 'The requested resource was not found',
-    details?: ErrorDetail[] | Record<string, any>,
-    traceId?: string,
-    requestId?: string,
-    provider?: string
+    message: string = 'Resource not found',
+    code: string = 'NOT_FOUND',
+    details?: Record<string, any>,
+    traceId?: string
   ) {
-    super(
-      message,
-      ErrorCode.NOT_FOUND,
-      404,
-      details,
-      traceId,
-      requestId,
-      provider
-    );
+    super(message, code, 404, details, traceId);
   }
 }
 
 /**
- * Error for server errors
+ * 409 Conflict
+ * Used when a request conflicts with the current state of the resource
  */
-export class ServerError extends ApplicationError {
+export class ConflictError extends ApplicationError {
   constructor(
-    message: string = 'An unexpected error occurred',
-    details?: ErrorDetail[] | Record<string, any>,
-    traceId?: string,
-    requestId?: string,
-    provider?: string
+    message: string = 'Resource conflict',
+    code: string = 'CONFLICT',
+    details?: Record<string, any>,
+    traceId?: string
   ) {
-    super(
-      message,
-      ErrorCode.INTERNAL_ERROR,
-      500,
-      details,
-      traceId,
-      requestId,
-      provider
-    );
+    super(message, code, 409, details, traceId);
   }
 }
 
 /**
- * Error for unavailable services
+ * 422 Unprocessable Entity
+ * Used when validation fails for the provided data
  */
-export class ServiceUnavailableError extends ServerError {
+export class ValidationError extends ApplicationError {
   constructor(
-    message: string = 'The service is currently unavailable',
-    details?: ErrorDetail[] | Record<string, any>,
-    traceId?: string,
-    requestId?: string,
-    provider?: string
+    message: string = 'Validation failed',
+    details?: Record<string, any>,
+    traceId?: string
   ) {
-    super(
-      message,
-      details,
-      traceId,
-      requestId,
-      provider
-    );
-    this.errorCode = ErrorCode.SERVICE_UNAVAILABLE;
-    this.statusCode = 503;
+    super(message, 'VALIDATION_ERROR', 422, details, traceId);
   }
 }
 
 /**
- * Legacy compatibility class
+ * 429 Too Many Requests
+ * Used when a client exceeds rate limits
  */
-export class AuthenticationError extends UnauthorizedError {
+export class TooManyRequestsError extends ApplicationError {
   constructor(
-    message: string = 'Authentication failed',
-    details?: ErrorDetail[] | Record<string, any>,
-    traceId?: string,
-    requestId?: string,
-    provider?: string
+    message: string = 'Rate limit exceeded',
+    retryAfter?: number,
+    traceId?: string
   ) {
-    super(message, details, traceId, requestId, provider);
+    const details = retryAfter ? { retryAfter } : undefined;
+    super(message, 'RATE_LIMIT_EXCEEDED', 429, details, traceId);
   }
 }
 
 /**
- * Legacy compatibility class
+ * 500 Internal Server Error
+ * Used for unexpected server errors
  */
-export class AuthorizationError extends ForbiddenError {
+export class InternalServerError extends ApplicationError {
   constructor(
-    message: string = 'Not authorized to perform this action',
-    details?: ErrorDetail[] | Record<string, any>,
-    traceId?: string,
-    requestId?: string,
-    provider?: string
+    message: string = 'Internal server error',
+    code: string = 'INTERNAL_SERVER_ERROR',
+    details?: Record<string, any>,
+    traceId?: string
   ) {
-    super(message, details, traceId, requestId, provider);
+    super(message, code, 500, details, traceId);
+  }
+}
+
+/**
+ * 502 Bad Gateway
+ * Used when an upstream service returns an invalid response
+ */
+export class BadGatewayError extends ApplicationError {
+  constructor(
+    message: string = 'Bad gateway',
+    code: string = 'BAD_GATEWAY',
+    details?: Record<string, any>,
+    traceId?: string
+  ) {
+    super(message, code, 502, details, traceId);
+  }
+}
+
+/**
+ * 503 Service Unavailable
+ * Used when a service is temporarily unavailable
+ */
+export class ServiceUnavailableError extends ApplicationError {
+  constructor(
+    message: string = 'Service unavailable',
+    code: string = 'SERVICE_UNAVAILABLE',
+    details?: Record<string, any>,
+    traceId?: string
+  ) {
+    super(message, code, 503, details, traceId);
+  }
+}
+
+/**
+ * 504 Gateway Timeout
+ * Used when an upstream service times out
+ */
+export class GatewayTimeoutError extends ApplicationError {
+  constructor(
+    message: string = 'Gateway timeout',
+    code: string = 'GATEWAY_TIMEOUT',
+    details?: Record<string, any>,
+    traceId?: string
+  ) {
+    super(message, code, 504, details, traceId);
   }
 }
