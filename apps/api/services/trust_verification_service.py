@@ -295,12 +295,16 @@ class TrustVerificationService:
             # Get verification data
             verification_data = await self.get_verification_data(canvas_id)
             
+            # Get base URL from settings with fallback
+            from ..config.settings import settings
+            base_url = getattr(settings, 'VERIFICATION_BASE_URL', 'https://verify.maily.ai')
+            
             # Generate badge data
             badge = {
                 "verified": verification_data["status"]["status"] == "verified",
                 "issuer": verification_data.get("certificate", {}).get("issuer", "Maily Trust Authority"),
                 "timestamp": verification_data["status"]["timestamp"],
-                "verification_url": f"https://verify.maily.example.com/{canvas_id}",
+                "verification_url": f"{base_url}/canvas/{canvas_id}",
                 "qr_code": verification_data["qr_code"]
             }
             
@@ -309,11 +313,15 @@ class TrustVerificationService:
         except Exception as e:
             logger.error(f"Failed to generate verification badge: {e}")
             # Return default badge on error
+            # Get base URL from settings with fallback
+            from ..config.settings import settings
+            base_url = getattr(settings, 'VERIFICATION_BASE_URL', 'https://verify.maily.ai')
+            
             return {
                 "verified": False,
                 "issuer": "Maily Trust Authority",
                 "timestamp": datetime.utcnow().isoformat(),
-                "verification_url": f"https://verify.maily.example.com/{canvas_id}",
+                "verification_url": f"{base_url}/canvas/{canvas_id}",
                 "qr_code": None
             }
     
@@ -529,8 +537,12 @@ class TrustVerificationService:
     async def _generate_verification_qr(self, canvas_id: str, content_hash: str) -> str:
         """Generate QR code for verification"""
         try:
+            # Get base URL from settings with fallback
+            from ..config.settings import settings
+            base_url = getattr(settings, 'VERIFICATION_BASE_URL', 'https://verify.maily.ai')
+            
             # Create verification URL
-            verification_url = f"https://verify.maily.example.com/{canvas_id}?hash={content_hash}"
+            verification_url = f"{base_url}/canvas/{canvas_id}?hash={content_hash}"
             
             # Generate QR code
             qr = qrcode.QRCode(

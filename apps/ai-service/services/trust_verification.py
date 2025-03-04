@@ -273,12 +273,16 @@ class TrustVerification:
             # Generate QR code ID
             qr_code_id = f"qr_{uuid.uuid4().hex[:8]}"
             
+            # Get base URL (or use production URL default)
+            import os
+            base_url = os.environ.get('VERIFICATION_BASE_URL', 'https://verify.maily.ai')
+            
             # Create QR code object
             qr_code = {
                 "id": qr_code_id,
                 "certificate_id": certificate_id,
                 "created_at": datetime.utcnow().isoformat(),
-                "url": f"https://justmaily.com/verify/{qr_code_id}",
+                "url": f"{base_url}/qr/{qr_code_id}",
                 "scan_count": 0,
                 "last_scanned_at": None
             }

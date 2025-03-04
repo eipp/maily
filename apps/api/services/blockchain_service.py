@@ -989,6 +989,18 @@ class BlockchainService:
     def generate_content_hash(self, content: str) -> str:
         """Generate hash of content for verification"""
         return hashlib.sha256(content.encode()).hexdigest()
+        
+    def get_verification_url(self, certificate_id: str) -> str:
+        """Get public verification URL for a certificate"""
+        # Use the correct production URL based on environment
+        base_url = getattr(settings, 'VERIFICATION_BASE_URL', 'https://verify.maily.ai')
+        return f"{base_url}/certificate/{certificate_id}"
+        
+    def get_token_reward_url(self, token_id: str) -> str:
+        """Get token reward URL"""
+        # Use the correct production URL based on environment
+        base_url = getattr(settings, 'TOKEN_REWARD_URL', 'https://rewards.maily.ai')
+        return f"{base_url}/token/{token_id}"
     
     @circuit_breaker(failure_threshold=5, reset_timeout=300)
     @retry_with_backoff(max_retries=3, base_delay=1, max_delay=10)
