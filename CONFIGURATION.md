@@ -82,7 +82,7 @@ ANALYZE=true npm run build:web
 
 ## Python Requirements
 
-### Requirements Structure
+### Requirements Files
 
 The project uses multiple requirements files to organize dependencies:
 
@@ -156,3 +156,102 @@ All services should use the standardized OpenTelemetry packages from `packages/c
 3. Organize the dependency under the appropriate category
 4. Run tests to ensure compatibility
 5. For OpenTelemetry packages, always use the centralized file
+
+### Removing Redundancies
+
+When cleaning up requirements:
+
+1. Don't include built-in Python modules (e.g., `asyncio`)
+2. Don't duplicate dependencies across multiple requirements files (use `-r` to include a base file)
+3. Use consistent versions across related packages (e.g., all OpenTelemetry components)
+4. Add deprecation comments for libraries being phased out
+
+## Error Handling
+
+The standardized error handling system provides consistent patterns across all services.
+
+### Python Error Handling
+
+The standardized error handling for Python services is provided by:
+
+```
+packages/error-handling/python/error.py
+packages/error-handling/python/middleware.py
+```
+
+#### Key Features
+
+- Unified error hierarchy with `MailyError` as the base class
+- Standard error codes and HTTP status codes
+- Automatic logging with severity-based levels
+- Trace IDs for tracking errors across services
+- Provider-specific error mappings (OpenAI, Anthropic, Google)
+
+#### Usage Example
+
+```python
+from packages.error_handling.python.error import ResourceNotFoundError, DatabaseError
+
+# Raising standardized errors
+try:
+    result = await fetch_resource(resource_id)
+    if not result:
+        raise ResourceNotFoundError(f"Resource {resource_id} not found")
+except Exception as e:
+    raise DatabaseError(f"Database error: {str(e)}")
+```
+
+### JavaScript/TypeScript Error Handling
+
+The standardized error handling for JS/TS services is provided by:
+
+```
+packages/error-handling/src/errors/ApplicationError.ts
+packages/error-handling/src/errors/ErrorTypes.ts
+```
+
+#### Key Features
+
+- Type-safe error hierarchy with `ApplicationError` as the base class
+- Standardized error types and codes
+- Metadata and context support
+- Integration with monitoring tools
+
+#### Usage Example
+
+```typescript
+import { ApplicationError, ErrorType } from 'packages/error-handling';
+
+try {
+  // Some operation that might fail
+} catch (error) {
+  throw new ApplicationError(
+    'Failed to process data', 
+    ErrorType.DATA_PROCESSING_ERROR,
+    { originalError: error }
+  );
+}
+```
+
+### API Response Format
+
+Standardized error responses follow this format:
+
+```json
+{
+  "error": true,
+  "error_code": "not_found",
+  "message": "Resource not found",
+  "status_code": 404,
+  "trace_id": "550e8400-e29b-41d4-a716-446655440000",
+  "timestamp": 1717574880.123,
+  "details": [
+    {
+      "code": "not_found.details",
+      "message": "Error details",
+      "field": "resource_id"
+    }
+  ],
+  "documentation_url": "https://docs.maily.com/errors/not_found"
+}
+```
