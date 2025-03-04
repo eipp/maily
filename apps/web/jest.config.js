@@ -1,37 +1,24 @@
-const nextJest = require('next/jest');
+/**
+ * DEPRECATED: Jest configuration
+ * 
+ * This file is deprecated. Please use Vitest instead.
+ * See vitest.config.ts for the current test configuration.
+ */
 
-const createJestConfig = nextJest({
-  dir: './',
-});
+console.warn('\x1b[33m%s\x1b[0m', 
+  'WARNING: Jest is deprecated in this project. Please use Vitest instead.\n' +
+  'Run tests with "npm test" which uses Vitest, or update your command to use Vitest directly.\n' +
+  'See CLAUDE.md for more information on standardized testing approaches.'
+);
 
-const customJestConfig = {
+// Export a minimal configuration to prevent errors but encourage migration
+module.exports = {
+  testEnvironment: 'jsdom',
+  transform: {
+    '^.+\\.(ts|tsx)$': ['babel-jest', { presets: ['next/babel'] }],
+  },
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
-  testEnvironment: 'jest-environment-jsdom',
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1',
   },
-  collectCoverageFrom: [
-    'components/**/*.{js,jsx,ts,tsx}',
-    'hooks/**/*.{js,jsx,ts,tsx}',
-    'utils/**/*.{js,jsx,ts,tsx}',
-    'services/**/*.{js,jsx,ts,tsx}',
-    '!**/*.d.ts',
-    '!**/node_modules/**',
-  ],
-  coverageThreshold: {
-    global: {
-      branches: 75,
-      functions: 75,
-      lines: 75,
-      statements: 75,
-    },
-  },
-  testMatch: [
-    '<rootDir>/**/__tests__/**/*.{js,jsx,ts,tsx}',
-    '<rootDir>/**/*.{spec,test}.{js,jsx,ts,tsx}',
-  ],
-  testPathIgnorePatterns: ['<rootDir>/node_modules/', '<rootDir>/.next/', '<rootDir>/cypress/'],
-  watchPlugins: ['jest-watch-typeahead/filename', 'jest-watch-typeahead/testname'],
 };
-
-module.exports = createJestConfig(customJestConfig);
