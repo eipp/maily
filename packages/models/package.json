@@ -1,0 +1,26 @@
+{
+  "name": "@maily/models",
+  "version": "1.0.0",
+  "description": "Shared data models for Maily",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "maily",
+    "models",
+    "shared-models"
+  ],
+  "author": "Maily Team",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "zod": "^3.21.4"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.4",
+    "vitest": "^0.29.3"
+  }
+}

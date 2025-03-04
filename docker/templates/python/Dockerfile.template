@@ -1,0 +1,59 @@
+# Standard Python Service Dockerfile Template
+# Use this template for all Python based services
+
+# ---- Build Stage ----
+FROM python:3.9-slim AS builder
+
+# Set working directory
+WORKDIR /app
+
+# Install build dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        gcc \
+        python3-dev \
+        && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+COPY requirements.txt .
+COPY apps/{service-name}/requirements.txt ./apps/{service-name}/
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt -r apps/{service-name}/requirements.txt
+
+# ---- Production Stage ----
+FROM python:3.9-slim AS production
+
+# Set working directory
+WORKDIR /app
+
+# Create a non-root user
+RUN addgroup --gid 1001 appuser && \
+    adduser --uid 1001 --gid 1001 --disabled-password --gecos "" appuser && \
+    chown -R appuser:appuser /app
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app
+
+# Copy installed Python packages and source code
+COPY --from=builder --chown=appuser:appuser /usr/local/lib/python3.9/site-packages /usr/local/lib/python3.9/site-packages
+COPY --from=builder --chown=appuser:appuser /usr/local/bin /usr/local/bin
+COPY --chown=appuser:appuser ./config ./config
+COPY --chown=appuser:appuser ./packages ./packages
+COPY --chown=appuser:appuser ./apps/{service-name} ./apps/{service-name}
+
+# Switch to non-root user
+USER appuser
+
+# Set health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
+
+# Expose port
+EXPOSE ${PORT:-8000}
+
+# Start the service
+CMD ["python", "apps/{service-name}/src/main.py"]

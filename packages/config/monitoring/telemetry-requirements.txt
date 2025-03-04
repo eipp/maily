@@ -1,0 +1,29 @@
+# Standardized OpenTelemetry requirements for Maily
+# This file centralizes all OpenTelemetry-related packages to ensure version consistency
+
+# Core OpenTelemetry packages
+opentelemetry-api==1.23.0
+opentelemetry-sdk==1.23.0
+
+# Exporters
+opentelemetry-exporter-otlp==1.23.0
+opentelemetry-exporter-prometheus==1.23.0
+opentelemetry-exporter-jaeger==1.23.0
+opentelemetry-exporter-otlp-proto-grpc==1.23.0
+
+# Instrumentation
+opentelemetry-instrumentation==0.44b0
+opentelemetry-instrumentation-fastapi==0.44b0
+opentelemetry-instrumentation-aiohttp==0.44b0
+opentelemetry-instrumentation-redis==0.44b0
+opentelemetry-instrumentation-sqlalchemy==0.44b0
+opentelemetry-instrumentation-requests==0.44b0
+opentelemetry-instrumentation-httpx==0.44b0
+opentelemetry-instrumentation-celery==0.44b0
+
+# Distro/Auto-Instrumentation
+opentelemetry-distro==0.44b0
+opentelemetry-bootstrap==0.44b0
+
+# Propagators
+opentelemetry-semantic-conventions==0.44b0

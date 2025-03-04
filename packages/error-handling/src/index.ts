@@ -1,22 +1,21 @@
-// Error classes
-export * from './errors/ApplicationError';
-export * from './errors/ValidationError';
-export * from './errors/AuthenticationError';
-export * from './errors/AuthorizationError';
-export * from './errors/NotFoundError';
-export * from './errors/ConflictError';
-export * from './errors/RateLimitError';
-export * from './errors/ServerError';
-export * from './errors/NetworkError';
-export * from './errors/TimeoutError';
+// Export standardized error handling modules
+export * from './errors';
+export * from './react';
 
-// Error handlers
+// Legacy exports for backward compatibility
+// These will be removed in a future version
+
+// Legacy Error classes
+export * from './errors/ApplicationError';
+// No need to export ValidationError, etc. as they're included in ./errors
+
+// Legacy Error handlers
 export * from './handlers/errorHandler';
 export * from './handlers/apiErrorHandler';
 export * from './handlers/validateErrorHandler';
 export * from './handlers/reactErrorHandler';
 
-// Error utilities
+// Legacy Error utilities
 export * from './utils/errorCode';
 export * from './utils/errorLogger';
 export * from './utils/zodErrorFormatter';

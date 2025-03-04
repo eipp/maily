@@ -1,0 +1,55 @@
+# Standard Node.js Service Dockerfile Template
+# Use this template for all Node.js based services
+
+# ---- Build Stage ----
+FROM node:20.11.1-alpine AS builder
+
+# Set working directory
+WORKDIR /app
+
+# Install dependencies
+COPY package.json package-lock.json ./
+COPY packages/*/package.json ./packages/
+RUN npm ci --no-audit --no-fund
+
+# Copy source files
+COPY . .
+
+# Build the application
+RUN npm run build --filter={service-name}
+
+# ---- Production Stage ----
+FROM node:20.11.1-alpine AS production
+
+# Set working directory
+WORKDIR /app
+
+# Create a non-root user
+RUN addgroup -g 1001 nodejs && \
+    adduser -S -u 1001 -G nodejs nodejs && \
+    chown -R nodejs:nodejs /app
+
+# Set environment variables
+ENV NODE_ENV=production
+
+# Copy production dependencies and build artifacts
+COPY --from=builder --chown=nodejs:nodejs /app/package.json /app/package-lock.json ./
+COPY --from=builder --chown=nodejs:nodejs /app/packages ./packages
+COPY --from=builder --chown=nodejs:nodejs /app/apps/{service-name}/package.json ./apps/{service-name}/
+COPY --from=builder --chown=nodejs:nodejs /app/apps/{service-name}/dist ./apps/{service-name}/dist
+
+# Install production dependencies only
+RUN npm ci --omit=dev --no-audit --no-fund
+
+# Switch to non-root user
+USER nodejs
+
+# Set health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD node -e "try { require('http').request({ hostname: 'localhost', port: process.env.PORT || 3000, path: '/health', timeout: 2000 }, (res) => { process.exit(res.statusCode !== 200 ? 1 : 0); }).on('error', () => process.exit(1)).end(); } catch (e) { process.exit(1); }"
+
+# Expose port
+EXPOSE ${PORT:-3000}
+
+# Start the service
+CMD ["node", "apps/{service-name}/dist/index.js"]

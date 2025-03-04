@@ -1,0 +1,68 @@
+# Web Application Dockerfile Template
+# Use this template for Next.js web applications
+
+# ---- Dependencies Stage ----
+FROM node:20.11.1-alpine AS dependencies
+
+WORKDIR /app
+
+# Copy package files
+COPY package.json package-lock.json ./
+COPY packages/*/package.json ./packages/
+COPY apps/{service-name}/package.json ./apps/{service-name}/
+
+# Install dependencies
+RUN npm ci --no-audit --no-fund
+
+# ---- Build Stage ----
+FROM node:20.11.1-alpine AS builder
+
+WORKDIR /app
+
+# Copy from dependencies stage
+COPY --from=dependencies /app/node_modules ./node_modules
+COPY --from=dependencies /app/package.json /app/package-lock.json ./
+COPY --from=dependencies /app/packages ./packages
+COPY --from=dependencies /app/apps/{service-name}/package.json ./apps/{service-name}/
+
+# Copy source code
+COPY packages ./packages
+COPY apps/{service-name} ./apps/{service-name}
+COPY config ./config
+
+# Build Next.js application
+RUN npm run build --filter={service-name}
+
+# ---- Production Stage ----
+FROM node:20.11.1-alpine AS production
+
+WORKDIR /app
+
+# Create a non-root user
+RUN addgroup -g 1001 nodejs && \
+    adduser -S -u 1001 -G nodejs nodejs && \
+    chown -R nodejs:nodejs /app
+
+# Set environment variables
+ENV NODE_ENV=production
+
+# Copy application files
+COPY --from=builder --chown=nodejs:nodejs /app/package.json /app/package-lock.json ./
+COPY --from=builder --chown=nodejs:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=nodejs:nodejs /app/apps/{service-name}/package.json ./apps/{service-name}/
+COPY --from=builder --chown=nodejs:nodejs /app/apps/{service-name}/.next ./apps/{service-name}/.next
+COPY --from=builder --chown=nodejs:nodejs /app/apps/{service-name}/public ./apps/{service-name}/public
+COPY --from=builder --chown=nodejs:nodejs /app/apps/{service-name}/next.config.js ./apps/{service-name}/
+
+# Switch to non-root user
+USER nodejs
+
+# Set health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD wget -q -O - http://localhost:${PORT:-3000}/api/health || exit 1
+
+# Expose port
+EXPOSE ${PORT:-3000}
+
+# Start the application
+CMD ["npm", "run", "start:web"]

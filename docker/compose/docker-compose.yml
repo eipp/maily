@@ -1,0 +1,242 @@
+version: '3.8'
+
+# Standardized Docker Compose configuration for Maily
+# This defines all services needed for local development
+
+services:
+  # API Service
+  api:
+    build:
+      context: ../../
+      dockerfile: docker/dockerfiles/api.Dockerfile
+    image: maily/api:local
+    container_name: maily-api
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      - NODE_ENV=development
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=maily
+      - POSTGRES_PASSWORD=maily
+      - POSTGRES_DB=maily
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - PORT=8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../../apps/api:/app/apps/api
+      - ../../packages:/app/packages
+      - api-node-modules:/app/node_modules
+    networks:
+      - maily-network
+
+  # Web Application
+  web:
+    build:
+      context: ../../
+      dockerfile: docker/dockerfiles/web.Dockerfile
+    image: maily/web:local
+    container_name: maily-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../../apps/web:/app/apps/web
+      - ../../packages:/app/packages
+      - web-node-modules:/app/node_modules
+    networks:
+      - maily-network
+
+  # AI Service
+  ai-service:
+    build:
+      context: ../../
+      dockerfile: docker/dockerfiles/ai-service.Dockerfile
+    image: maily/ai-service:local
+    container_name: maily-ai-service
+    restart: unless-stopped
+    depends_on:
+      - redis
+      - api
+    environment:
+      - PYTHONUNBUFFERED=1
+      - ENVIRONMENT=development
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - API_URL=http://api:8000
+      - PORT=8080
+    ports:
+      - "8080:8080"
+    volumes:
+      - ../../apps/ai-service:/app/apps/ai-service
+      - ../../packages:/app/packages
+    networks:
+      - maily-network
+
+  # Email Service
+  email-service:
+    build:
+      context: ../../
+      dockerfile: docker/dockerfiles/email-service.Dockerfile
+    image: maily/email-service:local
+    container_name: maily-email-service
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      - NODE_ENV=development
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=maily
+      - POSTGRES_PASSWORD=maily
+      - POSTGRES_DB=maily
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - PORT=8001
+    ports:
+      - "8001:8001"
+    volumes:
+      - ../../apps/email-service:/app/apps/email-service
+      - ../../packages:/app/packages
+      - email-node-modules:/app/node_modules
+    networks:
+      - maily-network
+
+  # Workers
+  workers:
+    build:
+      context: ../../
+      dockerfile: docker/dockerfiles/workers.Dockerfile
+    image: maily/workers:local
+    container_name: maily-workers
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - redis
+      - api
+    environment:
+      - NODE_ENV=development
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=maily
+      - POSTGRES_PASSWORD=maily
+      - POSTGRES_DB=maily
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - API_URL=http://api:8000
+    volumes:
+      - ../../apps/workers:/app/apps/workers
+      - ../../packages:/app/packages
+      - workers-node-modules:/app/node_modules
+    networks:
+      - maily-network
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:14-alpine
+    container_name: maily-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=maily
+      - POSTGRES_PASSWORD=maily
+      - POSTGRES_DB=maily
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - maily-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U maily"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis
+  redis:
+    image: redis:6-alpine
+    container_name: maily-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - maily-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PgAdmin (Optional, for database management)
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: maily-pgadmin
+    restart: unless-stopped
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@maily.com
+      - PGADMIN_DEFAULT_PASSWORD=admin
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    networks:
+      - maily-network
+    depends_on:
+      - postgres
+
+  # Prometheus (Optional, for metrics)
+  prometheus:
+    image: prom/prometheus
+    container_name: maily-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ../../config/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    networks:
+      - maily-network
+
+  # Grafana (Optional, for metrics visualization)
+  grafana:
+    image: grafana/grafana
+    container_name: maily-grafana
+    restart: unless-stopped
+    ports:
+      - "3030:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    networks:
+      - maily-network
+    depends_on:
+      - prometheus
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+
+networks:
+  maily-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
+  pgadmin-data:
+  prometheus-data:
+  grafana-data:
+  api-node-modules:
+  web-node-modules:
+  email-node-modules:
+  workers-node-modules:

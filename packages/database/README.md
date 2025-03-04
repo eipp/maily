@@ -1,6 +1,6 @@
 # Maily Database Package
 
-This package contains the database models and migrations for the Maily platform.
+This package contains the database models, migrations, and shared database utilities for the Maily platform, including database connection management and Redis client implementations.
 
 ## Database Strategy Decision
 
