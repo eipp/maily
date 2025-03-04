@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { signIn } from 'next-auth/react';
 
 export function LoginForm() {
   const router = useRouter();
@@ -16,18 +17,20 @@ export function LoginForm() {
     const password = formData.get('password') as string;
 
     try {
-      // TODO: Implement actual login logic
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+      // Sign in with NextAuth credentials provider
+      const result = await signIn('credentials', {
+        email,
+        password,
+        redirect: false,
       });
 
-      if (!response.ok) {
-        throw new Error('Invalid credentials');
+      if (result?.error) {
+        throw new Error(result.error || 'Invalid credentials');
       }
 
+      // If login was successful, redirect to app dashboard
       router.push('/app');
+      router.refresh(); // Refresh to update auth state
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {

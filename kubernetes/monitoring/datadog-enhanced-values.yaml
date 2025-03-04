@@ -1,0 +1,553 @@
+## Maily Enhanced Datadog Monitoring Configuration
+## This configuration includes advanced monitoring for deployment verification and alerting
+
+# API and App keys from Datadog
+datadog:
+  apiKey: "${DATADOG_API_KEY}"
+  appKey: "${DATADOG_APP_KEY}"
+  # We'll use the EU site for this deployment
+  site: datadoghq.eu
+  clusterName: maily-production
+  # Enables collection of Kubernetes events
+  collectEvents: true
+  # Collect kubernetes state metrics
+  leaderElection: true
+  # Enables process collection for detailed resource usage
+  processAgent:
+    enabled: true
+    processCollection: true
+
+# Deploy APM and trace collection agent
+agents:
+  enabled: true
+  image:
+    tag: "7-jmx"
+
+  # Pod security context
+  podSecurity:
+    securityContextEnabled: true
+
+  # Allow auto-instrumentation for tracing
+  apm:
+    enabled: true
+    portEnabled: true
+    socketEnabled: true
+    # Enhanced tracing settings
+    env:
+      - name: DD_APM_ANALYZED_SPANS
+        value: "maily-api|express.request=1,maily-ai|web.request=1,maily-email|worker.task=1"
+      - name: DD_TRACE_SAMPLE_RATE
+        value: "1.0"
+      # Enable profiling
+      - name: DD_PROFILING_ENABLED
+        value: "true"
+
+# Enhanced log collection
+logs:
+  enabled: true
+  containerCollectAll: true
+  
+  # Additional log processing config
+  containerCollectUsingFiles: true
+  containerLogsPath: /var/lib/docker/containers
+  
+  # Process logs for errors
+  processingRules:
+    - type: multi_line
+      name: nodejs_stack_traces
+      pattern: ^\s+at\s+
+    - type: multi_line
+      name: python_stack_traces
+      pattern: ^Traceback \(most recent call last\):$
+
+# Core system and Kubernetes monitoring
+clusterAgent:
+  enabled: true
+  metricsProvider:
+    enabled: true
+  
+  # Monitor Kubernetes resources and events
+  rbac:
+    create: true
+  
+  # Collect cluster level metrics
+  kubernetes:
+    admissionController:
+      enabled: true  # Enable for deployment validation
+    
+  # Enhanced Kubernetes monitoring
+  kubeStateMetricsCore:
+    enabled: true
+  
+  # Deployment metrics collection
+  deployment:
+    enabled: true
+    
+  # Real-time control plane metrics
+  controlPlane:
+    enabled: true
+
+# Application-specific monitors
+customAgentConfig:
+  logs_enabled: true
+  logs_config:
+    container_collect_all: true
+    
+  # Application-specific log collection
+  logs:
+    - type: file
+      path: /var/log/maily-api/*.log
+      service: maily-api
+      source: nodejs
+      tags:
+        - env:production
+        - service:api
+    
+    - type: file 
+      path: /var/log/maily-ai-service/*.log
+      service: maily-ai
+      source: python
+      tags:
+        - env:production
+        - service:ai
+    
+    - type: file
+      path: /var/log/maily-email-service/*.log
+      service: maily-email
+      source: nodejs
+      tags:
+        - env:production
+        - service:email
+        
+    # Deployment log collection
+    - type: file
+      path: /var/log/maily-deploy/*.log
+      service: maily-deployment
+      source: deployment
+      tags:
+        - env:production
+        - service:deployment
+        
+    # Database migration logs
+    - type: file
+      path: /var/log/maily-migrations/*.log
+      service: maily-migrations
+      source: database
+      tags:
+        - env:production
+        - service:database
+
+# Service-specific monitors with enhanced checks
+serviceMonitoring:
+  enabled: true
+  
+  # Specific services to monitor
+  services:
+    - name: maily-api
+      check: http
+      url: http://maily-api:3000/health
+      interval: 30
+      method: GET
+      timeout: 10
+      http_response_status_code: "200"
+      
+    - name: maily-ai-service
+      check: http
+      url: http://ai-mesh:8000/health
+      interval: 30
+      method: GET
+      timeout: 10
+      http_response_status_code: "200"
+      
+    - name: maily-email-service
+      check: http
+      url: http://email-service:4000/health
+      interval: 30
+      method: GET
+      timeout: 10
+      http_response_status_code: "200"
+      
+    - name: maily-redis
+      check: tcp
+      host: redis
+      port: 6379
+      interval: 30
+      timeout: 5
+      
+    # Additional healthchecks for deployment verification
+    - name: maily-api-features
+      check: http
+      url: http://maily-api:3000/api/features
+      interval: 60
+      method: GET
+      timeout: 10
+      http_response_status_code: "200"
+      check_certificate_expiration: false
+      collect_response_time: true
+      
+    - name: maily-database
+      check: tcp
+      host: ${DATABASE_HOST}
+      port: 5432
+      interval: 60
+      timeout: 10
+
+# Dashboard and alert configurations
+dashboards:
+  api:
+    title: "Maily API Service"
+    layout_type: ordered
+    widgets:
+      - definition:
+          title: "API Request Rate"
+          type: timeseries
+          requests:
+            - q: "sum:maily.api.requests{*}.as_count()"
+              display_type: line
+      - definition:
+          title: "API Response Time (95th Percentile)"
+          type: timeseries
+          requests:
+            - q: "p95:maily.api.response.time{*}"
+              display_type: line
+      - definition:
+          title: "API Error Rate"
+          type: timeseries
+          requests:
+            - q: "sum:maily.api.errors{*}.as_count() / sum:maily.api.requests{*}.as_count() * 100"
+              display_type: line
+
+  ai:
+    title: "Maily AI Service"
+    layout_type: ordered
+    widgets:
+      - definition:
+          title: "AI Service Request Rate"
+          type: timeseries
+          requests:
+            - q: "sum:maily.ai.requests{*}.as_count()"
+              display_type: line
+      - definition:
+          title: "AI Response Time"
+          type: timeseries
+          requests:
+            - q: "p95:maily.ai.response.time{*}"
+              display_type: line
+      - definition:
+          title: "AI Service Error Rate"
+          type: timeseries
+          requests:
+            - q: "sum:maily.ai.errors{*}.as_count() / sum:maily.ai.requests{*}.as_count() * 100"
+              display_type: line
+
+  blockchain:
+    title: "Maily Blockchain Service"
+    layout_type: ordered
+    widgets:
+      - definition:
+          title: "Blockchain Verification Rate"
+          type: timeseries
+          requests:
+            - q: "sum:maily.blockchain.verifications{*}.as_count()"
+              display_type: line
+      - definition:
+          title: "Blockchain Verification Time"
+          type: timeseries
+          requests:
+            - q: "p95:maily.blockchain.verification.time{*}"
+              display_type: line
+      - definition:
+          title: "Blockchain Transaction Batches"
+          type: timeseries
+          requests:
+            - q: "sum:maily.blockchain.batch.count{*}.as_count()"
+              display_type: line
+              
+  deployment:
+    title: "Maily Deployment Health"
+    layout_type: ordered
+    widgets:
+      - definition:
+          title: "Recent Deployments"
+          type: timeseries
+          requests:
+            - q: "sum:kubernetes.deployments.replicas_available{$cluster} by {deployment}"
+              display_type: line
+      - definition:
+          title: "Deployment Success Rate"
+          type: toplist
+          requests:
+            - q: "avg:maily.deployment.success_rate{*} by {service}.fill(0)"
+              conditional_formats:
+                - comparator: <=
+                  value: 95
+                  palette: white_on_red
+                - comparator: <=
+                  value: 99
+                  palette: white_on_yellow
+                - comparator: >=
+                  value: 99
+                  palette: white_on_green
+      - definition:
+          title: "Pod Restart Count Last 24h"
+          type: toplist
+          requests:
+            - q: "sum:kubernetes.containers.restarts{$cluster} by {kube_deployment}.as_count()"
+      - definition:
+          title: "Migration Success Rate"
+          type: query_value
+          requests:
+            - q: "avg:maily.migrations.success_rate{*}.fill(0)"
+              conditional_formats:
+                - comparator: <=
+                  value: 95
+                  palette: white_on_red
+                - comparator: <=
+                  value: 99
+                  palette: white_on_yellow
+                - comparator: >=
+                  value: 99
+                  palette: white_on_green
+
+# Enhanced alert definitions including deployment monitoring
+monitors:
+  # Service availability checks
+  api_availability:
+    name: "Maily API Availability"
+    type: "service check"
+    query: '"http.can_connect".over("instance:maily-api").by("host").last(3).count_by_status()'
+    message: "Maily API service is unavailable {{#is_alert}}for the past 3 checks{{/is_alert}}. Notify: @ops-team"
+    tags:
+      - "service:api"
+      - "severity:critical"
+    options:
+      notify_no_data: true
+      no_data_timeframe: 5
+      new_host_delay: 300
+      evaluation_delay: 60
+      thresholds:
+        critical: 3
+        warning: 1
+        ok: 0
+
+  ai_availability:
+    name: "Maily AI Service Availability"
+    type: "service check"
+    query: '"http.can_connect".over("instance:maily-ai-service").by("host").last(3).count_by_status()'
+    message: "Maily AI service is unavailable {{#is_alert}}for the past 3 checks{{/is_alert}}. Notify: @ops-team"
+    tags:
+      - "service:ai"
+      - "severity:critical"
+    options:
+      notify_no_data: true
+      no_data_timeframe: 5
+      new_host_delay: 300
+      evaluation_delay: 60
+      thresholds:
+        critical: 3
+        warning: 1
+        ok: 0
+
+  redis_availability:
+    name: "Maily Redis Availability"
+    type: "service check"
+    query: '"tcp.can_connect".over("instance:maily-redis").by("host").last(3).count_by_status()'
+    message: "Maily Redis service is unavailable {{#is_alert}}for the past 3 checks{{/is_alert}}. Notify: @ops-team"
+    tags:
+      - "service:redis"
+      - "severity:critical"
+    options:
+      notify_no_data: true
+      no_data_timeframe: 5
+      new_host_delay: 300
+      evaluation_delay: 60
+      thresholds:
+        critical: 3
+        warning: 1
+        ok: 0
+        
+  database_availability:
+    name: "Maily Database Availability"
+    type: "service check"
+    query: '"tcp.can_connect".over("instance:maily-database").by("host").last(3).count_by_status()'
+    message: "Maily Database is unavailable {{#is_alert}}for the past 3 checks{{/is_alert}}. Notify: @ops-team"
+    tags:
+      - "service:database"
+      - "severity:critical"
+    options:
+      notify_no_data: true
+      no_data_timeframe: 5
+      new_host_delay: 300
+      evaluation_delay: 60
+      thresholds:
+        critical: 3
+        warning: 1
+        ok: 0
+
+  # Performance and error rate alerts
+  high_api_error_rate:
+    name: "Maily API High Error Rate"
+    type: "metric alert"
+    query: 'avg(last_15m):sum:maily.api.errors{*}.as_count() / sum:maily.api.requests{*}.as_count() * 100 > 5'
+    message: "Maily API error rate is above 5% for the past 15 minutes. Notify: @ops-team"
+    tags:
+      - "service:api"
+      - "severity:warning"
+    options:
+      notify_no_data: false
+      evaluation_delay: 900
+      thresholds:
+        critical: 10
+        warning: 5
+
+  high_api_latency:
+    name: "Maily API High Latency"
+    type: "metric alert"
+    query: 'avg(last_10m):p95:maily.api.response.time{*} > 1000'
+    message: "Maily API p95 response time is above 1000ms for the past 10 minutes. Notify: @ops-team"
+    tags:
+      - "service:api"
+      - "severity:warning"
+    options:
+      notify_no_data: false
+      evaluation_delay: 600
+      thresholds:
+        critical: 2000
+        warning: 1000
+
+  high_ai_latency:
+    name: "Maily AI Service High Latency"
+    type: "metric alert"
+    query: 'avg(last_5m):p95:maily.ai.response.time{*} > 5000'
+    message: "Maily AI service p95 response time is above 5 seconds for the past 5 minutes. Notify: @ops-team"
+    tags:
+      - "service:ai"
+      - "severity:warning"
+    options:
+      notify_no_data: false
+      evaluation_delay: 300
+      thresholds:
+        critical: 10000
+        warning: 5000
+        
+  # Deployment-specific monitors
+  kubernetes_deployment_replicas:
+    name: "Kubernetes Deployment Replicas Alert"
+    type: "metric alert"
+    query: 'min(last_5m):sum:kubernetes.deployments.replicas_available{kube_namespace:maily} by {kube_deployment} / sum:kubernetes.deployments.replicas_desired{kube_namespace:maily} by {kube_deployment} * 100 < 75'
+    message: "Kubernetes deployment {{kube_deployment.name}} has less than 75% of desired replicas available for 5 minutes. This may indicate a failed deployment. Notify: @deployment-team"
+    tags:
+      - "service:kubernetes"
+      - "alert_type:deployment"
+      - "severity:critical"
+    options:
+      notify_no_data: false
+      evaluation_delay: 300
+      thresholds:
+        critical: 75
+        warning: 90
+        
+  pod_restarts_after_deployment:
+    name: "Pod Restarts After Deployment"
+    type: "metric alert"
+    query: 'change(sum(last_1h),last_15m):sum:kubernetes.containers.restarts{kube_namespace:maily} by {kube_deployment}.as_count() > 3'
+    message: "Pods for deployment {{kube_deployment.name}} restarted more than 3 times within the past 15 minutes. This may indicate a problematic deployment. Notify: @deployment-team"
+    tags:
+      - "service:kubernetes"
+      - "alert_type:deployment"
+      - "severity:critical"
+    options:
+      notify_no_data: false
+      evaluation_delay: 300
+      thresholds:
+        critical: 3
+        warning: 1
+        
+  deployment_status_change:
+    name: "Deployment Status Change"
+    type: "event alert"
+    query: 'events("priority:normal status:error \"Deployment Status Change\"").rollup("count").last("5m") > 0'
+    message: "Deployment status changed to error state. Check deployment logs for failure details. Notify: @deployment-team"
+    tags:
+      - "source:kubernetes"
+      - "alert_type:deployment"
+      - "severity:critical"
+    options:
+      notify_no_data: false
+      evaluation_delay: 60
+      
+  migration_failure:
+    name: "Database Migration Failure"
+    type: "event alert"
+    query: 'events("priority:normal status:error \"Database Migration\"").rollup("count").last("15m") > 0'
+    message: "Database migration failure detected. Check migration logs and database integrity. Notify: @db-team"
+    tags:
+      - "service:database"
+      - "alert_type:migration"
+      - "severity:critical"
+    options:
+      notify_no_data: false
+      evaluation_delay: 60
+
+# Synthetic monitoring for critical user journeys
+synthetics:
+  tests:
+    - name: "Maily Homepage Availability"
+      type: "browser"
+      request:
+        url: "https://maily.vercel.app"
+        method: "GET"
+      assertions:
+        - type: "statusCode"
+          operator: "is"
+          target: 200
+      locations:
+        - "aws:eu-west-1"
+        - "aws:us-east-1"
+      options:
+        tick_every: 900
+        min_location_failed: 1
+        retry_count: 2
+        monitor_options:
+          renotify_interval: 120
+          
+    - name: "Maily Login Flow"
+      type: "browser"
+      request:
+        url: "https://maily.vercel.app/login"
+        method: "GET"
+      assertions:
+        - type: "statusCode"
+          operator: "is"
+          target: 200
+        - type: "body"
+          operator: "contains"
+          target: "Login"
+      locations:
+        - "aws:eu-west-1"
+      options:
+        tick_every: 3600
+        retry_count: 2
+        monitor_options:
+          renotify_interval: 0
+          
+    - name: "Maily API Health"
+      type: "api"
+      request:
+        url: "https://api.maily.example.com/health"
+        method: "GET"
+      assertions:
+        - type: "statusCode"
+          operator: "is"
+          target: 200
+        - type: "jsonPath"
+          operator: "is"
+          target: "ok"
+          targetPath: "$.status"
+      locations:
+        - "aws:eu-west-1"
+        - "aws:us-east-1"
+      options:
+        tick_every: 60
+        min_location_failed: 1
+        retry_count: 3

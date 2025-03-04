@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 from pydantic import BaseModel
 from functools import wraps, lru_cache
 from collections import OrderedDict, defaultdict
+from eth_account.messages import encode_defunct
 
 # Try importing Web3 for real blockchain implementation
 try:
@@ -283,6 +284,8 @@ class BlockchainService:
                      f"transaction={t_stats['size']}/{t_stats['max_size']}, "
                      f"block={b_stats['size']}/{b_stats['max_size']}")
         
+    @circuit_breaker(failure_threshold=5, reset_timeout=300)
+    @retry_with_backoff(max_retries=3, base_delay=1, max_delay=10)
     async def verify_content(
         self, 
         content_hash: str,
@@ -291,58 +294,93 @@ class BlockchainService:
     ) -> Dict[str, Any]:
         """Verify content by storing its hash on the blockchain"""
         try:
-            # In a real implementation, this would create and send a blockchain transaction
-            # For now, we'll simulate a blockchain transaction
+            if not WEB3_AVAILABLE:
+                raise ImportError("Web3 library is not available. Please install with: pip install web3")
             
-            # Generate transaction ID
-            transaction_id = f"0x{hashlib.sha256(f'{content_hash}:{int(time.time())}'.encode()).hexdigest()}"
+            # Initialize Web3 connection
+            w3 = Web3(Web3.HTTPProvider(settings.POLYGON_RPC_URL))
             
-            # Simulate transaction data
-            transaction_data = {
-                "hash": transaction_id,
-                "from": f"0x{hashlib.sha256(user_id.encode()).hexdigest()[:40]}",
-                "to": self.contract_address,
-                "data": f"0x{content_hash}",
-                "value": "0",
-                "gas": self.gas_limit,
-                "gasPrice": "5000000000",  # 5 Gwei
-                "nonce": int(time.time()),
-                "timestamp": datetime.utcnow().isoformat(),
-                "metadata": metadata,
-            }
+            # Apply middleware for Polygon (PoS chain)
+            w3.middleware_onion.inject(geth_poa_middleware, layer=0)
             
-            # Store transaction data
-            MOCK_TRANSACTIONS[transaction_id] = transaction_data
+            # Check if connected
+            if not w3.is_connected():
+                raise ConnectionError(f"Failed to connect to blockchain node at {settings.POLYGON_RPC_URL}")
             
-            # Simulate block inclusion
-            global MOCK_BLOCK_NUMBER
-            MOCK_BLOCK_NUMBER += 1
+            # Get account from private key
+            account = w3.eth.account.from_key(settings.BLOCKCHAIN_PRIVATE_KEY)
             
-            block_data = {
-                "number": MOCK_BLOCK_NUMBER,
-                "hash": f"0x{hashlib.sha256(f'block:{MOCK_BLOCK_NUMBER}'.encode()).hexdigest()}",
-                "timestamp": datetime.utcnow().isoformat(),
-                "transactions": [transaction_id],
-            }
+            # Initialize the verification contract
+            contract = w3.eth.contract(
+                address=self.contract_address, 
+                abi=settings.VERIFICATION_CONTRACT_ABI
+            )
             
-            MOCK_BLOCKS[MOCK_BLOCK_NUMBER] = block_data
+            # Prepare transaction parameters
+            nonce = w3.eth.get_transaction_count(account.address)
             
-            # Update transaction with block info
-            transaction_data["blockNumber"] = MOCK_BLOCK_NUMBER
-            transaction_data["blockHash"] = block_data["hash"]
+            # Get gas price with 10% buffer
+            gas_price = w3.eth.gas_price
+            gas_price_with_buffer = int(gas_price * 1.1)
             
-            # Store verification data in Redis for persistence
+            # Prepare metadata for on-chain storage
+            # For larger metadata, we'd use IPFS and only store the hash
+            metadata_json = json.dumps(metadata)
+            metadata_hash = hashlib.sha256(metadata_json.encode()).hexdigest()
+            
+            # Prepare transaction for content verification
+            tx = contract.functions.verifyContent(
+                content_hash,
+                metadata_hash,
+                str(user_id)
+            ).build_transaction({
+                'from': account.address,
+                'gas': self.gas_limit,
+                'gasPrice': gas_price_with_buffer,
+                'nonce': nonce,
+            })
+            
+            # Sign the transaction
+            signed_tx = account.sign_transaction(tx)
+            
+            # Send the transaction
+            tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+            
+            # Wait for transaction receipt
+            receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+            
+            if receipt.status != 1:
+                raise Exception(f"Transaction failed with status {receipt.status}")
+            
+            # Get block information
+            block = w3.eth.get_block(receipt.blockNumber)
+            
+            # Construct transaction data for our records
+            transaction_id = tx_hash.hex()
+            block_number = receipt.blockNumber
+            
+            # Extract events from receipt (if any)
+            events = []
+            if hasattr(contract.events, 'ContentVerified'):
+                try:
+                    content_verified_events = contract.events.ContentVerified().process_receipt(receipt)
+                    events.extend(content_verified_events)
+                except Exception as e:
+                    logger.warning(f"Error processing ContentVerified events: {e}")
+            
+            # Store in Redis for persistence and fast retrieval
             verification_key = f"blockchain:verification:{content_hash}"
             await self.redis.set(
                 verification_key,
                 json.dumps({
                     "content_hash": content_hash,
                     "transaction_id": transaction_id,
-                    "block_number": MOCK_BLOCK_NUMBER,
+                    "block_number": block_number,
                     "timestamp": datetime.utcnow().isoformat(),
                     "network": self.network,
                     "contract_address": self.contract_address,
                     "metadata": metadata,
+                    "events": [str(e) for e in events],
                 }),
                 expire=86400 * 365  # 1 year
             )
@@ -350,10 +388,11 @@ class BlockchainService:
             # Return verification data
             return {
                 "transaction_id": transaction_id,
-                "block_number": MOCK_BLOCK_NUMBER,
-                "timestamp": datetime.utcnow().isoformat(),
+                "block_number": block_number,
+                "timestamp": datetime.fromtimestamp(block.timestamp).isoformat(),
                 "network": self.network,
                 "contract_address": self.contract_address,
+                "status": "verified" if receipt.status == 1 else "failed",
             }
             
         except Exception as e:
@@ -391,6 +430,7 @@ class BlockchainService:
             return None
     
     @async_lru_cache(maxsize=500, ttl=86400)  # Cache for 24 hours
+    @circuit_breaker(failure_threshold=5, reset_timeout=300)
     async def get_transaction(self, transaction_id: str) -> Optional[Dict[str, Any]]:
         """Get transaction details with caching"""
         try:
@@ -401,25 +441,80 @@ class BlockchainService:
                 logger.debug(f"Cache hit for transaction: {transaction_id}")
                 return cached_data
             
-            # Query blockchain or mock data
-            # In a real implementation, this would query the blockchain
-            transaction_data = None
-            if transaction_id in MOCK_TRANSACTIONS:
-                transaction_data = MOCK_TRANSACTIONS[transaction_id]
+            # Initialize Web3 and query blockchain
+            if not WEB3_AVAILABLE:
+                raise ImportError("Web3 library is not available. Please install with: pip install web3")
             
-            if transaction_data:
-                # Store in memory cache for future requests
-                await self.transaction_cache.set(cache_key, transaction_data)
-                return transaction_data
+            # Initialize Web3 connection
+            w3 = Web3(Web3.HTTPProvider(settings.POLYGON_RPC_URL))
             
-            logger.debug(f"Transaction not found: {transaction_id}")
-            return None
+            # Apply middleware for Polygon (PoS chain)
+            w3.middleware_onion.inject(geth_poa_middleware, layer=0)
+            
+            # Check if connected
+            if not w3.is_connected():
+                raise ConnectionError(f"Failed to connect to blockchain node at {settings.POLYGON_RPC_URL}")
+            
+            # Query transaction
+            tx_hash = transaction_id
+            if not tx_hash.startswith('0x'):
+                tx_hash = f"0x{tx_hash}"
+                
+            # Get transaction
+            transaction = w3.eth.get_transaction(tx_hash)
+            
+            if not transaction:
+                logger.debug(f"Transaction not found on blockchain: {transaction_id}")
+                return None
+                
+            # Get transaction receipt for additional data
+            receipt = w3.eth.get_transaction_receipt(tx_hash)
+            
+            # Format transaction data
+            transaction_data = {
+                "hash": transaction_id,
+                "from": transaction['from'],
+                "to": transaction['to'],
+                "value": str(transaction['value']),
+                "gasPrice": str(transaction['gasPrice']),
+                "gas": str(transaction['gas']),
+                "nonce": transaction['nonce'],
+                "input": transaction['input'],
+                "blockHash": transaction['blockHash'].hex(),
+                "blockNumber": transaction['blockNumber'],
+                "transactionIndex": transaction['transactionIndex'],
+            }
+            
+            # Add receipt data if available
+            if receipt:
+                transaction_data.update({
+                    "status": receipt['status'],
+                    "gasUsed": str(receipt['gasUsed']),
+                    "effectiveGasPrice": str(receipt.get('effectiveGasPrice', 0)),
+                    "cumulativeGasUsed": str(receipt['cumulativeGasUsed']),
+                    "logs": [log.hex() if isinstance(log, bytes) else str(log) for log in receipt.get('logs', [])],
+                })
+            
+            # Get block for timestamp
+            try:
+                block = w3.eth.get_block(transaction['blockNumber'])
+                transaction_data["timestamp"] = datetime.fromtimestamp(block['timestamp']).isoformat()
+            except Exception as e:
+                logger.warning(f"Could not get block timestamp for transaction {transaction_id}: {e}")
+                transaction_data["timestamp"] = datetime.utcnow().isoformat()
+            
+            # Store in memory cache
+            await self.transaction_cache.set(cache_key, transaction_data)
+            
+            # Return formatted transaction data
+            return transaction_data
             
         except Exception as e:
-            logger.error(f"Failed to get transaction: {e}")
+            logger.error(f"Failed to get transaction {transaction_id}: {e}")
             return None
     
     @async_lru_cache(maxsize=200, ttl=604800)  # Cache for 1 week
+    @circuit_breaker(failure_threshold=5, reset_timeout=300)
     async def get_block(self, block_number: int) -> Optional[Dict[str, Any]]:
         """Get block details with caching"""
         try:
@@ -430,56 +525,213 @@ class BlockchainService:
                 logger.debug(f"Cache hit for block: {block_number}")
                 return cached_data
             
-            # Query blockchain or mock data
-            # In a real implementation, this would query the blockchain
-            block_data = None
-            if block_number in MOCK_BLOCKS:
-                block_data = MOCK_BLOCKS[block_number]
+            # Initialize Web3 and query blockchain
+            if not WEB3_AVAILABLE:
+                raise ImportError("Web3 library is not available. Please install with: pip install web3")
             
-            if block_data:
-                # Store in memory cache for future requests (longer TTL for blocks since they're immutable)
-                await self.block_cache.set(cache_key, block_data, ttl=604800)  # 1 week
-                return block_data
+            # Initialize Web3 connection
+            w3 = Web3(Web3.HTTPProvider(settings.POLYGON_RPC_URL))
             
-            logger.debug(f"Block not found: {block_number}")
-            return None
+            # Apply middleware for Polygon (PoS chain)
+            w3.middleware_onion.inject(geth_poa_middleware, layer=0)
+            
+            # Check if connected
+            if not w3.is_connected():
+                raise ConnectionError(f"Failed to connect to blockchain node at {settings.POLYGON_RPC_URL}")
+            
+            # Get block
+            block = w3.eth.get_block(block_number, full_transactions=False)
+            
+            if not block:
+                logger.debug(f"Block not found: {block_number}")
+                return None
+            
+            # Format block data
+            block_data = {
+                "number": block['number'],
+                "hash": block['hash'].hex(),
+                "parentHash": block['parentHash'].hex(),
+                "nonce": block['nonce'].hex() if hasattr(block['nonce'], 'hex') else str(block['nonce']),
+                "sha3Uncles": block['sha3Uncles'].hex(),
+                "logsBloom": block['logsBloom'].hex(),
+                "transactionsRoot": block['transactionsRoot'].hex(),
+                "stateRoot": block['stateRoot'].hex(),
+                "receiptsRoot": block['receiptsRoot'].hex(),
+                "miner": block['miner'],
+                "difficulty": str(block['difficulty']),
+                "totalDifficulty": str(block['totalDifficulty']),
+                "extraData": block['extraData'].hex(),
+                "size": block['size'],
+                "gasLimit": block['gasLimit'],
+                "gasUsed": block['gasUsed'],
+                "timestamp": datetime.fromtimestamp(block['timestamp']).isoformat(),
+                "transactions": [tx.hex() if isinstance(tx, bytes) else tx for tx in block['transactions']],
+                "uncles": [uncle.hex() if isinstance(uncle, bytes) else uncle for uncle in block['uncles']],
+            }
+            
+            # Store in memory cache (blocks are immutable, so longer TTL)
+            await self.block_cache.set(cache_key, block_data, ttl=604800)  # 1 week
+            
+            # Return formatted block data
+            return block_data
             
         except Exception as e:
-            logger.error(f"Failed to get block: {e}")
+            logger.error(f"Failed to get block {block_number}: {e}")
             return None
     
+    @circuit_breaker(failure_threshold=5, reset_timeout=300)
+    @retry_with_backoff(max_retries=3, base_delay=1, max_delay=10)
     async def create_token(
         self, 
         recipient: str,
         metadata: Dict[str, Any],
         user_id: str
     ) -> Dict[str, Any]:
-        """Create a token for a recipient"""
+        """Create a token for a recipient using the certificate contract"""
         try:
-            # In a real implementation, this would mint an NFT or token
-            # For now, we'll simulate token creation
+            if not WEB3_AVAILABLE:
+                raise ImportError("Web3 library is not available. Please install with: pip install web3")
             
-            # Generate token ID
-            token_id = f"{int(time.time())}_{hashlib.sha256(f'{recipient}:{int(time.time())}'.encode()).hexdigest()[:16]}"
+            # Initialize Web3 connection
+            w3 = Web3(Web3.HTTPProvider(settings.POLYGON_RPC_URL))
             
-            # Simulate token data
+            # Apply middleware for Polygon (PoS chain)
+            w3.middleware_onion.inject(geth_poa_middleware, layer=0)
+            
+            # Check if connected
+            if not w3.is_connected():
+                raise ConnectionError(f"Failed to connect to blockchain node at {settings.POLYGON_RPC_URL}")
+            
+            # Get account from private key
+            account = w3.eth.account.from_key(settings.BLOCKCHAIN_PRIVATE_KEY)
+            
+            # Initialize the certificate contract
+            contract = w3.eth.contract(
+                address=settings.CERTIFICATE_CONTRACT_ADDRESS, 
+                abi=settings.CERTIFICATE_CONTRACT_ABI
+            )
+            
+            # Prepare metadata for storage
+            # For larger metadata, store as JSON in a content-addressable system (IPFS/Arweave)
+            # and only store the content hash on-chain
+            metadata_str = json.dumps(metadata)
+            metadata_hash = f"hash:{hashlib.sha256(metadata_str.encode()).hexdigest()}"
+            
+            # Store the full metadata in our own storage
+            metadata_key = f"blockchain:metadata:{metadata_hash}"
+            await self.redis.set(
+                metadata_key,
+                metadata_str,
+                expire=86400 * 365 * 5  # 5 years
+            )
+            
+            # Current time for issuance
+            now = int(time.time())
+            
+            # Expiry time (1 year by default)
+            expiry = now + 31536000  # 1 year in seconds
+            
+            # Generate a signature for the certificate
+            # In real implementation, this would use the account's private key to sign
+            signature = w3.eth.account.sign_message(
+                encode_defunct(text=f"{recipient}:{metadata_hash}:{now}:{expiry}"),
+                private_key=settings.BLOCKCHAIN_PRIVATE_KEY
+            ).signature.hex()
+            
+            # Prepare transaction parameters
+            nonce = w3.eth.get_transaction_count(account.address)
+            
+            # Get gas price with 10% buffer
+            gas_price = w3.eth.gas_price
+            gas_price_with_buffer = int(gas_price * 1.1)
+            
+            # Determine certificate type from metadata
+            certificate_type = metadata.get('certificate_type', 0)  # Default to type 0
+            
+            # Prepare transaction for certificate issuance
+            tx = contract.functions.issueCertificate(
+                certificate_type,
+                account.address,  # Issuer is our service account
+                recipient,
+                now,  # Issuance timestamp
+                expiry,  # Expiry timestamp
+                metadata_hash,  # Metadata URI/hash
+                signature  # Cryptographic signature
+            ).build_transaction({
+                'from': account.address,
+                'gas': 300000,  # Gas limit
+                'gasPrice': gas_price_with_buffer,
+                'nonce': nonce,
+            })
+            
+            # Sign the transaction
+            signed_tx = account.sign_transaction(tx)
+            
+            # Send the transaction
+            tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+            
+            # Wait for transaction receipt
+            receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+            
+            if receipt.status != 1:
+                raise Exception(f"Transaction failed with status {receipt.status}")
+            
+            # Get certificate ID from event logs
+            certificate_id = None
+            if receipt.logs:
+                # Parse logs for CertificateIssued event
+                try:
+                    certificate_events = contract.events.CertificateIssued().process_receipt(receipt)
+                    if certificate_events:
+                        certificate_id = certificate_events[0]['args']['certificateId']
+                except Exception as e:
+                    logger.warning(f"Error extracting certificate ID from events: {e}")
+            
+            # If we couldn't get certificate ID from events, generate a deterministic one
+            if not certificate_id:
+                certificate_id = f"cert-{hashlib.sha256(f'{recipient}:{now}:{tx_hash.hex()}'.encode()).hexdigest()[:16]}"
+                logger.warning(f"Could not extract certificate ID from events, using deterministic ID: {certificate_id}")
+            
+            # Format token data
             token_data = {
-                "id": token_id,
+                "id": certificate_id,
                 "recipient": recipient,
                 "creator": user_id,
+                "issuer": account.address,
                 "metadata": metadata,
+                "metadataHash": metadata_hash,
                 "created_at": datetime.utcnow().isoformat(),
-                "transaction_id": f"0x{hashlib.sha256(f'token:{token_id}'.encode()).hexdigest()}",
+                "expires_at": datetime.fromtimestamp(expiry).isoformat(),
+                "transaction_id": tx_hash.hex(),
                 "network": self.network,
-                "contract_address": self.contract_address,
+                "contract_address": settings.CERTIFICATE_CONTRACT_ADDRESS,
+                "block_number": receipt.blockNumber,
+                "status": "active",
+                "signature": signature,
             }
             
-            # Store token data in Redis
-            token_key = f"blockchain:token:{token_id}"
+            # Store token data in Redis for quick lookups
+            token_key = f"blockchain:token:{certificate_id}"
             await self.redis.set(
                 token_key,
                 json.dumps(token_data),
-                expire=86400 * 365  # 1 year
+                expire=86400 * 365 * 2  # 2 years
+            )
+            
+            # Index by recipient for quick lookups
+            recipient_key = f"blockchain:recipient:{recipient}"
+            existing_tokens = await self.redis.get(recipient_key)
+            if existing_tokens:
+                token_ids = json.loads(existing_tokens)
+                if certificate_id not in token_ids:
+                    token_ids.append(certificate_id)
+            else:
+                token_ids = [certificate_id]
+                
+            await self.redis.set(
+                recipient_key,
+                json.dumps(token_ids),
+                expire=86400 * 365 * 2  # 2 years
             )
             
             # Return token data
@@ -489,30 +741,216 @@ class BlockchainService:
             logger.error(f"Failed to create token: {e}")
             raise
     
+    @circuit_breaker(failure_threshold=5, reset_timeout=300)
     async def get_token(self, token_id: str) -> Optional[Dict[str, Any]]:
-        """Get token details"""
+        """Get token details with blockchain fallback"""
         try:
-            # Get token data from Redis
+            # Try to get from Redis cache first
             token_key = f"blockchain:token:{token_id}"
             token_data = await self.redis.get(token_key)
             
             if token_data:
                 return json.loads(token_data)
             
+            # If not in cache, try to retrieve from the blockchain
+            if WEB3_AVAILABLE and settings.BLOCKCHAIN_ENABLED:
+                # Initialize Web3 connection
+                w3 = Web3(Web3.HTTPProvider(settings.POLYGON_RPC_URL))
+                
+                # Apply middleware for Polygon (PoS chain)
+                w3.middleware_onion.inject(geth_poa_middleware, layer=0)
+                
+                # Check if connected
+                if not w3.is_connected():
+                    logger.error(f"Failed to connect to blockchain node at {settings.POLYGON_RPC_URL}")
+                    return None
+                
+                # Initialize the certificate contract
+                contract = w3.eth.contract(
+                    address=settings.CERTIFICATE_CONTRACT_ADDRESS, 
+                    abi=settings.CERTIFICATE_CONTRACT_ABI
+                )
+                
+                try:
+                    # Get certificate from blockchain
+                    cert_data = contract.functions.getCertificate(token_id).call()
+                    
+                    # Extract the recipient from the certificate
+                    recipient = cert_data[2]  # subject field
+                    
+                    # Format the certificate data
+                    token = {
+                        "id": token_id,
+                        "recipient": recipient,
+                        "issuer": cert_data[1],  # issuer address
+                        "metadata": {"certificate_type": cert_data[0]},  # certificateType
+                        "created_at": datetime.fromtimestamp(cert_data[3]).isoformat(),  # issuedAt
+                        "expires_at": datetime.fromtimestamp(cert_data[4]).isoformat(),  # expiresAt
+                        "status": self._get_status_string(cert_data[5]),  # status
+                        "metadataHash": cert_data[6],  # metadataURI
+                        "signature": cert_data[7],  # signature
+                        "network": self.network,
+                        "contract_address": settings.CERTIFICATE_CONTRACT_ADDRESS,
+                    }
+                    
+                    # Try to get full metadata from our storage
+                    try:
+                        metadata_key = f"blockchain:metadata:{cert_data[6]}"
+                        metadata_str = await self.redis.get(metadata_key)
+                        if metadata_str:
+                            token["metadata"] = json.loads(metadata_str)
+                    except Exception as e:
+                        logger.warning(f"Failed to get metadata for certificate {token_id}: {e}")
+                    
+                    # Cache the token data for future requests
+                    await self.redis.set(
+                        token_key,
+                        json.dumps(token),
+                        expire=86400 * 7  # 1 week
+                    )
+                    
+                    # Update recipient index
+                    recipient_key = f"blockchain:recipient:{recipient}"
+                    existing_tokens = await self.redis.get(recipient_key)
+                    if existing_tokens:
+                        token_ids = json.loads(existing_tokens)
+                        if token_id not in token_ids:
+                            token_ids.append(token_id)
+                            await self.redis.set(
+                                recipient_key,
+                                json.dumps(token_ids),
+                                expire=86400 * 7  # 1 week
+                            )
+                    else:
+                        await self.redis.set(
+                            recipient_key,
+                            json.dumps([token_id]),
+                            expire=86400 * 7  # 1 week
+                        )
+                    
+                    return token
+                except Exception as e:
+                    logger.error(f"Error getting certificate {token_id} from blockchain: {e}")
+            
+            logger.debug(f"Token not found: {token_id}")
             return None
             
         except Exception as e:
             logger.error(f"Failed to get token: {e}")
             return None
     
+    @circuit_breaker(failure_threshold=5, reset_timeout=300)
     async def get_tokens_for_recipient(self, recipient: str) -> List[Dict[str, Any]]:
         """Get all tokens for a recipient"""
         try:
-            # In a real implementation, this would query the blockchain
-            # For now, we'll simulate by scanning Redis keys
-            # This is not efficient and would be implemented differently in production
+            # Check the recipient index first (much more efficient than scanning all tokens)
+            recipient_key = f"blockchain:recipient:{recipient}"
+            cached_token_ids = await self.redis.get(recipient_key)
             
-            # Get all token keys
+            if cached_token_ids:
+                # We have a cached list of token IDs for this recipient
+                token_ids = json.loads(cached_token_ids)
+                tokens = []
+                
+                # Get each token by ID
+                for token_id in token_ids:
+                    token_key = f"blockchain:token:{token_id}"
+                    token_data = await self.redis.get(token_key)
+                    if token_data:
+                        tokens.append(json.loads(token_data))
+                
+                return tokens
+            
+            # If we don't have a cached list, query the blockchain directly
+            if WEB3_AVAILABLE and settings.BLOCKCHAIN_ENABLED:
+                # Initialize Web3 connection
+                w3 = Web3(Web3.HTTPProvider(settings.POLYGON_RPC_URL))
+                
+                # Apply middleware for Polygon (PoS chain)
+                w3.middleware_onion.inject(geth_poa_middleware, layer=0)
+                
+                # Check if connected
+                if not w3.is_connected():
+                    logger.error(f"Failed to connect to blockchain node at {settings.POLYGON_RPC_URL}")
+                    return []
+                
+                # Initialize the certificate contract
+                contract = w3.eth.contract(
+                    address=settings.CERTIFICATE_CONTRACT_ADDRESS, 
+                    abi=settings.CERTIFICATE_CONTRACT_ABI
+                )
+                
+                try:
+                    # Get certificates by subject (recipient) from the contract
+                    certificate_ids = contract.functions.getCertificatesBySubject(recipient).call()
+                    
+                    if not certificate_ids:
+                        return []
+                    
+                    # Store the certificate IDs in Redis for future lookups
+                    await self.redis.set(
+                        recipient_key,
+                        json.dumps(certificate_ids),
+                        expire=86400 * 7  # 1 week
+                    )
+                    
+                    # Get each certificate's details
+                    tokens = []
+                    for cert_id in certificate_ids:
+                        try:
+                            # Try to get from cache first
+                            token_key = f"blockchain:token:{cert_id}"
+                            cached_token = await self.redis.get(token_key)
+                            
+                            if cached_token:
+                                tokens.append(json.loads(cached_token))
+                                continue
+                            
+                            # Get from blockchain if not cached
+                            cert_data = contract.functions.getCertificate(cert_id).call()
+                            
+                            # Format certificate data
+                            token = {
+                                "id": cert_id,
+                                "recipient": recipient,
+                                "issuer": cert_data[1],  # issuer address
+                                "metadata": {"certificate_type": cert_data[0]},  # certificateType
+                                "created_at": datetime.fromtimestamp(cert_data[3]).isoformat(),  # issuedAt
+                                "expires_at": datetime.fromtimestamp(cert_data[4]).isoformat(),  # expiresAt
+                                "status": self._get_status_string(cert_data[5]),  # status
+                                "metadataHash": cert_data[6],  # metadataURI
+                                "signature": cert_data[7],  # signature
+                                "network": self.network,
+                                "contract_address": settings.CERTIFICATE_CONTRACT_ADDRESS,
+                            }
+                            
+                            # Try to get the full metadata from our storage
+                            try:
+                                metadata_key = f"blockchain:metadata:{cert_data[6]}"
+                                metadata_str = await self.redis.get(metadata_key)
+                                if metadata_str:
+                                    token["metadata"] = json.loads(metadata_str)
+                            except Exception as e:
+                                logger.warning(f"Failed to get metadata for certificate {cert_id}: {e}")
+                            
+                            tokens.append(token)
+                            
+                            # Cache the token data
+                            await self.redis.set(
+                                token_key,
+                                json.dumps(token),
+                                expire=86400 * 7  # 1 week
+                            )
+                        except Exception as e:
+                            logger.error(f"Error getting certificate {cert_id}: {e}")
+                    
+                    return tokens
+                    
+                except Exception as e:
+                    logger.error(f"Error querying certificates for recipient {recipient}: {e}")
+            
+            # Fallback to scanning Redis (less efficient, but works as backup)
+            logger.warning(f"Falling back to Redis scan for recipient {recipient}")
             token_keys = await self.redis.keys("blockchain:token:*")
             tokens = []
             
@@ -523,17 +961,37 @@ class BlockchainService:
                     if token.get("recipient") == recipient:
                         tokens.append(token)
             
+            # If we found tokens this way, cache the IDs for future lookups
+            if tokens:
+                token_ids = [token["id"] for token in tokens]
+                await self.redis.set(
+                    recipient_key,
+                    json.dumps(token_ids),
+                    expire=86400 * 7  # 1 week
+                )
+            
             return tokens
             
         except Exception as e:
             logger.error(f"Failed to get tokens for recipient: {e}")
             return []
     
+    def _get_status_string(self, status_code: int) -> str:
+        """Convert status code to string"""
+        status_map = {
+            0: "pending",
+            1: "active",
+            2: "revoked",
+            3: "expired"
+        }
+        return status_map.get(status_code, "unknown")
+    
     def generate_content_hash(self, content: str) -> str:
         """Generate hash of content for verification"""
         return hashlib.sha256(content.encode()).hexdigest()
     
     @circuit_breaker(failure_threshold=5, reset_timeout=300)
+    @retry_with_backoff(max_retries=3, base_delay=1, max_delay=10)
     async def verify_certificate(
         self, 
         certificate_id: str,
@@ -549,47 +1007,116 @@ class BlockchainService:
                 logger.debug(f"Cache hit for certificate verification: {certificate_id}")
                 return cached_result
             
-            # Get verification data (which is itself cached)
+            # First, get both the certificate and verification data
+            certificate_data = await self.get_token(certificate_id)
             verification_data = await self.get_verification(content_hash)
             
-            if not verification_data:
+            # If no certificate data, return error
+            if not certificate_data:
                 result = {
                     "verified": False,
-                    "message": "No verification data found for this content",
+                    "message": f"Certificate with ID {certificate_id} not found",
                     "timestamp": datetime.utcnow().isoformat()
                 }
                 
                 # Cache negative results for a shorter period
                 await self.certificate_cache.set(cache_key, result, ttl=1800)  # 30 minutes
-                
                 return result
             
-            # Check if certificate ID matches
-            if verification_data.get("metadata", {}).get("certificate_id") != certificate_id:
+            # If no verification data, try to verify directly on blockchain
+            if not verification_data and WEB3_AVAILABLE and settings.BLOCKCHAIN_ENABLED:
+                # Initialize Web3 connection
+                w3 = Web3(Web3.HTTPProvider(settings.POLYGON_RPC_URL))
+                
+                # Apply middleware for Polygon (PoS chain)
+                w3.middleware_onion.inject(geth_poa_middleware, layer=0)
+                
+                # Check if connected
+                if not w3.is_connected():
+                    logger.error(f"Failed to connect to blockchain node at {settings.POLYGON_RPC_URL}")
+                    return {
+                        "verified": False,
+                        "message": "Failed to connect to blockchain node",
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+                
+                # Initialize the certificate contract
+                contract = w3.eth.contract(
+                    address=settings.CERTIFICATE_CONTRACT_ADDRESS, 
+                    abi=settings.CERTIFICATE_CONTRACT_ABI
+                )
+                
+                try:
+                    # Verify certificate on blockchain
+                    is_valid = contract.functions.verifyCertificate(certificate_id).call()
+                    
+                    # Get metadata to check content hash
+                    # Check if the content hash matches the one in the metadata (if available)
+                    metadata = certificate_data.get("metadata", {})
+                    metadata_content_hash = metadata.get("content_hash")
+                    
+                    content_hash_matches = metadata_content_hash == content_hash
+                    
+                    if is_valid and content_hash_matches:
+                        result = {
+                            "verified": True,
+                            "message": "Certificate verified successfully on blockchain",
+                            "certificate": certificate_data,
+                            "timestamp": datetime.utcnow().isoformat()
+                        }
+                        
+                        # Cache positive results for longer
+                        await self.certificate_cache.set(cache_key, result, ttl=7200)  # 2 hours
+                        return result
+                    elif is_valid and not content_hash_matches:
+                        result = {
+                            "verified": False,
+                            "message": "Certificate is valid but content hash doesn't match",
+                            "certificate": certificate_data,
+                            "timestamp": datetime.utcnow().isoformat()
+                        }
+                        
+                        # Cache negative results for a shorter period
+                        await self.certificate_cache.set(cache_key, result, ttl=1800)  # 30 minutes
+                        return result
+                    else:
+                        result = {
+                            "verified": False,
+                            "message": "Certificate verification failed on blockchain",
+                            "certificate": certificate_data,
+                            "timestamp": datetime.utcnow().isoformat()
+                        }
+                        
+                        # Cache negative results for a shorter period
+                        await self.certificate_cache.set(cache_key, result, ttl=1800)  # 30 minutes
+                        return result
+                except Exception as e:
+                    logger.error(f"Error verifying certificate on blockchain: {e}")
+            
+            # If we have verification data, check if certificate ID matches
+            if verification_data and verification_data.get("metadata", {}).get("certificate_id") == certificate_id:
                 result = {
-                    "verified": False,
-                    "message": "Certificate ID does not match verification data",
+                    "verified": True,
+                    "message": "Certificate verified successfully",
+                    "certificate": certificate_data,
+                    "verification_data": verification_data,
                     "timestamp": datetime.utcnow().isoformat()
                 }
                 
-                # Cache negative results for a shorter period
-                await self.certificate_cache.set(cache_key, result, ttl=1800)  # 30 minutes
-                
+                # Cache positive results for longer
+                await self.certificate_cache.set(cache_key, result, ttl=7200)  # 2 hours
                 return result
             
-            # In a real implementation, this would verify the certificate on the blockchain
-            # For now, we'll simulate verification
-            
+            # If nothing matches, return failure
             result = {
-                "verified": True,
-                "message": "Certificate verified successfully",
-                "verification_data": verification_data,
+                "verified": False,
+                "message": "Certificate could not be verified for this content",
+                "certificate": certificate_data,
                 "timestamp": datetime.utcnow().isoformat()
             }
             
-            # Cache positive results for longer
-            await self.certificate_cache.set(cache_key, result, ttl=7200)  # 2 hours
-            
+            # Cache negative results for a shorter period
+            await self.certificate_cache.set(cache_key, result, ttl=1800)  # 30 minutes
             return result
             
         except Exception as e:

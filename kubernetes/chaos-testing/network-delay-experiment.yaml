@@ -1,0 +1,21 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: network-delay-test
+  namespace: maily-production
+spec:
+  action: delay
+  mode: one
+  selector:
+    namespaces:
+      - maily-production
+    labelSelectors:
+      app: maily
+  delay:
+    latency: "200ms"
+    correlation: "25"
+    jitter: "50ms"
+  duration: "300s"
+  scheduler:
+    cron: "@every 24h"
+  paused: true  # Start paused, enable manually for testing

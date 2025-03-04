@@ -260,6 +260,91 @@ class LLMClient:
             logger.error(f"Failed to generate text with Google: {e}")
             raise
     
+    async def get_embedding(
+        self,
+        text: str,
+        model: str = "text-embedding-3-small"
+    ) -> Dict[str, Any]:
+        """
+        Generate embedding vector for text
+        
+        Args:
+            text: The text to generate embedding for
+            model: Embedding model name
+            
+        Returns:
+            Dictionary with embedding vector and metadata
+        """
+        try:
+            # Currently we only support OpenAI embeddings
+            # We could add support for other providers in the future
+            return await self._get_embedding_openai(text, model)
+        except Exception as e:
+            logger.error(f"Failed to generate embedding with {model}: {e}")
+            # Try fallback model
+            if model != "text-embedding-ada-002":
+                logger.info("Trying fallback embedding model")
+                try:
+                    return await self._get_embedding_openai(text, "text-embedding-ada-002")
+                except Exception as fallback_error:
+                    logger.error(f"Fallback embedding also failed: {fallback_error}")
+            raise
+    
+    async def _get_embedding_openai(
+        self,
+        text: str,
+        model: str
+    ) -> Dict[str, Any]:
+        """
+        Generate embedding using OpenAI API
+        
+        Args:
+            text: Text to get embedding for
+            model: OpenAI embedding model name
+            
+        Returns:
+            Dictionary with embedding vector and metadata
+        """
+        try:
+            api_key = self.api_keys.get("openai")
+            if not api_key:
+                raise ValueError("OpenAI API key not found")
+            
+            # Prepare request
+            url = "https://api.openai.com/v1/embeddings"
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            # Prepare payload
+            payload = {
+                "model": model,
+                "input": text,
+                "encoding_format": "float"
+            }
+            
+            # Make request
+            response = await self.client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+            
+            # Parse response
+            result = response.json()
+            
+            # Extract embedding
+            embedding = result["data"][0]["embedding"]
+            
+            return {
+                "embedding": embedding,
+                "model": model,
+                "provider": "openai",
+                "usage": result.get("usage", {})
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to generate embedding with OpenAI: {e}")
+            raise
+    
     async def check_health(self) -> Dict[str, Any]:
         """Check health of LLM providers"""
         results = {}

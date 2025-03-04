@@ -20,7 +20,7 @@ from .cache.redis_service import get_cache_service
 from .routers import campaign_router
 
 # Initialize logger
-logger = structlog.get_logger("maily.app")
+logger = structlog.get_logger("justmaily.com")
 
 def create_application() -> FastAPI:
     """

@@ -167,8 +167,68 @@ def get_redis():
     return redis_client
 
 
-def get_current_user(api_key: str = Depends()):
-    """Dependency for user authentication."""
-    if not api_key or api_key != settings.API_KEY:
-        raise AuthenticationError("Invalid API key")
-    return {"user_id": 1}  # TODO: Implement proper user authentication
+async def get_current_user(api_key: str = Depends()):
+    """
+    Dependency for user authentication using API key.
+    
+    This implementation performs proper authentication using the api_key_service
+    to validate API keys and retrieve the associated user information.
+    
+    Args:
+        api_key: The API key from the request header
+        
+    Returns:
+        Dict containing user information including user_id, scopes, and key_id
+        
+    Raises:
+        AuthenticationError: If API key is invalid or expired
+    """
+    if not api_key:
+        raise AuthenticationError("API key is required")
+    
+    try:
+        # Import api_key_service here to avoid circular imports
+        from apps.api.services.api_key_service import validate_api_key, get_api_key_scopes
+        
+        # Validate the API key
+        is_valid, key_data = await validate_api_key(api_key)
+        
+        if not is_valid or not key_data:
+            logger.warning("Authentication attempt with invalid API key")
+            raise AuthenticationError("Invalid API key")
+        
+        # Get API key scopes for authorization
+        scopes = await get_api_key_scopes(api_key)
+        
+        # Check if key is expired (should be caught by validate_api_key, but double-check)
+        if "expires_at" in key_data and key_data["expires_at"]:
+            import dateutil.parser
+            expires_at = dateutil.parser.parse(key_data["expires_at"])
+            if expires_at < datetime.utcnow():
+                logger.warning(f"Authentication attempt with expired API key: {key_data['id']}")
+                raise AuthenticationError("API key has expired")
+        
+        # Return user information
+        return {
+            "user_id": int(key_data["user_id"]),
+            "key_id": key_data["id"],
+            "scopes": scopes,
+            "authenticated_at": datetime.utcnow().isoformat()
+        }
+    except ImportError:
+        # Fallback for development/testing only
+        if os.environ.get("ENVIRONMENT", "").lower() == "production":
+            logger.error("API key service not available in production")
+            raise AuthenticationError("Authentication service unavailable")
+        
+        logger.warning("Using development API key validation")
+        if not api_key or len(api_key) < 8:
+            raise AuthenticationError("Invalid API key")
+        
+        # For development, return mock user information
+        return {
+            "user_id": 1,  
+            "key_id": "dev_key_1",
+            "scopes": ["*"],  # All scopes for development
+            "authenticated_at": datetime.utcnow().isoformat()
+        }

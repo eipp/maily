@@ -23,8 +23,8 @@ lambda:
 # Monitoring configuration
 monitoring:
   method: prometheus
-  prometheus_url: https://prometheus.staging.maily.ai
-  grafana_url: https://grafana.staging.maily.ai
+  prometheus_url: https://prometheus.staging.justmaily.com
+  grafana_url: https://grafana.staging.justmaily.com
   datadog_api_key: ${DATADOG_API_KEY}
   datadog_app_key: ${DATADOG_APP_KEY}
   alert_webhook: ${SLACK_WEBHOOK_URL}
@@ -46,8 +46,8 @@ components:
     deploy_method: vercel
     project_id: prj_staging123456
     verify_method: http
-    health_url: https://staging.maily.ai/api/health
-    domain: staging.maily.ai
+    health_url: https://staging.justmaily.com/api/health
+    domain: staging.justmaily.com
 
   api:
     deploy_method: kubernetes
@@ -70,7 +70,7 @@ components:
     deployment: ai-service
     image: maily/ai-service
     verify_method: http
-    health_url: https://ai.staging.maily.ai/health
+    health_url: https://ai.staging.justmaily.com/health
     replicas: 2
     resources:
       requests:
@@ -80,8 +80,9 @@ components:
         cpu: 2000m
         memory: 4Gi
     env:
-      AI_MODEL: gpt-4o
-      AI_API_KEY: ${OPENAI_API_KEY}
+      AI_MODEL: deepseek-chat
+      AI_API_KEY: ${DEEPSEEK_API_KEY}
+      AI_API_BASE_URL: https://api.deepseek.com
 
   websocket:
     deploy_method: kubernetes
@@ -126,7 +127,7 @@ components:
     deployment: analytics
     image: maily/analytics
     verify_method: http
-    health_url: https://analytics.staging.maily.ai/health
+    health_url: https://analytics.staging.justmaily.com/health
     replicas: 1
     resources:
       requests:
@@ -142,7 +143,7 @@ components:
     deployment: campaign
     image: maily/campaign
     verify_method: http
-    health_url: https://campaign.staging.maily.ai/health
+    health_url: https://campaign.staging.justmaily.com/health
     replicas: 1
     resources:
       requests:
@@ -158,7 +159,7 @@ components:
     deployment: email
     image: maily/email
     verify_method: http
-    health_url: https://email.staging.maily.ai/health
+    health_url: https://email.staging.justmaily.com/health
     replicas: 1
     resources:
       requests:
@@ -210,10 +211,10 @@ s3:
 
 # Domains configuration
 domains:
-  main: staging.maily.ai
-  api: api.staging.maily.ai
-  ai: ai.staging.maily.ai
-  websocket: ws.staging.maily.ai
-  analytics: analytics.staging.maily.ai
-  campaign: campaign.staging.maily.ai
-  email: email.staging.maily.ai
+  main: staging.justmaily.com
+  api: api.staging.justmaily.com
+  ai: ai.staging.justmaily.com
+  websocket: ws.staging.justmaily.com
+  analytics: analytics.staging.justmaily.com
+  campaign: campaign.staging.justmaily.com
+  email: email.staging.justmaily.com

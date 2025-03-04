@@ -71,9 +71,9 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 NEXT_PUBLIC_WEBSOCKET_URL=ws://localhost:8000
 
 # Auth0 Configuration
-NEXT_PUBLIC_AUTH0_DOMAIN=maily.us.auth0.com
+NEXT_PUBLIC_AUTH0_DOMAIN=justmaily.auth0.com
 NEXT_PUBLIC_AUTH0_CLIENT_ID=your_auth0_client_id
-NEXT_PUBLIC_AUTH0_AUDIENCE=https://api.maily.com
+NEXT_PUBLIC_AUTH0_AUDIENCE=https://api.justmaily.com
 AUTH0_CLIENT_SECRET=your_auth0_client_secret
 
 # NextAuth Configuration

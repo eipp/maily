@@ -42,11 +42,11 @@ class EmailService:
         self, to_email: str, subject: str, content: str, from_email: Optional[str] = None
     ) -> Dict[str, Any]:
         """Send an email using the configured provider."""
-        from_email = from_email or "noreply@maily.app"
+        from_email = from_email or "noreply@justmaily.com"
         message_id = str(uuid.uuid4())
 
         # Add tracking pixel for open tracking
-        tracking_pixel = f'<img src="https://maily.app/api/tracking/open/{message_id}" width="1" height="1" />'
+        tracking_pixel = f'<img src="https://justmaily.com/api/tracking/open/{message_id}" width="1" height="1" />'
         html_content = content + tracking_pixel
 
         # Track clicks by replacing links
@@ -160,7 +160,7 @@ class EmailService:
 
         def replace_link(match):
             original_url = match.group(2)
-            tracking_url = f"https://maily.app/api/tracking/click/{message_id}?url={original_url}"
+            tracking_url = f"https://justmaily.com/api/tracking/click/{message_id}?url={original_url}"
             return f'{match.group(1)}{tracking_url}{match.group(3)}'
 
         # Find and replace href attributes

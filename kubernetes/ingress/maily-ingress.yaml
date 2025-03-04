@@ -12,11 +12,11 @@ metadata:
 spec:
   tls:
   - hosts:
-    - api.maily.app
-    - app.maily.app
+    - api.justmaily.com
+    - app.justmaily.com
     secretName: maily-tls
   rules:
-  - host: api.maily.app
+  - host: api.justmaily.com
     http:
       paths:
       - path: /
@@ -26,7 +26,7 @@ spec:
             name: api
             port:
               number: 80
-  - host: app.maily.app
+  - host: app.justmaily.com
     http:
       paths:
       - path: /

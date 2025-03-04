@@ -27,7 +27,7 @@ spec:
     spec:
       containers:
       - name: contact-management-service
-        image: nginx:latest  # Using nginx as a placeholder for testing
+        image: nginx:v1.0.0  # Using nginx as a placeholder for testing
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8000

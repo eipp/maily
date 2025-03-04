@@ -12,7 +12,7 @@ from ..database.transaction import transaction, transactional
 from ..errors.maily_error import ResourceNotFoundError, ValidationError
 from ..cache.redis_service import CacheService, get_cache_service
 
-logger = structlog.get_logger("maily.services.campaign")
+logger = structlog.get_logger("justmaily.services.campaign")
 
 class CampaignService:
     """Service for managing campaign operations with optimized queries."""

@@ -51,6 +51,8 @@ export function MailyDocsCanvas({
   const [activeTab, setActiveTab] = useState('design');
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedPreview, setGeneratedPreview] = useState<string | null>(null);
+  const [certificateData, setCertificateData] = useState<any>(null);
+  const [verificationBadge, setVerificationBadge] = useState<string | null>(null);
 
   // Filtered templates based on document type
   const filteredTemplates = templates.filter(template => template.type === documentType);
@@ -137,9 +139,71 @@ export function MailyDocsCanvas({
 
     if (onSave) {
       try {
-        await onSave(documentData);
+        // Save the document
+        const savedDocument = await onSave(documentData);
+        
+        // If blockchain verification is enabled, generate a certificate
+        if (blockchainVerify && savedDocument && savedDocument.id) {
+          try {
+            // Call the API to verify the document and generate a certificate
+            const verifyResponse = await fetch(`/api/v1/mailydocs/documents/${savedDocument.id}/verify`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+            });
+            
+            if (verifyResponse.ok) {
+              const verificationData = await verifyResponse.json();
+              console.log('Document verified with certificate:', verificationData);
+              
+              // Store certificate data
+              setCertificateData(verificationData);
+              
+              // Fetch verification badge if available
+              if (verificationData.data && verificationData.data.verification_info && verificationData.data.verification_info.qr_code) {
+                setVerificationBadge(verificationData.data.verification_info.qr_code);
+              } else {
+                // Try to fetch badge from the API
+                try {
+                  const badgeResponse = await fetch(`/api/v1/blockchain/canvas/${savedDocument.id}/badge`, {
+                    method: 'GET',
+                    headers: {
+                      'Content-Type': 'application/json',
+                    },
+                  });
+                  
+                  if (badgeResponse.ok) {
+                    const badgeData = await badgeResponse.json();
+                    if (badgeData.data && badgeData.data.qr_code) {
+                      setVerificationBadge(badgeData.data.qr_code);
+                    }
+                  }
+                } catch (badgeError) {
+                  console.error('Error fetching verification badge:', badgeError);
+                }
+              }
+              
+              // Switch to certificate tab
+              setActiveTab('certificate');
+              
+              // Show success message to user
+              alert('Document saved with blockchain verification certificate');
+            } else {
+              console.error('Failed to verify document:', await verifyResponse.text());
+              alert('Document saved, but blockchain verification failed');
+            }
+          } catch (verifyError) {
+            console.error('Error verifying document:', verifyError);
+            alert('Document saved, but an error occurred during blockchain verification');
+          }
+        } else {
+          // Regular save without verification
+          alert('Document saved successfully');
+        }
       } catch (error) {
         console.error('Error saving document:', error);
+        alert('Error saving document');
       }
     }
   };
@@ -149,10 +213,11 @@ export function MailyDocsCanvas({
       <h2 className="text-2xl font-bold">MailyDocs Editor</h2>
 
       <Tabs defaultValue={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="design">Design</TabsTrigger>
           <TabsTrigger value="content">Content</TabsTrigger>
           <TabsTrigger value="preview">Preview</TabsTrigger>
+          <TabsTrigger value="certificate" disabled={!certificateData}>Verification</TabsTrigger>
         </TabsList>
 
         {/* Design Tab */}
@@ -401,6 +466,85 @@ export function MailyDocsCanvas({
           ) : (
             <div className="border border-dashed rounded-md p-8 text-center">
               <p>Click 'Generate Preview' to see a preview of your document</p>
+            </div>
+          )}
+        </TabsContent>
+        
+        {/* Certificate Tab */}
+        <TabsContent value="certificate" className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h3 className="text-lg font-medium">Document Verification</h3>
+          </div>
+          
+          {certificateData ? (
+            <div className="border rounded-md p-4">
+              <div className="p-6 bg-gray-50 rounded">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h4 className="text-xl font-bold mb-2">Blockchain Certificate</h4>
+                    <p className="text-sm text-gray-600 mb-1">Document: <span className="font-medium">{documentTitle}</span></p>
+                    {certificateData.data?.verification_info?.certificate_id && (
+                      <p className="text-sm text-gray-600 mb-1">Certificate ID: <span className="font-mono">{certificateData.data.verification_info.certificate_id}</span></p>
+                    )}
+                    {certificateData.data?.verification_info?.document_hash && (
+                      <p className="text-sm text-gray-600 mb-1">Content Hash: <span className="font-mono">{certificateData.data.verification_info.document_hash.substring(0, 16)}...</span></p>
+                    )}
+                    {certificateData.data?.verification_info?.timestamp && (
+                      <p className="text-sm text-gray-600 mb-1">Issued: <span className="font-medium">{new Date(certificateData.data.verification_info.timestamp).toLocaleString()}</span></p>
+                    )}
+                    
+                    <div className="mt-4">
+                      <p className="text-sm text-gray-800 font-medium">Blockchain Verification:</p>
+                      {certificateData.data?.verification_info?.blockchain_transaction?.transaction_id ? (
+                        <div className="mt-2">
+                          <p className="text-sm text-gray-600">Transaction ID:</p>
+                          <p className="text-xs font-mono bg-gray-100 p-2 rounded">{certificateData.data.verification_info.blockchain_transaction.transaction_id}</p>
+                          <p className="text-sm text-gray-600 mt-2">Block Number:</p>
+                          <p className="text-xs font-mono bg-gray-100 p-2 rounded">{certificateData.data.verification_info.blockchain_transaction.block_number}</p>
+                          <p className="text-sm text-gray-600 mt-2">Network:</p>
+                          <p className="text-xs font-mono bg-gray-100 p-2 rounded">{certificateData.data.verification_info.blockchain_transaction.network}</p>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-yellow-600">Verification in progress...</p>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {verificationBadge && (
+                    <div className="ml-4 p-4 bg-white border rounded-md">
+                      <p className="text-sm text-center mb-2">Verification QR Code</p>
+                      <img 
+                        src={verificationBadge} 
+                        alt="Verification QR Code" 
+                        className="w-40 h-40"
+                      />
+                      <p className="text-xs text-center mt-2 text-gray-500">Scan to verify authenticity</p>
+                    </div>
+                  )}
+                </div>
+                
+                {certificateData.data?.verification_info?.verification_url && (
+                  <div className="mt-6 flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-600">Verification URL:</p>
+                      <p className="text-xs font-mono bg-gray-100 p-2 rounded mt-1">
+                        {certificateData.data.verification_info.verification_url}
+                      </p>
+                    </div>
+                    <Button
+                      onClick={() => window.open(certificateData.data.verification_info.verification_url, '_blank')}
+                      variant="outline"
+                      size="sm"
+                    >
+                      Verify Externally
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="border border-dashed rounded-md p-8 text-center">
+              <p>No verification certificate available. Save document with blockchain verification enabled.</p>
             </div>
           )}
         </TabsContent>

@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Dict, Any, List, Optional
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, String, Text, Float
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 
@@ -25,6 +25,7 @@ class User(Base):
     campaigns = relationship("Campaign", back_populates="user")
     templates = relationship("EmailTemplate", back_populates="user")
     api_keys = relationship("ApiKey", back_populates="user", cascade="all, delete-orphan")
+    model_configs = relationship("ModelConfig", back_populates="user")
 
 
 class ApiKey(Base):
@@ -164,3 +165,30 @@ class PluginSetting(Base):
     # Relationships
     plugin = relationship("Plugin", back_populates="settings")
     user = relationship("User")
+
+
+class ModelConfig(Base):
+    """Model configuration for AI models."""
+    __tablename__ = "model_configs"
+
+    id = Column(String, primary_key=True)  # Using a string ID for better readability
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Null for global configurations
+    model_name = Column(String, nullable=False, index=True)
+    provider = Column(String, nullable=False, index=True)
+    api_key = Column(String, nullable=False)
+    temperature = Column(Float, default=0.7)
+    max_tokens = Column(Integer, default=1000)
+    parameters = Column(JSON, default={})  # Additional parameters like top_p, frequency_penalty, etc.
+    is_active = Column(Boolean, default=True)
+    is_default = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_used_at = Column(DateTime, nullable=True)
+    usage_count = Column(Integer, default=0)
+
+    # Relationships
+    user = relationship("User", back_populates="model_configs")
+
+    def __repr__(self):
+        """Return string representation of the model configuration."""
+        return f"<ModelConfig(id={self.id}, model_name={self.model_name}, provider={self.provider})>"

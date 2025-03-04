@@ -14,8 +14,9 @@ class Settings(BaseSettings):
     allowed_hosts: List[str] = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
     
     # CORS settings
-    cors_allowed_origins: List[str] = os.getenv("CORS_ALLOWED_ORIGINS", 
-        "http://localhost:3000,https://maily.io,https://www.maily.io").split(",")
+    CORS_ORIGINS = os.getenv(
+        "CORS_ORIGINS",
+        "http://localhost:3000,https://justmaily.com,https://www.justmaily.com").split(",")
     
     # Database
     POSTGRES_USER: str = os.getenv("POSTGRES_USER", "maily")
@@ -80,11 +81,31 @@ class Settings(BaseSettings):
     MAX_SECTIONS_PER_DOCUMENT: int = int(os.getenv("MAX_SECTIONS_PER_DOCUMENT", "50"))
 
     # Blockchain Verification
-    BLOCKCHAIN_ENABLED: bool = os.getenv("BLOCKCHAIN_ENABLED", "false").lower() == "true"
-    BLOCKCHAIN_PROVIDER_URL: str = os.getenv("BLOCKCHAIN_PROVIDER_URL", "")
+    BLOCKCHAIN_ENABLED: bool = os.getenv("BLOCKCHAIN_ENABLED", "true").lower() == "true"
+    POLYGON_RPC_URL: str = os.getenv("POLYGON_RPC_URL", "https://polygon-rpc.com")
     BLOCKCHAIN_PRIVATE_KEY: str = os.getenv("BLOCKCHAIN_PRIVATE_KEY", "")
-    BLOCKCHAIN_CONTRACT_ADDRESS: str = os.getenv("BLOCKCHAIN_CONTRACT_ADDRESS", "")
-    BLOCKCHAIN_NETWORK: str = os.getenv("BLOCKCHAIN_NETWORK", "testnet")
+    EMAIL_VERIFICATION_CONTRACT_ADDRESS: str = os.getenv("EMAIL_VERIFICATION_CONTRACT_ADDRESS", "")
+    CERTIFICATE_CONTRACT_ADDRESS: str = os.getenv("CERTIFICATE_CONTRACT_ADDRESS", "")
+    VERIFICATION_CONTRACT_ADDRESS: str = os.getenv("VERIFICATION_CONTRACT_ADDRESS", "")
+    BLOCKCHAIN_NETWORK: str = os.getenv("BLOCKCHAIN_NETWORK", "polygon")
+    MULTICALL_CONTRACT_ADDRESS: str = os.getenv("MULTICALL_CONTRACT_ADDRESS", "0x11ce4B23bD875D7F5C6a31084f55fDe1e9A87507")
+    GAS_PRICE_MULTIPLIER: float = float(os.getenv("GAS_PRICE_MULTIPLIER", "1.1"))
+    MAX_GAS_PRICE_GWEI: int = int(os.getenv("MAX_GAS_PRICE_GWEI", "100"))
+    BLOCKCHAIN_RETRY_ATTEMPTS: int = int(os.getenv("BLOCKCHAIN_RETRY_ATTEMPTS", "3"))
+    BATCH_SIZE_LIMIT: int = int(os.getenv("BATCH_SIZE_LIMIT", "10"))
+    BATCH_PROCESSING_TIMEOUT: int = int(os.getenv("BATCH_PROCESSING_TIMEOUT", "30000"))  # ms
+    
+    # ABI paths (can be overridden with environment variables)
+    VERIFICATION_CONTRACT_ABI_PATH: str = os.getenv("VERIFICATION_CONTRACT_ABI_PATH", "contracts/VerificationABI.json")
+    CERTIFICATE_CONTRACT_ABI_PATH: str = os.getenv("CERTIFICATE_CONTRACT_ABI_PATH", "contracts/CertificateABI.json")
+    EMAIL_VERIFICATION_ABI_PATH: str = os.getenv("EMAIL_VERIFICATION_ABI_PATH", "contracts/EmailVerificationABI.json")
+    
+    # Contract ABIs (loaded at runtime)
+    VERIFICATION_CONTRACT_ABI: list = []
+    CERTIFICATE_CONTRACT_ABI: list = []
+    EMAIL_VERIFICATION_ABI: list = []
+    
+    # Override this in __post_init__ to load contract ABIs
 
     # Document Analytics
     ANALYTICS_ENABLED: bool = os.getenv("ANALYTICS_ENABLED", "true").lower() == "true"
@@ -95,4 +116,57 @@ class Settings(BaseSettings):
         case_sensitive = True
 
 
-settings = Settings()
+def load_blockchain_abis():
+    """Load blockchain ABIs from JSON files"""
+    import json
+    import os
+    import logging
+    
+    logger = logging.getLogger("api.config.settings")
+    settings = Settings()
+    
+    # Setup contracts directory
+    contracts_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "contracts")
+    os.makedirs(contracts_dir, exist_ok=True)
+    
+    # Helper to load ABI files
+    def load_abi(file_path, default_name):
+        try:
+            # Try absolute path first
+            if os.path.isfile(file_path):
+                with open(file_path) as f:
+                    return json.load(f)
+            
+            # Try relative to contracts directory
+            rel_path = os.path.join(contracts_dir, os.path.basename(file_path))
+            if os.path.isfile(rel_path):
+                with open(rel_path) as f:
+                    return json.load(f)
+                
+            # Try default name in contracts directory
+            default_path = os.path.join(contracts_dir, default_name)
+            if os.path.isfile(default_path):
+                with open(default_path) as f:
+                    return json.load(f)
+                
+            logger.warning(f"Could not find ABI file: {file_path} or {default_name}")
+            return []
+        except Exception as e:
+            logger.error(f"Error loading ABI file {file_path}: {e}")
+            return []
+    
+    # Load ABIs
+    settings.VERIFICATION_CONTRACT_ABI = load_abi(
+        settings.VERIFICATION_CONTRACT_ABI_PATH, "VerificationABI.json"
+    )
+    settings.CERTIFICATE_CONTRACT_ABI = load_abi(
+        settings.CERTIFICATE_CONTRACT_ABI_PATH, "CertificateABI.json"
+    )
+    settings.EMAIL_VERIFICATION_ABI = load_abi(
+        settings.EMAIL_VERIFICATION_ABI_PATH, "EmailVerificationABI.json"
+    )
+    
+    return settings
+
+
+settings = load_blockchain_abis()

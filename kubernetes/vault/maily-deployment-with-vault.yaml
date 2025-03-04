@@ -48,7 +48,7 @@ spec:
       serviceAccountName: maily-api-sa
       containers:
         - name: maily-api
-          image: maily/api:latest
+          image: maily/api:v1.0.0
           imagePullPolicy: Always
           ports:
             - containerPort: 8000

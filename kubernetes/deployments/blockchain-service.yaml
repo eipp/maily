@@ -1,0 +1,667 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: blockchain-service
+  namespace: maily
+  labels:
+    app: blockchain-service
+    component: blockchain
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: blockchain-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: blockchain-service
+        component: blockchain
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: blockchain-service
+        image: ${DOCKER_REGISTRY}/blockchain-service:${VERSION}
+        imagePullPolicy: Always
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: PORT
+          value: "8000"
+        - name: LOG_LEVEL
+          value: "info"
+        - name: POLYGON_RPC_URL
+          valueFrom:
+            secretKeyRef:
+              name: blockchain-secrets
+              key: polygon-rpc-url
+        - name: BLOCKCHAIN_PRIVATE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: blockchain-secrets
+              key: blockchain-private-key
+        - name: EMAIL_VERIFICATION_CONTRACT_ADDRESS
+          valueFrom:
+            secretKeyRef:
+              name: blockchain-secrets
+              key: email-verification-contract-address
+        - name: CERTIFICATE_CONTRACT_ADDRESS
+          valueFrom:
+            secretKeyRef:
+              name: blockchain-secrets
+              key: certificate-contract-address
+        - name: MULTICALL_CONTRACT_ADDRESS
+          valueFrom:
+            secretKeyRef:
+              name: blockchain-secrets
+              key: multicall-contract-address
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: redis-secrets
+              key: redis-url
+        - name: API_BASE_URL
+          value: "http://api-service:8000"
+        ports:
+        - containerPort: 8000
+          name: http
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1001
+        volumeMounts:
+        - name: contracts
+          mountPath: /app/contracts
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: contracts
+        configMap:
+          name: blockchain-contracts
+      - name: tmp
+        emptyDir: {}
+      securityContext:
+        fsGroup: 1001
+      serviceAccountName: blockchain-service
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: blockchain-service
+  namespace: maily
+  labels:
+    app: blockchain-service
+    component: blockchain
+spec:
+  selector:
+    app: blockchain-service
+  ports:
+  - port: 8000
+    targetPort: 8000
+    name: http
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: blockchain-contracts
+  namespace: maily
+data:
+  EmailVerificationABI.json: |
+    [
+      {
+        "anonymous": false,
+        "inputs": [
+          {
+            "indexed": true,
+            "internalType": "string",
+            "name": "emailId",
+            "type": "string"
+          },
+          {
+            "indexed": true,
+            "internalType": "address",
+            "name": "verifier",
+            "type": "address"
+          },
+          {
+            "indexed": false,
+            "internalType": "uint256",
+            "name": "timestamp",
+            "type": "uint256"
+          }
+        ],
+        "name": "EmailVerified",
+        "type": "event"
+      },
+      {
+        "inputs": [
+          {
+            "internalType": "string",
+            "name": "emailId",
+            "type": "string"
+          }
+        ],
+        "name": "getEmailVerification",
+        "outputs": [
+          {
+            "components": [
+              {
+                "internalType": "string",
+                "name": "sender",
+                "type": "string"
+              },
+              {
+                "internalType": "string",
+                "name": "recipient",
+                "type": "string"
+              },
+              {
+                "internalType": "string",
+                "name": "subject",
+                "type": "string"
+              },
+              {
+                "internalType": "string",
+                "name": "contentHash",
+                "type": "string"
+              },
+              {
+                "internalType": "uint256",
+                "name": "timestamp",
+                "type": "uint256"
+              },
+              {
+                "internalType": "address",
+                "name": "verifier",
+                "type": "address"
+              },
+              {
+                "internalType": "uint256",
+                "name": "verificationTimestamp",
+                "type": "uint256"
+              }
+            ],
+            "internalType": "struct EmailVerification.EmailRecord",
+            "name": "",
+            "type": "tuple"
+          }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+      },
+      {
+        "inputs": [],
+        "name": "owner",
+        "outputs": [
+          {
+            "internalType": "address",
+            "name": "",
+            "type": "address"
+          }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+      },
+      {
+        "inputs": [
+          {
+            "internalType": "string",
+            "name": "emailId",
+            "type": "string"
+          }
+        ],
+        "name": "isEmailVerified",
+        "outputs": [
+          {
+            "internalType": "bool",
+            "name": "",
+            "type": "bool"
+          }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+      },
+      {
+        "inputs": [
+          {
+            "internalType": "string",
+            "name": "emailId",
+            "type": "string"
+          },
+          {
+            "internalType": "string",
+            "name": "sender",
+            "type": "string"
+          },
+          {
+            "internalType": "string",
+            "name": "recipient",
+            "type": "string"
+          },
+          {
+            "internalType": "string",
+            "name": "subject",
+            "type": "string"
+          },
+          {
+            "internalType": "string",
+            "name": "contentHash",
+            "type": "string"
+          },
+          {
+            "internalType": "uint256",
+            "name": "timestamp",
+            "type": "uint256"
+          }
+        ],
+        "name": "verifyEmail",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+      }
+    ]
+  CertificateABI.json: |
+    [
+      {
+        "anonymous": false,
+        "inputs": [
+          {
+            "indexed": true,
+            "internalType": "string",
+            "name": "certificateId",
+            "type": "string"
+          },
+          {
+            "indexed": true,
+            "internalType": "address",
+            "name": "issuer",
+            "type": "address"
+          },
+          {
+            "indexed": true,
+            "internalType": "uint8",
+            "name": "certificateType",
+            "type": "uint8"
+          }
+        ],
+        "name": "CertificateIssued",
+        "type": "event"
+      },
+      {
+        "inputs": [
+          {
+            "internalType": "string",
+            "name": "certificateId",
+            "type": "string"
+          }
+        ],
+        "name": "getCertificate",
+        "outputs": [
+          {
+            "components": [
+              {
+                "internalType": "uint8",
+                "name": "certificateType",
+                "type": "uint8"
+              },
+              {
+                "internalType": "address",
+                "name": "issuer",
+                "type": "address"
+              },
+              {
+                "internalType": "string",
+                "name": "subject",
+                "type": "string"
+              },
+              {
+                "internalType": "uint256",
+                "name": "issuedAt",
+                "type": "uint256"
+              },
+              {
+                "internalType": "uint256",
+                "name": "expiresAt",
+                "type": "uint256"
+              },
+              {
+                "internalType": "uint8",
+                "name": "status",
+                "type": "uint8"
+              },
+              {
+                "internalType": "string",
+                "name": "metadataURI",
+                "type": "string"
+              },
+              {
+                "internalType": "string",
+                "name": "signature",
+                "type": "string"
+              }
+            ],
+            "internalType": "struct Certificate.CertificateData",
+            "name": "",
+            "type": "tuple"
+          }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+      },
+      {
+        "inputs": [
+          {
+            "internalType": "string",
+            "name": "subject",
+            "type": "string"
+          }
+        ],
+        "name": "getCertificatesBySubject",
+        "outputs": [
+          {
+            "internalType": "string[]",
+            "name": "",
+            "type": "string[]"
+          }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+      },
+      {
+        "inputs": [
+          {
+            "internalType": "uint8",
+            "name": "certificateType",
+            "type": "uint8"
+          },
+          {
+            "internalType": "address",
+            "name": "issuer",
+            "type": "address"
+          },
+          {
+            "internalType": "string",
+            "name": "subject",
+            "type": "string"
+          },
+          {
+            "internalType": "uint256",
+            "name": "issuedAt",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "expiresAt",
+            "type": "uint256"
+          },
+          {
+            "internalType": "string",
+            "name": "metadataURI",
+            "type": "string"
+          },
+          {
+            "internalType": "string",
+            "name": "signature",
+            "type": "string"
+          }
+        ],
+        "name": "issueCertificate",
+        "outputs": [
+          {
+            "internalType": "string",
+            "name": "",
+            "type": "string"
+          }
+        ],
+        "stateMutability": "nonpayable",
+        "type": "function"
+      },
+      {
+        "inputs": [
+          {
+            "internalType": "string",
+            "name": "certificateId",
+            "type": "string"
+          }
+        ],
+        "name": "verifyCertificate",
+        "outputs": [
+          {
+            "internalType": "bool",
+            "name": "",
+            "type": "bool"
+          }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+      }
+    ]
+  VerificationABI.json: |
+    [
+      {
+        "anonymous": false,
+        "inputs": [
+          {
+            "indexed": true,
+            "internalType": "string",
+            "name": "contentHash",
+            "type": "string"
+          },
+          {
+            "indexed": true,
+            "internalType": "address",
+            "name": "verifier",
+            "type": "address"
+          },
+          {
+            "indexed": false,
+            "internalType": "string",
+            "name": "metadataHash",
+            "type": "string"
+          },
+          {
+            "indexed": false,
+            "internalType": "uint256",
+            "name": "timestamp",
+            "type": "uint256"
+          }
+        ],
+        "name": "ContentVerified",
+        "type": "event"
+      },
+      {
+        "inputs": [
+          {
+            "internalType": "string",
+            "name": "contentHash",
+            "type": "string"
+          }
+        ],
+        "name": "getVerification",
+        "outputs": [
+          {
+            "components": [
+              {
+                "internalType": "string",
+                "name": "metadataHash",
+                "type": "string"
+              },
+              {
+                "internalType": "string",
+                "name": "userId",
+                "type": "string"
+              },
+              {
+                "internalType": "address",
+                "name": "verifier",
+                "type": "address"
+              },
+              {
+                "internalType": "uint256",
+                "name": "timestamp",
+                "type": "uint256"
+              }
+            ],
+            "internalType": "struct ContentVerification.VerificationRecord",
+            "name": "",
+            "type": "tuple"
+          }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+      },
+      {
+        "inputs": [
+          {
+            "internalType": "string",
+            "name": "contentHash",
+            "type": "string"
+          }
+        ],
+        "name": "isContentVerified",
+        "outputs": [
+          {
+            "internalType": "bool",
+            "name": "",
+            "type": "bool"
+          }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+      },
+      {
+        "inputs": [
+          {
+            "internalType": "string",
+            "name": "contentHash",
+            "type": "string"
+          },
+          {
+            "internalType": "string",
+            "name": "metadataHash",
+            "type": "string"
+          },
+          {
+            "internalType": "string",
+            "name": "userId",
+            "type": "string"
+          }
+        ],
+        "name": "verifyContent",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+      }
+    ]
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: blockchain-secrets
+  namespace: maily
+type: Opaque
+data:
+  # These values need to be replaced with actual base64-encoded values in production
+  polygon-rpc-url: aHR0cHM6Ly9wb2x5Z29uLXJwYy5jb20=  # https://polygon-rpc.com
+  blockchain-private-key: MHg=  # Only placeholder - replace with actual key
+  email-verification-contract-address: MHgxMjM0NTY3ODkwMTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkw  # 0x1234567890123456789012345678901234567890
+  certificate-contract-address: MHgwOTg3NjU0MzIxMDk4NzY1NDMyMTA5ODc2NTQzMjEwOTg3NjU0MzIx  # 0x0987654321098765432109876543210987654321
+  multicall-contract-address: MHgxMWNlNEIyM2JEODc1RDdGNUM2YTMxMDg0ZjU1ZkRlMWU5QTg3NTA3  # 0x11ce4B23bD875D7F5C6a31084f55fDe1e9A87507
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: blockchain-service
+  namespace: maily
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: blockchain-service-role
+  namespace: maily
+rules:
+- apiGroups: [""]
+  resources: ["configmaps", "secrets"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: blockchain-service-role-binding
+  namespace: maily
+subjects:
+- kind: ServiceAccount
+  name: blockchain-service
+  namespace: maily
+roleRef:
+  kind: Role
+  name: blockchain-service-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: blockchain-service-hpa
+  namespace: maily
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: blockchain-service
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 20
+        periodSeconds: 60

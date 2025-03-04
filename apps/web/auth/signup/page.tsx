@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { Metadata } from 'next';
 import Link from 'next/link';
 import { SignupForm } from '../components/SignupForm';
+import { signIn } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
 
 export const metadata: Metadata = {
   title: 'Sign Up | Maily',
@@ -11,37 +13,16 @@ export const metadata: Metadata = {
 };
 
 export default function Signup() {
-  const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    password: '',
-    confirmPassword: '',
-  });
+  const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-    setError('');
-
-    if (formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match');
-      setIsLoading(false);
-      return;
-    }
-
+  const handleSocialSignup = async (provider: string) => {
     try {
-      // TODO: Implement signup logic
-      console.log('Signup attempt with:', { email: formData.email, name: formData.name });
+      setIsLoading(true);
+      await signIn(provider, { callbackUrl: '/app/onboarding' });
     } catch (err) {
-      setError('Failed to create account. Please try again.');
-    } finally {
+      setError('Failed to sign up with social provider. Please try again.');
       setIsLoading(false);
     }
   };

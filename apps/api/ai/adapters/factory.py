@@ -16,6 +16,7 @@ from .base import BaseModelAdapter, ModelRequest, ModelResponse
 from .openai_adapter import OpenAIAdapter
 from .anthropic_adapter import AnthropicAdapter
 from .google_adapter import GoogleAIAdapter
+from .deepseek_adapter import DeepSeekAdapter
 from apps.api.errors.ai_service_errors import UnsupportedModelError, AIServiceError
 
 logger = logging.getLogger(__name__)
@@ -451,3 +452,29 @@ class ModelAdapterFactory:
 
 # Create a singleton instance of the factory
 model_adapter_factory = ModelAdapterFactory()
+
+def create_model_adapter(provider: str, config: Dict[str, Any]) -> BaseModelAdapter:
+    """Create a model adapter based on the provider."""
+    if provider == "openai":
+        return OpenAIAdapter(
+            api_key=config.get("api_key"),
+            timeout=config.get("timeout", 60)
+        )
+    elif provider == "anthropic":
+        return AnthropicAdapter(
+            api_key=config.get("api_key"),
+            timeout=config.get("timeout", 60)
+        )
+    elif provider == "google":
+        return GoogleAIAdapter(
+            api_key=config.get("api_key"),
+            timeout=config.get("timeout", 60)
+        )
+    elif provider == "deepseek":
+        return DeepSeekAdapter(
+            api_key=config.get("api_key"),
+            base_url=config.get("base_url", "https://api.deepseek.com"),
+            timeout=config.get("timeout", 60)
+        )
+    else:
+        raise ValueError(f"Unsupported provider: {provider}")

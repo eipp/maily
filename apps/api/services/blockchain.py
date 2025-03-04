@@ -302,8 +302,8 @@ class BlockchainService:
             "verification_level": verification["verification_level"],
             "blockchain_id": verification["block_id"],
             "signature": self._generate_signature(verification),
-            "verification_url": f"https://verify.maily.app/contact/{verification['verification_id']}",
-            "certificate_image_url": f"https://verify.maily.app/cert/{verification['verification_id']}.png"
+            "verification_url": f"https://verify.justmaily.com/contact/{verification['verification_id']}",
+            "certificate_image_url": f"https://verify.justmaily.com/cert/{verification['verification_id']}.png"
         }
 
         return certificate

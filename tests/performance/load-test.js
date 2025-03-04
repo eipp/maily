@@ -26,7 +26,7 @@ export const options = {
 };
 
 // Shared parameters
-const BASE_URL = __ENV.BASE_URL || 'https://staging.maily.io';
+const BASE_URL = __ENV.BASE_URL || 'https://staging.justmaily.com';
 const API_URL = `${BASE_URL}/api`;
 
 // Helper function to generate test data

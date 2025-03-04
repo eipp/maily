@@ -8,9 +8,9 @@ const env = {
   NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
   NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000',
   NEXT_PUBLIC_WEBSOCKET_URL: process.env.NEXT_PUBLIC_WEBSOCKET_URL || 'ws://localhost:8000',
-  NEXT_PUBLIC_AUTH0_DOMAIN: process.env.NEXT_PUBLIC_AUTH0_DOMAIN || 'maily.us.auth0.com',
+  NEXT_PUBLIC_AUTH0_DOMAIN: process.env.NEXT_PUBLIC_AUTH0_DOMAIN || 'justmaily.auth0.com',
   NEXT_PUBLIC_AUTH0_CLIENT_ID: process.env.NEXT_PUBLIC_AUTH0_CLIENT_ID || '',
-  NEXT_PUBLIC_AUTH0_AUDIENCE: process.env.NEXT_PUBLIC_AUTH0_AUDIENCE || 'https://api.maily.com',
+  NEXT_PUBLIC_AUTH0_AUDIENCE: process.env.NEXT_PUBLIC_AUTH0_AUDIENCE || 'https://api.justmaily.com',
 };
 
 // Derived URLs
@@ -104,10 +104,10 @@ const theme = {
 // AI configuration
 const ai = {
   models: {
-    content: 'claude-3-sonnet-20240229',
-    design: 'gemini-1.5-pro',
-    analytics: 'gpt-4o',
-    coordinator: 'claude-3-opus-20240229',
+    content: 'deepseek-chat',
+    design: 'deepseek-chat',
+    analytics: 'deepseek-chat',
+    coordinator: 'deepseek-reasoner',
   },
   maxTokens: {
     content: 4096,

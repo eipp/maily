@@ -52,7 +52,7 @@ export interface YjsProviderProps {
 export const YjsProvider: React.FC<YjsProviderProps> = ({
   children,
   roomName,
-  signaling = ['wss://signaling.maily.app'],
+  signaling = ['wss://signaling.justmaily.com'],
   color,
   persistent = true,
 }) => {

@@ -11,8 +11,9 @@ from jose import jwt, JWTError
 import httpx
 
 # Auth0 configuration
-AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN", "maily.us.auth0.com")
-AUTH0_API_AUDIENCE = os.getenv("AUTH0_API_AUDIENCE", "https://api.maily.com")
+AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN", "justmaily.auth0.com")
+AUTH0_API_AUDIENCE = os.getenv("AUTH0_API_AUDIENCE", "https://api.justmaily.com")
+AUTH0_ISSUER = f"https://{AUTH0_DOMAIN}/"
 AUTH0_ALGORITHMS = ["RS256"]
 AUTH0_ISSUER = f"https://{AUTH0_DOMAIN}/"
 

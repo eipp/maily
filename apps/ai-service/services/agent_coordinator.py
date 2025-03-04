@@ -18,6 +18,8 @@ import random
 
 from ..utils.redis_client import get_redis_client
 from ..utils.llm_client import get_llm_client, LLMClient
+# Import the broadcast functions - will be imported later after they're defined
+# to avoid circular imports
 
 logger = logging.getLogger("ai_service.services.agent_coordinator")
 
@@ -37,7 +39,14 @@ class AgentCoordinator:
         self.llm_client = get_llm_client()
         self.active_networks = {}  # network_id -> network_info
         self.active_tasks = {}  # task_id -> task_info
-        self.agent_instances = {}  # agent_id -> agent_instance
+        
+        # Cache of agent instances with max size and TTL
+        self.agent_instances = {}  # agent_id -> (agent_instance, timestamp)
+        self.agent_cache_max_size = 100  # Maximum number of agents to keep in cache
+        self.agent_cache_ttl = 300  # Time-to-live in seconds (5 minutes)
+        
+        # Start background task for cache cleanup
+        asyncio.create_task(self._cache_cleanup_task())
         
     async def create_network(
         self,
@@ -169,6 +178,52 @@ class AgentCoordinator:
         personalization_id = await self._create_agent(network_id, personalization_config)
         network["agents"].append(personalization_id)
     
+    async def _cache_cleanup_task(self):
+        """Background task to clean up agent cache periodically"""
+        try:
+            while True:
+                # Wait for cleanup interval (1 minute)
+                await asyncio.sleep(60)
+                
+                # Get current time
+                current_time = time.time()
+                
+                # Remove expired entries from cache
+                expired_keys = []
+                for agent_id, (agent, timestamp) in self.agent_instances.items():
+                    if current_time - timestamp > self.agent_cache_ttl:
+                        expired_keys.append(agent_id)
+                
+                # Remove expired entries
+                for agent_id in expired_keys:
+                    del self.agent_instances[agent_id]
+                
+                if expired_keys:
+                    logger.info(f"Removed {len(expired_keys)} expired agents from cache")
+                    
+                # If cache still too large, remove oldest entries
+                if len(self.agent_instances) > self.agent_cache_max_size:
+                    # Sort by timestamp (oldest first)
+                    sorted_items = sorted(
+                        self.agent_instances.items(), 
+                        key=lambda x: x[1][1]  # x = (agent_id, (agent, timestamp))
+                    )
+                    
+                    # Calculate number of items to remove
+                    remove_count = len(self.agent_instances) - self.agent_cache_max_size
+                    
+                    # Remove oldest items
+                    for i in range(remove_count):
+                        agent_id, _ = sorted_items[i]
+                        del self.agent_instances[agent_id]
+                    
+                    logger.info(f"Removed {remove_count} oldest agents from cache due to size limit")
+                
+        except Exception as e:
+            logger.error(f"Error in cache cleanup task: {e}")
+            # Restart the task
+            asyncio.create_task(self._cache_cleanup_task())
+    
     async def _create_agent(self, network_id: str, agent_config: Dict[str, Any]) -> str:
         """Create an agent for a network"""
         # Generate agent ID
@@ -196,6 +251,9 @@ class AgentCoordinator:
         # Store agent in Redis
         agent_key = f"{AGENT_KEY_PREFIX}{agent_id}"
         await self.redis.set(agent_key, json.dumps(agent))
+        
+        # Store in cache with timestamp
+        self.agent_instances[agent_id] = (agent, time.time())
         
         return agent_id
     
@@ -309,23 +367,35 @@ class AgentCoordinator:
             
             network = json.loads(network_data)
             
+            # Create a Redis pipeline for batch deletion
+            pipeline = self.redis.pipeline()
+            
+            # Add all delete operations to the pipeline
+            
             # Delete agents
             for agent_id in network["agents"]:
+                # Remove from cache if present
+                if agent_id in self.agent_instances:
+                    del self.agent_instances[agent_id]
+                # Add to pipeline
                 agent_key = f"{AGENT_KEY_PREFIX}{agent_id}"
-                await self.redis.delete(agent_key)
+                pipeline.delete(agent_key)
             
             # Delete tasks
             for task_id in network["tasks"]:
                 task_key = f"{TASK_KEY_PREFIX}{task_id}"
-                await self.redis.delete(task_key)
+                pipeline.delete(task_key)
             
             # Delete memories
             for memory_id in network["memories"]:
                 memory_key = f"{MEMORY_KEY_PREFIX}{memory_id}"
-                await self.redis.delete(memory_key)
+                pipeline.delete(memory_key)
             
             # Delete network
-            await self.redis.delete(network_key)
+            pipeline.delete(network_key)
+            
+            # Execute all delete operations in a single batch
+            await pipeline.execute()
             
             # Remove from active networks
             if network_id in self.active_networks:
@@ -335,6 +405,7 @@ class AgentCoordinator:
             
         except Exception as e:
             logger.error(f"Failed to delete network: {e}")
+            traceback.print_exc()
             return False
     
     async def submit_task(
@@ -514,6 +585,9 @@ class AgentCoordinator:
         
     async def process_task(self, network_id: str, task_id: str):
         """Process a task in the AI Mesh Network using functional programming patterns"""
+        # Import broadcast functions here to avoid circular imports
+        from ..routers.websocket_router import broadcast_task_update, broadcast_network_update
+        
         coordinator_agent = None
         
         try:
@@ -531,10 +605,39 @@ class AgentCoordinator:
             if not coordinator_agent:
                 logger.error(f"No coordinator agent found in network {network_id}")
                 await self._mark_task_failed(task_id)
+                
+                # Send failure notification via WebSocket
+                await broadcast_task_update(
+                    task_id=task_id,
+                    update_type="task_failed",
+                    data={"error": "No coordinator agent found in network"}
+                )
                 return
             
             # Update task and agent states atomically
             await self._update_task_assignment(task, coordinator_agent)
+            
+            # Send task started notification via WebSocket
+            await broadcast_task_update(
+                task_id=task_id,
+                update_type="task_started",
+                data={
+                    "task_id": task_id,
+                    "network_id": network_id,
+                    "coordinator_agent_id": coordinator_agent["id"]
+                }
+            )
+            
+            # Send network update
+            await broadcast_network_update(
+                network_id=network_id,
+                update_type="task_processing",
+                data={
+                    "task_id": task_id,
+                    "status": "in_progress",
+                    "coordinator_agent_id": coordinator_agent["id"]
+                }
+            )
             
             # Process task with coordinator agent
             result = await self._process_with_coordinator(network, coordinator_agent, task)
@@ -542,12 +645,50 @@ class AgentCoordinator:
             # Complete task
             await self._complete_task(task, coordinator_agent, result)
             
+            # Send task completed notification via WebSocket
+            await broadcast_task_update(
+                task_id=task_id,
+                update_type="task_completed",
+                data={
+                    "task_id": task_id,
+                    "network_id": network_id,
+                    "result": result
+                }
+            )
+            
+            # Send network update
+            await broadcast_network_update(
+                network_id=network_id,
+                update_type="task_completed",
+                data={
+                    "task_id": task_id,
+                    "status": "completed"
+                }
+            )
+            
         except Exception as e:
             logger.error(f"Failed to process task: {e}")
             traceback.print_exc()
             
             # Mark task as failed with coordinator agent information if available
             await self._mark_task_failed(task_id, coordinator_agent)
+            
+            # Send failure notification via WebSocket
+            await broadcast_task_update(
+                task_id=task_id,
+                update_type="task_failed",
+                data={"error": str(e)}
+            )
+            
+            # Send network update
+            await broadcast_network_update(
+                network_id=network_id,
+                update_type="task_failed",
+                data={
+                    "task_id": task_id,
+                    "error": str(e)
+                }
+            )
     
     async def _process_with_coordinator(
         self,
@@ -752,6 +893,8 @@ class AgentCoordinator:
         context: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Process a subtask with a specialized agent using functional programming patterns"""
+        # Import broadcast function here to avoid circular imports
+        from ..routers.websocket_router import broadcast_task_update
         from ..utils.concurrent import CircuitBreaker, with_retry
         
         # Create or get circuit breaker for this agent
@@ -789,6 +932,20 @@ class AgentCoordinator:
                 
             # Save updated agent
             await self._save_agent(updated_agent)
+            
+            # Send real-time update for any tasks this agent is assigned to
+            for task_id in updated_agent.get("assigned_tasks", []):
+                await broadcast_task_update(
+                    task_id=task_id,
+                    update_type="agent_status_change",
+                    data={
+                        "agent_id": agent["id"],
+                        "agent_type": agent["type"],
+                        "status": status,
+                        "action": action
+                    }
+                )
+                
             return updated_agent
         
         async def generate_and_parse_response(agent, prompt):
@@ -819,6 +976,9 @@ class AgentCoordinator:
             # Parse response
             return self._parse_agent_response(response["content"])
         
+        # Find the task_id from context
+        task_id = context.get("task_context", {}).get("task_id")
+        
         # Main execution flow with proper error handling
         try:
             # Get agent
@@ -831,6 +991,19 @@ class AgentCoordinator:
                 f"Processing subtask: {description[:50]}..."
             )
             
+            # Send real-time subtask start notification
+            if task_id:
+                await broadcast_task_update(
+                    task_id=task_id,
+                    update_type="subtask_started",
+                    data={
+                        "subtask_description": description,
+                        "agent_id": agent_id,
+                        "agent_name": agent["name"],
+                        "agent_type": agent["type"]
+                    }
+                )
+            
             # Generate prompt
             prompt = self._generate_agent_prompt(agent, description, context)
             
@@ -839,6 +1012,20 @@ class AgentCoordinator:
             
             # Update agent status to idle
             await update_agent_status(agent, "idle")
+            
+            # Send real-time subtask completion notification
+            if task_id:
+                await broadcast_task_update(
+                    task_id=task_id,
+                    update_type="subtask_completed",
+                    data={
+                        "subtask_description": description,
+                        "agent_id": agent_id,
+                        "agent_name": agent["name"],
+                        "agent_type": agent["type"],
+                        "result": agent_response
+                    }
+                )
             
             # Return successful response
             return agent_response
@@ -853,6 +1040,18 @@ class AgentCoordinator:
                     await update_agent_status(agent, "error")
             except Exception as inner_e:
                 logger.error(f"Failed to update agent status: {inner_e}")
+            
+            # Send subtask failure notification
+            if task_id:
+                await broadcast_task_update(
+                    task_id=task_id,
+                    update_type="subtask_failed",
+                    data={
+                        "subtask_description": description,
+                        "agent_id": agent_id,
+                        "error": str(e)
+                    }
+                )
             
             # Return error response
             return {
@@ -1278,9 +1477,27 @@ Respond only with the JSON object, no additional text.
         content: str,
         memory_type: str = "fact",
         confidence: float = 1.0,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        use_vector_embedding: bool = True
     ) -> str:
-        """Add a memory item to the shared memory"""
+        """
+        Add a memory item to the shared memory
+        
+        Args:
+            network_id: ID of the network
+            content: Memory content
+            memory_type: Type of memory (fact, context, decision, feedback)
+            confidence: Confidence score (0.0 to 1.0)
+            metadata: Additional metadata for the memory
+            use_vector_embedding: Whether to generate vector embedding for semantic search
+        
+        Returns:
+            Memory ID if successful
+        
+        Raises:
+            ValueError: If network not found
+            Exception: For other errors
+        """
         try:
             # Check if network exists
             network_key = f"{NETWORK_KEY_PREFIX}{network_id}"
@@ -1314,6 +1531,42 @@ Respond only with the JSON object, no additional text.
             network["updated_at"] = datetime.utcnow().isoformat()
             await self.redis.set(network_key, json.dumps(network))
             
+            # Add to memory indexing system for keyword-based search
+            try:
+                # Import memory indexing system here to avoid circular imports
+                from ..implementations.memory.memory_indexing import get_memory_indexing_system
+                memory_indexing = get_memory_indexing_system()
+                
+                # Index memory for keyword-based retrieval
+                await memory_indexing.add_memory_to_index(
+                    network_id=network_id,
+                    memory_id=memory_id,
+                    memory_type=memory_type,
+                    content=content,
+                    metadata=metadata or {}
+                )
+            except Exception as indexing_error:
+                logger.error(f"Error indexing memory: {indexing_error}")
+                # Continue even if indexing fails
+            
+            # Generate and store vector embedding if enabled
+            if use_vector_embedding:
+                try:
+                    # Import vector embedding service here to avoid circular imports
+                    from ..implementations.memory.vector_embeddings import get_vector_embedding_service
+                    vector_service = get_vector_embedding_service()
+                    
+                    # Index the memory with vector embedding
+                    await vector_service.index_memory_item(
+                        network_id=network_id,
+                        memory_id=memory_id,
+                        content=content,
+                        metadata=metadata
+                    )
+                except Exception as ve:
+                    logger.error(f"Error generating vector embedding: {ve}")
+                    # Continue even if vector embedding fails
+            
             return memory_id
             
         except Exception as e:
@@ -1325,46 +1578,253 @@ Respond only with the JSON object, no additional text.
         network_id: str,
         memory_type: Optional[str] = None,
         query: Optional[str] = None,
-        limit: int = 50
+        limit: int = 50,
+        search_mode: str = "semantic"  # Options: semantic, keyword, hybrid
     ) -> List[Dict[str, Any]]:
-        """Get shared memory for a network"""
+        """
+        Get shared memory for a network with enhanced search capabilities
+        
+        Args:
+            network_id: ID of the network
+            memory_type: Optional filter by memory type
+            query: Search query for filtering memories
+            limit: Maximum number of results
+            search_mode: Search method (semantic, keyword, or hybrid)
+            
+        Returns:
+            List of memory items matching the criteria
+        """
         try:
-            # Get network
-            network_key = f"{NETWORK_KEY_PREFIX}{network_id}"
-            network_data = await self.redis.get(network_key)
-            
-            if not network_data:
-                return []
-            
-            network = json.loads(network_data)
-            
-            # Get memory items
-            memories = []
-            for memory_id in network["memories"]:
-                memory = await self._get_memory(memory_id)
-                if memory:
+            # If no query, just get all memories sorted by recency
+            if not query:
+                # Get network
+                network_key = f"{NETWORK_KEY_PREFIX}{network_id}"
+                network_data = await self.redis.get(network_key)
+                
+                if not network_data:
+                    return []
+                
+                network = json.loads(network_data)
+                
+                # If no memories, return empty list
+                if not network["memories"]:
+                    return []
+                
+                # Create Redis pipeline
+                pipeline = self.redis.pipeline()
+                
+                # Add all memory gets to the pipeline with their IDs for tracking
+                memory_keys = []
+                for memory_id in network["memories"]:
+                    memory_key = f"{MEMORY_KEY_PREFIX}{memory_id}"
+                    memory_keys.append((memory_id, memory_key))
+                    pipeline.get(memory_key)
+                
+                # Execute pipeline to get all memories in a single Redis operation
+                memory_values = await pipeline.execute()
+                
+                # Process the results
+                memories = []
+                for i, data in enumerate(memory_values):
+                    if not data:
+                        continue
+                        
+                    memory = json.loads(data)
+                    
                     # Filter by type if specified
                     if memory_type and memory["type"] != memory_type:
                         continue
+                        
+                    memories.append(memory)
+                
+                # Sort by creation time (newest first)
+                memories.sort(key=lambda x: x["created_at"], reverse=True)
+                
+                # Limit results
+                return memories[:limit]
+            
+            # When a query is provided, use the appropriate search strategy
+            semantic_results = []  # Will store semantic search results if applicable
+            keyword_results = []   # Will store keyword search results if applicable
+            
+            # For semantic or hybrid search modes, use vector embeddings
+            if search_mode in ["semantic", "hybrid"]:
+                try:
+                    # Import vector embedding service
+                    from ..implementations.memory.vector_embeddings import get_vector_embedding_service
+                    vector_service = get_vector_embedding_service()
                     
-                    # Filter by query if specified
+                    # Perform semantic search
+                    similar_memories = await vector_service.search_by_vector_similarity(
+                        network_id=network_id,
+                        query=query,
+                        limit=limit * 2  # Get more than needed to allow for filtering
+                    )
+                    
+                    # Get full memory objects for similar memories
+                    if similar_memories:
+                        pipeline = self.redis.pipeline()
+                        
+                        for item in similar_memories:
+                            memory_id = item["memory_id"]
+                            memory_key = f"{MEMORY_KEY_PREFIX}{memory_id}"
+                            pipeline.get(memory_key)
+                        
+                        memory_data_list = await pipeline.execute()
+                        
+                        # Process memory items and add similarity scores
+                        for i, memory_data in enumerate(memory_data_list):
+                            if memory_data:
+                                memory = json.loads(memory_data)
+                                
+                                # Filter by type if specified
+                                if memory_type and memory["type"] != memory_type:
+                                    continue
+                                
+                                # Add similarity score to memory
+                                memory["similarity_score"] = similar_memories[i]["similarity"]
+                                
+                                semantic_results.append(memory)
+                                
+                        # If semantic mode and we got results, return them
+                        if search_mode == "semantic" and semantic_results:
+                            # Limit results
+                            return semantic_results[:limit]
+                        
+                except Exception as e:
+                    logger.error(f"Semantic search failed: {e}")
+                    # If semantic search fails and mode is semantic, fall back to keyword
+                    if search_mode == "semantic":
+                        search_mode = "keyword"
+            
+            # For keyword or hybrid search modes, or if semantic search failed
+            if search_mode in ["keyword", "hybrid"] or (search_mode == "semantic" and not semantic_results):
+                try:
+                    # Try using memory indexing system first
+                    from ..implementations.memory.memory_indexing import get_memory_indexing_system
+                    memory_indexing = get_memory_indexing_system()
+                    
+                    # Search memories using indexing system
+                    memory_ids = await memory_indexing.search_memories(
+                        network_id=network_id,
+                        query=query,
+                        memory_type=memory_type,
+                        limit=limit * 2,  # Get extra to allow for filtering
+                        sort_by="relevance",
+                        use_vector_search=False  # Use keyword search
+                    )
+                    
+                    # Get memory objects for matching IDs
+                    if memory_ids:
+                        pipeline = self.redis.pipeline()
+                        
+                        for memory_id in memory_ids:
+                            memory_key = f"{MEMORY_KEY_PREFIX}{memory_id}"
+                            pipeline.get(memory_key)
+                        
+                        memory_data_list = await pipeline.execute()
+                        
+                        # Process memory items
+                        for i, memory_data in enumerate(memory_data_list):
+                            if memory_data:
+                                memory = json.loads(memory_data)
+                                
+                                # Filter by type (if not already filtered by indexing system)
+                                if memory_type and memory["type"] != memory_type:
+                                    continue
+                                
+                                keyword_results.append(memory)
+                        
+                        # If keyword mode or semantic failed/empty, return keyword results
+                        if search_mode == "keyword" or not semantic_results:
+                            # Limit results
+                            return keyword_results[:limit]
+                
+                except Exception as e:
+                    logger.error(f"Keyword search failed: {e}")
+                    # Fall back to basic search if both methods have failed
+                    if not semantic_results:
+                        search_mode = "fallback"
+            
+            # For hybrid mode, merge and deduplicate results
+            if search_mode == "hybrid" and (semantic_results or keyword_results):
+                # Start with semantic results, if any
+                merged_results = semantic_results.copy()
+                
+                # Track existing memory IDs to avoid duplicates
+                existing_ids = {memory.get("id") for memory in merged_results}
+                
+                # Add keyword results that aren't already included
+                for memory in keyword_results:
+                    if memory.get("id") not in existing_ids:
+                        merged_results.append(memory)
+                
+                # Sort by similarity score if available, otherwise by creation time
+                merged_results.sort(
+                    key=lambda x: x.get("similarity_score", 0) if "similarity_score" in x else 0, 
+                    reverse=True
+                )
+                
+                # Limit results
+                return merged_results[:limit]
+            
+            # Fallback to basic filtering (used if all else fails)
+            if search_mode == "fallback" or (not semantic_results and not keyword_results):
+                # Get network
+                network_key = f"{NETWORK_KEY_PREFIX}{network_id}"
+                network_data = await self.redis.get(network_key)
+                
+                if not network_data:
+                    return []
+                
+                network = json.loads(network_data)
+                
+                # If no memories, return empty list
+                if not network["memories"]:
+                    return []
+                
+                # Create Redis pipeline
+                pipeline = self.redis.pipeline()
+                
+                # Add all memory gets to the pipeline
+                for memory_id in network["memories"]:
+                    memory_key = f"{MEMORY_KEY_PREFIX}{memory_id}"
+                    pipeline.get(memory_key)
+                
+                # Execute pipeline
+                memory_values = await pipeline.execute()
+                
+                # Process the results
+                memories = []
+                for data in memory_values:
+                    if not data:
+                        continue
+                        
+                    memory = json.loads(data)
+                    
+                    # Filter by type if specified
+                    if memory_type and memory["type"] != memory_type:
+                        continue
+                        
+                    # Basic keyword filtering
                     if query and query.lower() not in memory["content"].lower():
                         continue
-                    
+                        
                     memories.append(memory)
-            
-            # Sort by creation time (newest first)
-            memories.sort(key=lambda x: x["created_at"], reverse=True)
+                
+                # Sort by creation time (newest first)
+                memories.sort(key=lambda x: x["created_at"], reverse=True)
             
             # Apply limit
             return memories[:limit]
             
         except Exception as e:
             logger.error(f"Failed to get network memory: {e}")
+            traceback.print_exc()
             return []
     
     async def get_network_agents(self, network_id: str) -> List[Dict[str, Any]]:
-        """Get agents for a network"""
+        """Get agents for a network using pipelined Redis operations"""
         try:
             # Get network
             network_key = f"{NETWORK_KEY_PREFIX}{network_id}"
@@ -1375,17 +1835,60 @@ Respond only with the JSON object, no additional text.
             
             network = json.loads(network_data)
             
-            # Get agent details
+            # If no agents, return empty list
+            if not network["agents"]:
+                return []
+                
+            # Check cache first for each agent
             agents = []
+            missing_agent_ids = []
+            
             for agent_id in network["agents"]:
-                agent = await self._get_agent(agent_id)
-                if agent:
+                if agent_id in self.agent_instances:
+                    # Get from cache
+                    agent, _ = self.agent_instances[agent_id]
                     agents.append(agent)
+                else:
+                    # Need to fetch from Redis
+                    missing_agent_ids.append(agent_id)
+            
+            # If all agents were in cache, return them
+            if not missing_agent_ids:
+                return agents
+                
+            # Create Redis pipeline for missing agents
+            pipeline = self.redis.pipeline()
+            
+            # Add all agent gets to the pipeline
+            agent_keys = []
+            for agent_id in missing_agent_ids:
+                agent_key = f"{AGENT_KEY_PREFIX}{agent_id}"
+                agent_keys.append((agent_id, agent_key))
+                pipeline.get(agent_key)
+            
+            # Execute pipeline to get all agents in a single Redis operation
+            agent_values = await pipeline.execute()
+            
+            # Process the results
+            current_time = time.time()
+            for i, data in enumerate(agent_values):
+                if not data:
+                    continue
+                    
+                agent = json.loads(data)
+                agent_id = missing_agent_ids[i]
+                
+                # Add to results
+                agents.append(agent)
+                
+                # Update cache
+                self.agent_instances[agent_id] = (agent, current_time)
             
             return agents
             
         except Exception as e:
             logger.error(f"Failed to get network agents: {e}")
+            traceback.print_exc()
             return []
     
     async def list_network_tasks(
@@ -1395,7 +1898,7 @@ Respond only with the JSON object, no additional text.
         limit: int = 10,
         offset: int = 0
     ) -> List[Dict[str, Any]]:
-        """List tasks for a network"""
+        """List tasks for a network using pipelined Redis operations"""
         try:
             # Get network
             network_key = f"{NETWORK_KEY_PREFIX}{network_id}"
@@ -1406,16 +1909,36 @@ Respond only with the JSON object, no additional text.
             
             network = json.loads(network_data)
             
-            # Get task details
-            tasks = []
+            # If no tasks, return empty list
+            if not network["tasks"]:
+                return []
+                
+            # Create Redis pipeline
+            pipeline = self.redis.pipeline()
+            
+            # Add all task gets to the pipeline
+            task_keys = []
             for task_id in network["tasks"]:
-                task = await self.get_task(task_id)
-                if task:
-                    # Filter by status if specified
-                    if status and task["status"] != status:
-                        continue
+                task_key = f"{TASK_KEY_PREFIX}{task_id}"
+                task_keys.append((task_id, task_key))
+                pipeline.get(task_key)
+            
+            # Execute pipeline to get all tasks in a single Redis operation
+            task_values = await pipeline.execute()
+            
+            # Process the results
+            tasks = []
+            for i, data in enumerate(task_values):
+                if not data:
+                    continue
                     
-                    tasks.append(task)
+                task = json.loads(data)
+                
+                # Filter by status if specified
+                if status and task["status"] != status:
+                    continue
+                
+                tasks.append(task)
             
             # Sort by creation time (newest first)
             tasks.sort(key=lambda x: x["created_at"], reverse=True)
@@ -1425,6 +1948,7 @@ Respond only with the JSON object, no additional text.
             
         except Exception as e:
             logger.error(f"Failed to list network tasks: {e}")
+            traceback.print_exc()
             return []
     
     async def add_agent_to_network(
@@ -1544,34 +2068,46 @@ Respond only with the JSON object, no additional text.
                 }
                 results["circuit_breakers"] = circuit_breaker_stats
             
-            # Get counts for various entities concurrently
-            async def count_entities(prefix):
-                try:
-                    keys = await asyncio.wait_for(self.redis.keys(f"{prefix}*"), timeout=2.0)
-                    return len(keys)
-                except Exception as e:
-                    errors.append(f"Failed to count {prefix} entities: {str(e)}")
-                    return -1  # Indicate error
-            
-            # Run entity counting in parallel
-            count_ops = [
-                ('networks', count_entities(NETWORK_KEY_PREFIX)),
-                ('tasks', count_entities(TASK_KEY_PREFIX)),
-                ('agents', count_entities(AGENT_KEY_PREFIX)),
-                ('memories', count_entities(MEMORY_KEY_PREFIX))
-            ]
-            
-            # Get counts concurrently
-            count_results = await asyncio.gather(*[op[1] for op in count_ops], return_exceptions=True)
+            # Use a more efficient approach with a single pipeline instead of multiple keys commands
+            try:
+                # Create a pipeline for all Redis operations
+                pipeline = self.redis.pipeline()
+                
+                # Add key counting operations to pipeline
+                prefixes = [NETWORK_KEY_PREFIX, TASK_KEY_PREFIX, AGENT_KEY_PREFIX, MEMORY_KEY_PREFIX]
+                for prefix in prefixes:
+                    pipeline.keys(f"{prefix}*")
+                
+                # Also add memory info to the same pipeline
+                pipeline.info("memory")
+                
+                # Execute all commands in a single round-trip with timeout
+                all_results = await asyncio.wait_for(pipeline.execute(), timeout=3.0)
+                
+                # Extract entity counts (first 4 results)
+                count_results = [len(keys) for keys in all_results[:4]]
+                
+                # Extract memory info (last result)
+                memory_info = all_results[4]
+                
+                # Map count results to named operations
+                count_ops_names = ['networks', 'tasks', 'agents', 'memories']
+                
+            except Exception as e:
+                logger.error(f"Failed to execute Redis pipeline: {e}")
+                errors.append(f"Redis pipeline error: {str(e)}")
+                count_results = [-1, -1, -1, -1] 
+                memory_info = {}
+                count_ops_names = ['networks', 'tasks', 'agents', 'memories']
             
             # Process counts
             entity_counts = {}
-            for i, (name, _) in enumerate(count_ops):
+            for i, name in enumerate(count_ops_names):
                 result = count_results[i]
-                if isinstance(result, Exception):
+                if result == -1:
                     entity_counts[name] = {
                         "status": "error",
-                        "error": str(result)
+                        "error": "Failed to retrieve count"
                     }
                 else:
                     entity_counts[name] = {
@@ -1581,16 +2117,15 @@ Respond only with the JSON object, no additional text.
             
             results["entity_counts"] = entity_counts
             
-            # Get memory usage information
-            try:
-                memory_info = await self.redis.info("memory")
+            # Process memory usage information (already retrieved in the pipeline)
+            if memory_info:
                 results["memory_usage"] = {
                     "used_memory_human": memory_info.get("used_memory_human", "unknown"),
                     "used_memory_peak_human": memory_info.get("used_memory_peak_human", "unknown"),
                     "total_system_memory_human": memory_info.get("total_system_memory_human", "unknown")
                 }
-            except Exception as e:
-                errors.append(f"Failed to get memory info: {str(e)}")
+            else:
+                errors.append("Failed to get memory info")
             
             # Calculate overall health status
             overall_status = "healthy"

@@ -1,159 +1,102 @@
 # Maily Scripts
 
-This directory contains utility scripts for managing and maintaining the Maily project.
+This directory contains scripts for deploying, testing, monitoring, and managing the Maily application.
 
-## Documentation Scripts
+## Script Organization
 
-### Documentation Consolidation Scripts
+Scripts are organized into the following categories:
 
-These scripts assist with the documentation consolidation process:
+- **Core** (`scripts/core/`): Core deployment scripts
+- **Testing** (`scripts/testing/`): Testing frameworks and utilities
+- **Security** (`scripts/security/`): Security scanning and management tools
+- **Infrastructure** (`scripts/infrastructure/`): Infrastructure setup and management
+- **Database** (`scripts/database/`): Database operations and migrations
+- **Docs** (`scripts/docs/`): Documentation generation tools
+- **Utils** (`scripts/utils/`): Utility scripts for various tasks
 
-#### `verify-doc-links.js`
+## Consolidated Scripts
 
-Verifies internal links between markdown documentation files:
-- Checks that all document links point to existing files
-- Verifies that heading links (`#heading-references`) point to valid headings
-- Generates a report of any broken links
+The following scripts provide comprehensive functionality by consolidating multiple smaller scripts:
 
-Usage:
-```bash
-node scripts/verify-doc-links.js
-```
+| Script | Description |
+|--------|-------------|
+| `scripts/security/security-scan.sh` | Comprehensive security scanning utility supporting multiple scan engines |
+| `scripts/testing/load-testing/consolidated-load-test.sh` | Unified load testing framework with multiple engine support |
+| `scripts/database/manage-migrations.sh` | Complete database migration management system |
 
-#### `cleanup-docs.js`
+## Utilities
 
-Helps with cleanup of deprecated documentation files after consolidation:
-- Reads the file removal list from `docs/documentation-consolidation-progress.md`
-- Archives files to a `docs/archive` directory instead of deleting them
-- Generates a detailed report of the cleanup process
+| Script | Description |
+|--------|-------------|
+| `scripts/update-references.sh` | Updates references to moved scripts in other files |
+| `scripts/cleanup-redundant-scripts.sh` | Safely removes redundant scripts with backup options |
+| `scripts/verify-consolidation.sh` | Verifies the success of the script consolidation |
 
-Usage:
-```bash
-node scripts/cleanup-docs.js
-```
+## Documentation
 
-#### `complete-docs-consolidation.sh`
+- **[CONSOLIDATION-PLAN.md](./CONSOLIDATION-PLAN.md)**: Detailed plan for script consolidation
+- **[REDUNDANT-SCRIPTS.md](./REDUNDANT-SCRIPTS.md)**: List of scripts made redundant by consolidation
 
-Automates the entire documentation consolidation completion process. This shell script:
+## Usage Examples
 
-- Runs link verification to check for broken references
-- Archives deprecated files based on the consolidation progress document
-- Builds the documentation portal with the updated navigation
-- Performs a final verification to ensure everything is working
-
-Usage:
-```
-./scripts/complete-docs-consolidation.sh
-```
-
-#### update-consolidation-progress.js
-
-Updates the documentation consolidation progress tracking document. This script:
-
-- Marks all in-progress consolidation tasks as completed with today's date
-- Moves completed items from the "In-Progress" to the "Completed" section
-- Updates progress metrics to reflect 100% completion
-- Changes the overall status from "In Progress" to "Completed"
-
-Usage:
-```
-node scripts/update-consolidation-progress.js
-```
-
-## Development Scripts
-
-[Existing development scripts documentation...]
-
-## Deployment Scripts
-
-[Existing deployment scripts documentation...]
-
-## Maintenance Scripts
-
-[Existing maintenance scripts documentation...]
-
-## OAuth Refresh Token Generator
-
-The `get-refresh-token.js` script helps you obtain OAuth refresh tokens for various platforms. These tokens are used by Nango to authenticate with third-party services.
-
-### Prerequisites
-
-Before using the script, install the required dependencies:
+### Security Scanning
 
 ```bash
-cd scripts
-npm install
+# Run a complete security scan
+scripts/security/security-scan.sh --scan-type full
+
+# Run a quick scan of a specific component
+scripts/security/security-scan.sh --scan-type quick --component api
 ```
 
-### Usage
-
-To get a refresh token for a specific platform:
+### Load Testing
 
 ```bash
-node get-refresh-token.js --platform=<platform>
+# Run a load test against the API with 100 users for 5 minutes
+scripts/testing/load-testing/consolidated-load-test.sh --type api --users 100 --duration 5m
+
+# Run a stress test using the k6 engine
+scripts/testing/load-testing/consolidated-load-test.sh --type stress --engine k6
 ```
 
-Or using the npm script:
+### Database Management
 
 ```bash
-npm run get-token -- --platform=<platform>
+# Apply pending migrations
+scripts/database/manage-migrations.sh --operation migrate --env development
+
+# Create a new migration
+scripts/database/manage-migrations.sh --operation create --name add_users_table
+
+# Create a database backup
+scripts/database/manage-migrations.sh --operation backup --env production
 ```
 
-Replace `<platform>` with one of the supported platforms:
-- `linkedin`
-- `twitter`
-- `gmail`
-- `outlook`
-
-### Example
+### Updating Script References
 
 ```bash
-# Get a refresh token for LinkedIn
-node get-refresh-token.js --platform=linkedin
+# Report mode - shows what would be updated
+scripts/update-references.sh --target ./infrastructure
+
+# Auto mode - updates references automatically
+scripts/update-references.sh --mode auto
 ```
 
-### How It Works
+### Cleaning Up Redundant Scripts
 
-1. The script starts a local web server on port 3333
-2. It opens your default browser to the platform's OAuth authorization page
-3. After you authorize the application, the platform redirects back to the local server
-4. The script exchanges the authorization code for access and refresh tokens
-5. The refresh token is displayed in the console and saved to `.env.local`
+```bash
+# Dry run - shows what would be done
+scripts/cleanup-redundant-scripts.sh
 
-### Environment Variables
+# Backup only - creates backups without deleting
+scripts/cleanup-redundant-scripts.sh --mode backup-only
 
-Before running the script, make sure you have the following environment variables set in your `.env` file:
-
-For LinkedIn:
-```
-LINKEDIN_CLIENT_ID=your_linkedin_client_id
-LINKEDIN_CLIENT_SECRET=your_linkedin_client_secret
+# Delete mode - creates backups and deletes redundant scripts
+scripts/cleanup-redundant-scripts.sh --mode delete
 ```
 
-For Twitter:
-```
-TWITTER_CLIENT_ID=your_twitter_client_id
-TWITTER_CLIENT_SECRET=your_twitter_client_secret
-```
+### Verifying Consolidation
 
-For Gmail:
-```
-GMAIL_CLIENT_ID=your_gmail_client_id
-GMAIL_CLIENT_SECRET=your_gmail_client_secret
-```
-
-For Outlook:
-```
-OUTLOOK_CLIENT_ID=your_outlook_client_id
-OUTLOOK_CLIENT_SECRET=your_outlook_client_secret
-```
-
-### Troubleshooting
-
-1. **"Could not open browser automatically"**: If the script can't open your browser, manually copy and paste the authorization URL displayed in the console.
-
-2. **"Missing environment variables"**: Make sure you've set the required client ID and secret in your `.env` file.
-
-3. **"Invalid redirect URI"**: Ensure that the redirect URI (`http://localhost:3333/callback`) is registered in the developer console for the platform you're using.
-
-4. **"Access denied"**: Check that your application has the necessary permissions and that you're using the correct account.
+```bash
+# Verify the success of the script consolidation
+scripts/verify-consolidation.sh

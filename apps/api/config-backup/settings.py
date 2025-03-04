@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     
     # CORS settings
     cors_allowed_origins: List[str] = os.getenv("CORS_ALLOWED_ORIGINS", 
-        "http://localhost:3000,https://maily.io,https://www.maily.io").split(",")
+        "http://localhost:3000,https://justmaily.com,https://www.justmaily.com").split(",")
     
     # Database
     POSTGRES_USER: str = os.getenv("POSTGRES_USER", "maily")

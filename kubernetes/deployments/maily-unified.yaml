@@ -20,12 +20,37 @@ spec:
     spec:
       containers:
       - name: web
-        image: maily/web:latest
+        image: maily/web:v1.0.0
         ports:
         - containerPort: 3000
         env:
         - name: NODE_ENV
           value: "production"
+        resources:
+          requests:
+            cpu: "200m"
+            memory: "512Mi"
+          limits:
+            cpu: "500m"
+            memory: "1Gi"
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -44,12 +69,37 @@ spec:
     spec:
       containers:
       - name: api
-        image: maily/api:latest
+        image: maily/api:v1.0.0
         ports:
         - containerPort: 8000
         env:
         - name: PYTHON_ENV
           value: "production"
+        resources:
+          requests:
+            cpu: "300m"
+            memory: "512Mi"
+          limits:
+            cpu: "1000m"
+            memory: "1Gi"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 15
+          periodSeconds: 30
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -68,9 +118,34 @@ spec:
     spec:
       containers:
       - name: analytics
-        image: maily/analytics:latest
+        image: maily/analytics:v1.0.0
         ports:
         - containerPort: 5000
+        resources:
+          requests:
+            cpu: "200m"
+            memory: "512Mi"
+          limits:
+            cpu: "800m"
+            memory: "1Gi"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -89,9 +164,34 @@ spec:
     spec:
       containers:
       - name: email
-        image: maily/email:latest
+        image: maily/email:v1.0.0
         ports:
         - containerPort: 4000
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 4000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 4000
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -110,7 +210,25 @@ spec:
     spec:
       containers:
       - name: workers
-        image: maily/workers:latest
+        image: maily/workers:v1.0.0
+        resources:
+          requests:
+            cpu: "200m"
+            memory: "512Mi"
+          limits:
+            cpu: "800m"
+            memory: "1Gi"
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - ps aux | grep "worker" | grep -v grep
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -129,6 +247,31 @@ spec:
     spec:
       containers:
       - name: ai-service
-        image: maily/ai-service:latest
+        image: maily/ai-service:v1.0.0
         ports:
-        - containerPort: 6000 
+        - containerPort: 6000
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+          limits:
+            cpu: "2"
+            memory: "4Gi"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 6000
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 6000
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3

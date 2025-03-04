@@ -16,6 +16,7 @@ from fastapi import FastAPI, Request, Depends, Response, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from typing import Dict, List, Optional, Any
+from datetime import datetime
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -133,7 +134,7 @@ def create_adapter_app():
                 campaign_response = {
                     "campaign_id": campaign_id,
                     "status": "draft",
-                    "preview_url": f"http://localhost:3000/preview/{campaign_id}",
+                    "preview_url": f"https://preview.justmaily.com/preview/{campaign_id}",
                     "estimated_audience": estimated_audience,
                 }
 
@@ -169,7 +170,7 @@ def create_adapter_app():
                 fixed_response = {
                     "campaign_id": campaign_id,
                     "status": "draft",
-                    "preview_url": f"http://localhost:3000/preview/{campaign_id}",
+                    "preview_url": f"https://preview.justmaily.com/preview/{campaign_id}",
                     "estimated_audience": estimated_audience,
                 }
 
@@ -212,7 +213,7 @@ def create_adapter_app():
             "campaign_id": campaign_id,
             "task": "Campaign Task",
             "status": "draft",
-            "preview_url": f"http://localhost:3000/preview/{campaign_id}",
+            "preview_url": f"https://preview.justmaily.com/preview/{campaign_id}",
             "estimated_audience": 1000,
         }
 
@@ -245,7 +246,7 @@ def create_adapter_app():
             "campaign_id": campaign_id,
             "task": body.get("name", "Updated Campaign"),
             "status": "draft",
-            "preview_url": f"http://localhost:3000/preview/{campaign_id}",
+            "preview_url": f"https://preview.justmaily.com/preview/{campaign_id}",
             "estimated_audience": 1000,
         }
 
@@ -290,7 +291,7 @@ def create_adapter_app():
             "campaign_id": campaign_id,
             "task": "Campaign Task",
             "status": "sending",
-            "preview_url": f"http://localhost:3000/preview/{campaign_id}",
+            "preview_url": f"https://preview.justmaily.com/preview/{campaign_id}",
             "estimated_audience": 1000,
         }
 

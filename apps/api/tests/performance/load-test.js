@@ -1,0 +1,1 @@
+const BASE_URL = __ENV.BASE_URL || 'https://staging.justmaily.com'; 

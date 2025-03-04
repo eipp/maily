@@ -833,4 +833,41 @@ class MailyCtl:
             logger.error(f"Kubernetes rollback failed for {component}: {str(e)}")
             return False
     
-    def _rollback_vercel(self, component: str, config: Dict[str, Any], to
+    def _rollback_vercel(self, component: str, config: Dict[str, Any], to_version: str) -> bool:
+        """
+        Roll back a Vercel deployment to a specific version.
+        
+        Args:
+            component: The component to roll back
+            config: The component configuration
+            to_version: The version to roll back to
+            
+        Returns:
+            bool: True if rollback was successful, False otherwise
+        """
+        try:
+            logger.info(f"Rolling back Vercel deployment for {component} to version {to_version}")
+            
+            # Extract Vercel project ID and token from config
+            project_id = config.get('vercel', {}).get('project_id')
+            token = os.environ.get('VERCEL_TOKEN', '')
+            
+            if not project_id or not token:
+                logger.error(f"Missing Vercel project ID or token for {component}")
+                return False
+                
+            # Execute Vercel CLI command for rollback
+            cmd = [
+                'vercel', 'alias', 
+                f'https://{component}-{to_version}.vercel.app', 
+                config.get('vercel', {}).get('production_url', f'{component}.vercel.app'),
+                '--token', token,
+                '--scope', config.get('vercel', {}).get('team', 'maily')
+            ]
+            
+            subprocess.check_call(cmd, stderr=subprocess.STDOUT)
+            logger.info(f"Successfully rolled back {component} to version {to_version}")
+            return True
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Vercel rollback failed for {component}: {str(e)}")
+            return False

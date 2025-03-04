@@ -1,0 +1,131 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: maily-sla-rules
+  namespace: monitoring
+  labels:
+    prometheus: k8s
+    role: alert-rules
+spec:
+  groups:
+  - name: maily-service-slas
+    rules:
+    - record: maily:sla:availability:5m
+      expr: sum(rate(http_requests_total{code=~"2..|3.."}[5m])) / sum(rate(http_requests_total[5m]))
+    - record: maily:sla:latency_p95:5m
+      expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{service=~"maily-.*"}[5m])) by (le, service))
+    - record: maily:sla:latency_p99:5m
+      expr: histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{service=~"maily-.*"}[5m])) by (le, service))
+    - record: maily:sla:error_rate:5m
+      expr: sum(rate(http_requests_total{code=~"5.."}[5m])) / sum(rate(http_requests_total[5m]))
+    
+    # Availability alerts
+    - alert: MailyServiceAvailabilityLow
+      expr: maily:sla:availability:5m < 0.995
+      for: 5m
+      labels:
+        severity: warning
+        service: maily
+        sla: availability
+      annotations:
+        summary: "Service availability below 99.5%"
+        description: "The {{ $labels.service }} service availability is {{ $value | humanizePercentage }} over the last 5 minutes, which is below the SLA target of 99.5%."
+        runbook_url: "https://wiki.mailyapp.com/runbooks/availability-issues"
+    
+    - alert: MailyServiceAvailabilityCritical
+      expr: maily:sla:availability:5m < 0.99
+      for: 5m
+      labels:
+        severity: critical
+        service: maily
+        sla: availability
+      annotations:
+        summary: "Service availability below 99%"
+        description: "The {{ $labels.service }} service availability is {{ $value | humanizePercentage }} over the last 5 minutes, which is below the critical threshold of 99%."
+        runbook_url: "https://wiki.mailyapp.com/runbooks/availability-issues"
+    
+    # Latency alerts
+    - alert: MailyServiceLatencyHigh
+      expr: maily:sla:latency_p95:5m > 0.5
+      for: 5m
+      labels:
+        severity: warning
+        service: maily
+        sla: latency
+      annotations:
+        summary: "Service latency above 500ms"
+        description: "The {{ $labels.service }} service has a 95th percentile latency of {{ $value | humanizeDuration }} over the last 5 minutes, which is above the SLA target of 500ms."
+        runbook_url: "https://wiki.mailyapp.com/runbooks/latency-issues"
+    
+    - alert: MailyServiceLatencyCritical
+      expr: maily:sla:latency_p95:5m > 1.0
+      for: 5m
+      labels:
+        severity: critical
+        service: maily
+        sla: latency
+      annotations:
+        summary: "Service latency above 1s"
+        description: "The {{ $labels.service }} service has a 95th percentile latency of {{ $value | humanizeDuration }} over the last 5 minutes, which is above the critical threshold of 1s."
+        runbook_url: "https://wiki.mailyapp.com/runbooks/latency-issues"
+    
+    # Error rate alerts
+    - alert: MailyServiceErrorRateHigh
+      expr: maily:sla:error_rate:5m > 0.01
+      for: 5m
+      labels:
+        severity: warning
+        service: maily
+        sla: error_rate
+      annotations:
+        summary: "Service error rate above 1%"
+        description: "The {{ $labels.service }} service has an error rate of {{ $value | humanizePercentage }} over the last 5 minutes, which is above the SLA target of 1%."
+        runbook_url: "https://wiki.mailyapp.com/runbooks/error-rate-issues"
+    
+    - alert: MailyServiceErrorRateCritical
+      expr: maily:sla:error_rate:5m > 0.05
+      for: 5m
+      labels:
+        severity: critical
+        service: maily
+        sla: error_rate
+      annotations:
+        summary: "Service error rate above 5%"
+        description: "The {{ $labels.service }} service has an error rate of {{ $value | humanizePercentage }} over the last 5 minutes, which is above the critical threshold of 5%."
+        runbook_url: "https://wiki.mailyapp.com/runbooks/error-rate-issues"
+    
+  - name: maily-business-slas
+    rules:
+    - record: maily:sla:email_delivery_success:5m
+      expr: sum(rate(email_delivery_total{status="delivered"}[5m])) / sum(rate(email_delivery_total[5m]))
+    
+    - record: maily:sla:email_delivery_time:5m
+      expr: histogram_quantile(0.95, sum(rate(email_delivery_duration_seconds_bucket[5m])) by (le))
+    
+    - record: maily:sla:campaign_creation_success:5m
+      expr: sum(rate(campaign_creation_total{status="success"}[5m])) / sum(rate(campaign_creation_total[5m]))
+    
+    # Email delivery alerts
+    - alert: MailyEmailDeliveryRateLow
+      expr: maily:sla:email_delivery_success:5m < 0.98
+      for: 15m
+      labels:
+        severity: warning
+        service: maily
+        sla: email_delivery
+      annotations:
+        summary: "Email delivery success rate below 98%"
+        description: "The email delivery success rate is {{ $value | humanizePercentage }} over the last 15 minutes, which is below the SLA target of 98%."
+        runbook_url: "https://wiki.mailyapp.com/runbooks/email-delivery-issues"
+    
+    - alert: MailyEmailDeliveryTimeSlow
+      expr: maily:sla:email_delivery_time:5m > 60
+      for: 15m
+      labels:
+        severity: warning
+        service: maily
+        sla: email_delivery_time
+      annotations:
+        summary: "Email delivery time above 60s"
+        description: "The 95th percentile email delivery time is {{ $value | humanizeDuration }} over the last 15 minutes, which is above the SLA target of 60s."
+        runbook_url: "https://wiki.mailyapp.com/runbooks/email-delivery-issues"

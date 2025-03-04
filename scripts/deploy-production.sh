@@ -60,7 +60,7 @@ run_migrations() {
     
     # Run SQL migrations
     echo "Running SQL migrations..."
-    cd archives_migrations/sql
+    cd migrations/sql
     for sql_file in $(find . -name "*.sql" | sort); do
         echo "Applying migration: $sql_file"
         PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -U $DB_USER -d $DB_NAME -f $sql_file || { 
@@ -99,7 +99,7 @@ deploy_backend() {
     
     # Deploy API service with canary deployment
     echo "Deploying API service with canary deployment..."
-    kubectl apply -f kubernetes/deployments/maily-unified.yaml --record=true
+    kubectl apply -f kubernetes/deployments/maily-api.yaml --record=true
     kubectl rollout pause deployment/maily-api
     
     # Scale to ensure we have capacity for both versions during transition
@@ -123,10 +123,9 @@ deploy_backend() {
     echo -e "${YELLOW}Letting services stabilize for 30 minutes...${NC}"
     echo "Started stabilization period at: $(date)"
     
-    # Sleep for 30 minutes to allow services to stabilize before redirecting traffic
-    # In a real pipeline, you might implement a more sophisticated check here
-    # e.g., running health checks and checking metrics before proceeding
-    sleep 1800
+    # Allow manual continuation to speed up development deployments
+    echo "Press Ctrl+C to interrupt stabilization period (NOT RECOMMENDED FOR PRODUCTION)"
+    sleep 1800 || echo -e "${YELLOW}Stabilization period interrupted.${NC}"
     
     echo "Finished stabilization period at: $(date)"
     echo -e "${GREEN}Backend services deployed successfully${NC}"
@@ -184,13 +183,13 @@ run_stress_tests() {
     
     # Email sending capacity test
     echo "Testing email sending capacity..."
-    python scripts/performance/load_test.py --test email-sending --users 100 --duration 30 || {
+    ./scripts/testing/load-testing/consolidated-load-test.sh --test-type email --users 100 --duration 30 || {
         echo -e "${YELLOW}Warning: Email sending test did not meet performance targets${NC}"
     }
     
     # Canvas concurrent users test
     echo "Testing canvas with 10 simultaneous users..."
-    node scripts/performance/test_canvas_performance.js --users 10 --duration 60 || {
+    ./scripts/testing/load-testing/consolidated-load-test.sh --test-type canvas --users 10 --duration 60 || {
         echo -e "${YELLOW}Warning: Canvas performance test did not meet targets${NC}"
     }
     
@@ -202,7 +201,7 @@ run_stress_tests() {
     
     # Blockchain verification test
     echo "Testing blockchain verification throughput..."
-    node scripts/performance/test_blockchain_performance.js --operations 100 || {
+    ./scripts/testing/load-testing/consolidated-load-test.sh --test-type blockchain --operations 100 || {
         echo -e "${YELLOW}Warning: Blockchain verification test did not meet performance targets${NC}"
     }
     

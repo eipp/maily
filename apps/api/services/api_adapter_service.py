@@ -219,7 +219,7 @@ class ModelAdapter:
             "campaign_id": standard_data.get("id", ""),
             "task": standard_data.get("name", ""),
             "status": standard_data.get("status", "DRAFT").lower(),
-            "preview_url": f"http://localhost:3000/preview/{standard_data.get('id', '')}",
+            "preview_url": f"https://preview.justmaily.com/preview/{standard_data.get('id', '')}",
             "estimated_audience": standard_data.get("metadata", {}).get("estimated_audience", 0),
             "subject": standard_data.get("subject", ""),
             "content": standard_data.get("content", ""),

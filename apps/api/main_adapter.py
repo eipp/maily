@@ -231,7 +231,7 @@ def create_unified_app():
                 fixed_response = {
                     "campaign_id": campaign_id,
                     "status": "draft",
-                    "preview_url": f"http://localhost:3000/preview/{campaign_id}",
+                    "preview_url": f"https://preview.justmaily.com/preview/{campaign_id}",
                     "estimated_audience": estimated_audience,
                     "created_at": datetime.now().isoformat(),
                     "updated_at": datetime.now().isoformat()
@@ -265,7 +265,7 @@ def create_unified_app():
                 fixed_response = {
                     "campaign_id": campaign_id,
                     "status": "draft",
-                    "preview_url": f"http://localhost:3000/preview/{campaign_id}",
+                    "preview_url": f"https://preview.justmaily.com/preview/{campaign_id}",
                     "estimated_audience": estimated_audience,
                     "created_at": datetime.now().isoformat(),
                     "updated_at": datetime.now().isoformat()

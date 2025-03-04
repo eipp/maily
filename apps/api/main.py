@@ -74,7 +74,7 @@ try:
     from apps.api.routers import (
         integrations, auth, policies, campaigns, templates,
         health, privacy, models, platforms, contacts, canvas, websocket,
-        ai, ai_cached, blockchain,
+        ai, ai_cached, blockchain, mailydocs_certificates,
     )
     from apps.api.endpoints import users, analytics, mailydocs
     from apps.api.metrics.prometheus import initialize_metrics_endpoint
@@ -438,17 +438,42 @@ async def configure_model(config: ModelConfig, api_key: str = Depends(verify_api
     Returns:
         A ModelConfigResponse object with the configuration status.
     """
-    # TODO: Implement model configuration storage
-    config_id = f"config_{int(time.time())}"
-    
-    # Log model configuration
-    info(f"Model configured: {config.model_name}", config_id=config_id)
-    
-    return ModelConfigResponse(
-        status="configured",
-        model_name=config.model_name,
-        config_id=config_id,
-    )
+    try:
+        # Get the user ID if available
+        user_id = None
+        if hasattr(request.state, "user_id"):
+            user_id = request.state.user_id
+        
+        # Import model config service
+        from apps.api.services.model_config_service import get_model_config_service
+        model_config_service = get_model_config_service()
+        
+        # Create the configuration
+        model_config = await model_config_service.create_model_config(
+            model_name=config.model_name,
+            provider=config.provider,
+            api_key=config.api_key,
+            user_id=user_id,
+            temperature=config.temperature,
+            max_tokens=config.max_tokens,
+            parameters={} if not hasattr(config, "parameters") else config.parameters,
+            is_default=True  # Make this the default config for this model/provider
+        )
+        
+        # Log model configuration
+        info(f"Model configured: {config.model_name}", config_id=model_config["id"])
+        
+        return ModelConfigResponse(
+            status="configured",
+            model_name=config.model_name,
+            config_id=model_config["id"],
+        )
+    except Exception as e:
+        error(f"Error configuring model: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error configuring model: {str(e)}"
+        )
 
 
 @app.post("/create_campaign", response_model=CampaignResponse, tags=["Campaigns"])
@@ -553,7 +578,91 @@ async def generate_campaign_content(campaign_id: str, task: str, model_name: str
         # Generate content
         result = await ai_service.generate_text(prompt=task, model=model_name)
         
-        # TODO: Save the generated content to the campaign
+        # Save the generated content to the campaign
+        from apps.api.services.campaign_service import get_campaign_service
+        from apps.api.database.session import get_db_session
+        
+        # Get parsed campaign ID if it's in format "camp_12345"
+        numeric_campaign_id = campaign_id
+        if campaign_id.startswith("camp_"):
+            numeric_campaign_id = campaign_id.split("_")[1]
+        
+        # Get database session
+        db = next(get_db_session())
+        try:
+            campaign_service = get_campaign_service(db)
+            
+            # Extract content from result
+            generated_text = result.get("text", "")
+            
+            # Try to extract subject and body if the text contains both
+            subject = ""
+            body = generated_text
+            
+            # Simple heuristic to separate subject and body if format follows conventions
+            lines = generated_text.split("\n")
+            if len(lines) > 1:
+                # Check if first line looks like a subject (shorter than 120 chars, no HTML)
+                first_line = lines[0].strip()
+                if len(first_line) < 120 and "<" not in first_line and ">" not in first_line:
+                    subject = first_line
+                    body = "\n".join(lines[1:]).strip()
+            
+            # Prepare update data
+            update_data = {
+                "status": "completed",
+                "result": result,
+                "subject": subject,
+                "body": body,
+                "metadata": {
+                    "model_used": model_name,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "task": task
+                }
+            }
+            
+            # Update the campaign
+            try:
+                # Use integer campaign_id if possible
+                campaign_id_int = int(numeric_campaign_id)
+                
+                # Get campaign first to access its user_id
+                try:
+                    # CampaignService methods are synchronous, not async
+                    campaign = campaign_service.get_campaign(campaign_id_int)
+                    user_id = campaign.user_id
+                    
+                    # Now update with the correct user_id
+                    campaign = campaign_service.update_campaign(campaign_id_int, user_id, update_data)
+                    info(f"Content saved to campaign: {campaign_id}", campaign_db_id=campaign_id_int)
+                except Exception as e:
+                    # Fallback approach: use a system user ID or try using campaign_service directly
+                    warning(f"Error retrieving campaign {campaign_id}: {str(e)}")
+                    
+                    # Try direct database update if campaign service method fails
+                    try:
+                        from sqlalchemy.orm import Session
+                        from apps.api.database.models import Campaign
+                        
+                        # Direct database update as fallback
+                        campaign = db.query(Campaign).filter(Campaign.id == campaign_id_int).first()
+                        if campaign:
+                            for key, value in update_data.items():
+                                if hasattr(campaign, key):
+                                    setattr(campaign, key, value)
+                            db.commit()
+                            info(f"Content saved to campaign using direct DB update: {campaign_id}")
+                        else:
+                            warning(f"Campaign not found in database: {campaign_id}")
+                    except Exception as inner_e:
+                        error(f"Failed to update campaign directly: {str(inner_e)}")
+            except (ValueError, TypeError):
+                # Handle case where campaign_id is not convertible to int
+                # This is likely a temporary campaign ID not yet saved to database
+                warning(f"Could not update campaign in database: {campaign_id}. Temporary ID format.")
+        finally:
+            db.close()
+                
         info(f"Content generation completed: {campaign_id}")
     except Exception as e:
         error(f"Failed to generate campaign content: {str(e)}", campaign_id=campaign_id)
@@ -708,3 +817,4 @@ app.include_router(websocket.router)
 app.include_router(analytics.router)
 app.include_router(mailydocs.router)
 app.include_router(blockchain.router)
+app.include_router(mailydocs_certificates.router)

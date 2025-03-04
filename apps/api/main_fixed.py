@@ -84,7 +84,7 @@ class Settings:
         self.ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
         self.CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
         self.API_KEY = os.getenv("API_KEY", "test-api-key")
-        self.PREVIEW_URL = os.getenv("PREVIEW_URL", "http://localhost:3000/preview")
+        self.PREVIEW_URL = os.getenv("PREVIEW_URL", "https://preview.justmaily.com/preview")
 
         # These will be added later
         self.NANGO_API_URL = None
@@ -231,7 +231,7 @@ settings = Settings()
 settings.NANGO_API_URL = os.getenv("NANGO_API_URL", "https://api.nango.dev")
 settings.NANGO_SECRET_KEY = os.getenv("NANGO_SECRET_KEY", "")
 settings.NANGO_PUBLIC_KEY = os.getenv("NANGO_PUBLIC_KEY", "")
-settings.OCTOTOOLS_API_URL = os.getenv("OCTOTOOLS_API_URL", "http://localhost:8001/api")
+settings.OCTOTOOLS_API_URL = os.getenv("OCTOTOOLS_API_URL", "https://octotools.justmaily.com/api")
 settings.OCTOTOOLS_API_KEY = os.getenv("OCTOTOOLS_API_KEY", "")
 settings.AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN", "")
 settings.AUTH0_API_AUDIENCE = os.getenv("AUTH0_API_AUDIENCE", "")

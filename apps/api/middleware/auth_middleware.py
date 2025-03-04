@@ -157,22 +157,55 @@ async def _authenticate_with_api_key(api_key: str, db: AsyncSession) -> Dict[str
         HTTPException: If authentication fails.
     """
     try:
-        # Get the user from the database
-        user = await get_user_by_api_key(api_key, db)
-
-        if not user:
+        # Import api_key_service functions here to avoid circular imports
+        from services.api_key_service import validate_api_key, get_api_key_scopes, get_user_by_api_key
+        
+        # Validate the API key first
+        is_valid, key_data = await validate_api_key(api_key)
+        
+        if not is_valid or not key_data:
+            logger.warning("Authentication attempt with invalid API key")
             raise HTTPException(
                 status_code=401,
                 detail="Invalid authentication credentials"
             )
-
-        # Return the user information
+        
+        # Get API key scopes for authorization
+        scopes = await get_api_key_scopes(api_key)
+        
+        # Check if key is expired
+        if "expires_at" in key_data and key_data["expires_at"]:
+            from datetime import datetime
+            import dateutil.parser
+            expires_at = dateutil.parser.parse(key_data["expires_at"])
+            if expires_at < datetime.utcnow():
+                logger.warning(f"Authentication attempt with expired API key: {key_data['id']}")
+                raise HTTPException(
+                    status_code=401,
+                    detail="API key has expired"
+                )
+        
+        # Get the user from the database using the user_id from key_data
+        user_id = key_data.get("user_id")
+        user = await get_user_by_api_key(api_key, db)
+        
+        if not user:
+            logger.warning(f"User not found for API key: {key_data['id']}")
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid authentication credentials"
+            )
+        
+        # Return the user information with additional API key data
         return {
             "id": user.id,
             "email": user.email,
             "name": user.name,
             "is_admin": user.is_admin,
-            "auth_method": "api_key"
+            "auth_method": "api_key",
+            "key_id": key_data["id"],
+            "scopes": scopes,
+            "authenticated_at": datetime.utcnow().isoformat()
         }
     except Exception as e:
         logger.error(f"API key authentication error: {str(e)}")

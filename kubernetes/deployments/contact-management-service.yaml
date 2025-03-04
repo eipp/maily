@@ -2,12 +2,12 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: contact-management-service
-  namespace: maily-production
+  namespace: staging
   labels:
     app: contact-management-service
     service: contacts
 spec:
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
       app: contact-management-service
@@ -27,7 +27,7 @@ spec:
     spec:
       containers:
       - name: contact-management-service
-        image: ${REGISTRY}/contact-management-service:${TAG}
+        image: justmaily/contact-management-service:v1.0.0
         imagePullPolicy: Always
         ports:
         - containerPort: 8000

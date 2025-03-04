@@ -1,0 +1,17 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: pod-failure-test
+  namespace: maily-production
+spec:
+  action: pod-failure
+  mode: one
+  selector:
+    namespaces:
+      - maily-production
+    labelSelectors:
+      app: maily
+  duration: "60s"
+  scheduler:
+    cron: "@every 24h"  # Run once per day
+  paused: true  # Start paused, enable manually for testing

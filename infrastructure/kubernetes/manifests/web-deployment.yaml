@@ -91,10 +91,10 @@ metadata:
 spec:
   tls:
   - hosts:
-    - app.maily.io
+    - app.justmaily.com
     secretName: maily-tls
   rules:
-  - host: app.maily.io
+  - host: app.justmaily.com
     http:
       paths:
       - path: /

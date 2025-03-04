@@ -19,7 +19,7 @@ from ..monitoring.performance_metrics import (
 )
 from ..database.transaction import transactional
 
-logger = structlog.get_logger("maily.services.user")
+logger = structlog.get_logger("justmaily.services.user")
 
 
 class UserService:

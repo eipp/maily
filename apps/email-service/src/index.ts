@@ -40,14 +40,15 @@ collectDefaultMetrics({ register: registry });
 // Configure middleware
 app.use(express.json({ limit: '10mb' }));
 
-// Get allowed origins from environment
-const allowedOrigins = process.env.CORS_ALLOWED_ORIGINS?.split(',') || [
-  `https://${process.env.MAIN_DOMAIN || 'justmaily.com'}`,
-  `https://${process.env.APP_DOMAIN || 'app.justmaily.com'}`,
-  `https://${process.env.CONSOLE_DOMAIN || 'console.justmaily.com'}`
-];
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-app.use(cors({ origin: allowedOrigins, credentials: true }));
+// CORS configuration with justmaily.com domains
+app.use(cors({
+  origin: [
+    `https://${process.env.MAIN_DOMAIN || 'justmaily.com'}`,
+    `https://${process.env.APP_DOMAIN || 'app.justmaily.com'}`,
+    `https://${process.env.CONSOLE_DOMAIN || 'console.justmaily.com'}`
+  ],
+  credentials: true
+}));
 app.use(helmet());
 app.use(morgan('combined'));
 

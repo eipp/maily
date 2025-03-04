@@ -25,7 +25,7 @@ const securityHeaders = [
   },
   {
     key: 'Content-Security-Policy',
-    value: "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://*.maily.app https://api.maily.app; frame-ancestors 'none';",
+    value: "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://*.justmaily.com https://api.justmaily.com; frame-ancestors 'none';",
   },
 ];
 
@@ -36,7 +36,7 @@ const nextConfig = {
     serverActions: true,
   },
   images: {
-    domains: ['maily.app', 'assets.maily.app'],
+    domains: ['justmaily.com', 'assets.justmaily.com'],
     formats: ['image/avif', 'image/webp'],
   },
   i18n,

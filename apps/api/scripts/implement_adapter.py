@@ -118,7 +118,7 @@ async def test_model_conversion():
         "campaign_id": "campaign-123",
         "task": "Test Campaign",
         "status": "draft",
-        "preview_url": "http://localhost:3000/preview/campaign-123",
+        "preview_url": "https://preview.justmaily.com/preview/campaign-123",
         "estimated_audience": 1000
     }
 

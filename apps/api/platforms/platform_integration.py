@@ -16,7 +16,7 @@ from ..models.platform_model import PlatformAccount, PlatformPost, CrossPlatform
 from ..monitoring.performance_metrics import MetricType
 from ..cache.tiered_cache_service import CacheTier
 
-logger = structlog.get_logger("maily.platforms.integration")
+logger = structlog.get_logger("justmaily.platforms.integration")
 
 class PlatformType(str, Enum):
     """Supported platform types."""

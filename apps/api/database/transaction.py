@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 import structlog
 from typing import Generator, Optional, Callable, Any
 
-logger = structlog.get_logger("maily.database")
+logger = structlog.get_logger("justmaily.database")
 
 @contextmanager
 def transaction(db: Session) -> Generator[Session, None, None]:

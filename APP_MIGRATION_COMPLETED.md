@@ -1,1 +1,0 @@
-APP MIGRATION COMPLETED: The app-new directory has been fully merged into the main app directory. The canvas, templates, and api/templates directories were copied over, and newer files were updated. A backup of the original app directory is available at apps/web/app.backup.

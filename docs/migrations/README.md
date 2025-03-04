@@ -8,9 +8,7 @@ The Maily database migration system is built on Supabase's migration tools, prov
 
 | Script | Description |
 |--------|-------------|
-| `scripts/create-migration.sh` | Creates a new migration file |
-| `scripts/db-migration.sh` | Applies or rolls back migrations |
-| `scripts/check-migrations.sh` | Checks if migrations need to be applied |
+| `scripts/database/manage-migrations.sh` | Consolidated migration script for creating, applying, and checking migrations |
 
 ## Directory Structure
 
@@ -31,7 +29,7 @@ supabase/migrations/
 ### Creating a New Migration
 
 ```bash
-./scripts/create-migration.sh "Description of the change"
+./scripts/database/manage-migrations.sh create "Description of the change"
 ```
 
 This creates a properly structured migration with up/down SQL files and metadata.
@@ -39,31 +37,31 @@ This creates a properly structured migration with up/down SQL files and metadata
 ### Applying Migrations
 
 ```bash
-./scripts/db-migration.sh development migrate
+./scripts/database/manage-migrations.sh development migrate
 ```
 
 For production:
 
 ```bash
-./scripts/db-migration.sh production migrate
+./scripts/database/manage-migrations.sh production migrate
 ```
 
 ### Rolling Back a Migration
 
 ```bash
-./scripts/db-migration.sh development rollback
+./scripts/database/manage-migrations.sh development rollback
 ```
 
 To roll back to a specific migration:
 
 ```bash
-./scripts/db-migration.sh development rollback 20250303183957_baseline
+./scripts/database/manage-migrations.sh development rollback 20250303183957_baseline
 ```
 
 ### Checking Migration Status
 
 ```bash
-./scripts/check-migrations.sh development
+./scripts/database/manage-migrations.sh development status
 ```
 
 ## Automated Workflows

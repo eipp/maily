@@ -23,8 +23,8 @@ lambda:
 # Monitoring configuration
 monitoring:
   method: datadog
-  prometheus_url: https://prometheus.maily.ai
-  grafana_url: https://grafana.maily.ai
+  prometheus_url: https://prometheus.justmaily.com
+  grafana_url: https://grafana.justmaily.com
   datadog_api_key: ${DATADOG_API_KEY}
   datadog_app_key: ${DATADOG_APP_KEY}
   alert_webhook: ${SLACK_WEBHOOK_URL}
@@ -47,8 +47,8 @@ components:
     deploy_method: vercel
     project_id: prj_production123456
     verify_method: http
-    health_url: https://maily.ai/api/health
-    domain: maily.ai
+    health_url: https://justmaily.com/api/health
+    domain: justmaily.com
 
   api:
     deploy_method: kubernetes
@@ -76,7 +76,7 @@ components:
     deployment: ai-service
     image: maily/ai-service
     verify_method: http
-    health_url: https://ai.maily.ai/health
+    health_url: https://ai.justmaily.com/health
     replicas: 5
     resources:
       requests:
@@ -86,8 +86,9 @@ components:
         cpu: 4000m
         memory: 8Gi
     env:
-      AI_MODEL: gpt-4o
-      AI_API_KEY: ${OPENAI_API_KEY}
+      AI_MODEL: deepseek-chat
+      AI_API_KEY: ${DEEPSEEK_API_KEY}
+      AI_API_BASE_URL: https://api.deepseek.com
     autoscaling:
       enabled: true
       min_replicas: 5
@@ -147,7 +148,7 @@ components:
     deployment: analytics
     image: maily/analytics
     verify_method: http
-    health_url: https://analytics.maily.ai/health
+    health_url: https://analytics.justmaily.com/health
     replicas: 3
     resources:
       requests:
@@ -168,7 +169,7 @@ components:
     deployment: campaign
     image: maily/campaign
     verify_method: http
-    health_url: https://campaign.maily.ai/health
+    health_url: https://campaign.justmaily.com/health
     replicas: 3
     resources:
       requests:
@@ -189,7 +190,7 @@ components:
     deployment: email
     image: maily/email
     verify_method: http
-    health_url: https://email.maily.ai/health
+    health_url: https://email.justmaily.com/health
     replicas: 5
     resources:
       requests:
@@ -260,13 +261,13 @@ s3:
 
 # Domains configuration
 domains:
-  main: maily.ai
-  api: api.maily.ai
-  ai: ai.maily.ai
-  websocket: ws.maily.ai
-  analytics: analytics.maily.ai
-  campaign: campaign.maily.ai
-  email: email.maily.ai
+  main: justmaily.com
+  api: api.justmaily.com
+  ai: ai.justmaily.com
+  websocket: ws.justmaily.com
+  analytics: analytics.justmaily.com
+  campaign: campaign.justmaily.com
+  email: email.justmaily.com
 
 # CDN configuration
 cdn:

@@ -2,7 +2,7 @@
 
 global:
   environment: staging
-  domain: staging.maily.io
+  domain: staging.justmaily.com
 
 image:
   repository: ghcr.io/maily/maily
@@ -65,14 +65,14 @@ ingress:
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/proxy-body-size: "50m"
   hosts:
-    - host: staging.maily.io
+    - host: staging.justmaily.com
       paths:
         - path: /
           pathType: Prefix
   tls:
     - secretName: maily-staging-tls
       hosts:
-        - staging.maily.io
+        - staging.justmaily.com
 
 database:
   host: ${DATABASE_HOST}

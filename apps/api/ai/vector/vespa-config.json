@@ -1,5 +1,5 @@
 {
-  "endpoint": "https://vector-db.maily.io:4443",
+  "endpoint": "https://vector-db.justmaily.com:4443",
   "cert_path": "/etc/maily/certs/vespa-client.pem",
   "key_path": "/etc/maily/certs/vespa-client-key.pem",
   "ca_path": "/etc/maily/certs/vespa-ca.pem",

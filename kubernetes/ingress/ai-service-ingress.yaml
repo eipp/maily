@@ -11,15 +11,15 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
-    nginx.ingress.kubernetes.io/cors-allow-origin: "https://maily.io,https://app.maily.io"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "https://justmaily.com,https://app.justmaily.com"
     nginx.ingress.kubernetes.io/enable-cors: "true"
 spec:
   tls:
   - hosts:
-    - ai-api.maily.io
+    - ai-api.justmaily.com
     secretName: maily-ai-service-tls
   rules:
-  - host: ai-api.maily.io
+  - host: ai-api.justmaily.com
     http:
       paths:
       - path: /

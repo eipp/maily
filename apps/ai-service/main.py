@@ -36,9 +36,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # Use absolute imports that work both when imported as a module and when run directly
 from ai_service.routers import generation, conversation, tools, content_safety
 from ai_service.routers.agent_coordinator_router import router as agent_coordinator_router
+from ai_service.routers.websocket_router import router as websocket_router
 from ai_service.utils.database import init_db, close_db
 from ai_service.utils.redis_client import init_redis, close_redis
 from ai_service.utils.llm_client import init_llm_client, close_llm_client
+from ai_service.metrics.ai_mesh_collector import start_metrics_collector, stop_metrics_collector
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -52,10 +54,16 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing LLM client")
     await init_llm_client()
     
+    logger.info("Starting AI Mesh Network metrics collector")
+    await start_metrics_collector()
+    
     logger.info("AI Service startup complete")
     yield
     
     # Shutdown: Close connections
+    logger.info("Stopping AI Mesh Network metrics collector")
+    await stop_metrics_collector()
+    
     logger.info("Closing database connection")
     await close_db()
     
@@ -93,7 +101,8 @@ app.include_router(generation.router, prefix="/api/v1/generation", tags=["Genera
 app.include_router(conversation.router, prefix="/api/v1/conversation", tags=["Conversation"])
 app.include_router(tools.router, prefix="/api/v1/tools", tags=["Tools"])
 app.include_router(content_safety.router, prefix="/api/v1/content-safety", tags=["Content Safety"])
-app.include_router(agent_coordinator_router.router, prefix="/api", tags=["AI Mesh Network"])
+app.include_router(agent_coordinator_router, prefix="/api", tags=["AI Mesh Network"])
+app.include_router(websocket_router, tags=["WebSockets"])
 
 # Root endpoint
 @app.get("/", tags=["Status"])

@@ -1,0 +1,21 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: StressChaos
+metadata:
+  name: cpu-stress-test
+  namespace: maily-production
+spec:
+  mode: one
+  selector:
+    namespaces:
+      - maily-production
+    labelSelectors:
+      app: maily
+  stressors:
+    cpu:
+      workers: 2
+      load: 80
+      options: ["--cpu-method=all"]
+  duration: "180s"
+  scheduler:
+    cron: "@every 24h"
+  paused: true  # Start paused, enable manually for testing

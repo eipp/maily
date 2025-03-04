@@ -156,7 +156,7 @@ class Settings:
     ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
     CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
     API_KEY = os.getenv("API_KEY", "test-api-key")
-    PREVIEW_URL = os.getenv("PREVIEW_URL", "http://localhost:3000/preview")
+    PREVIEW_URL = os.getenv("PREVIEW_URL", "https://preview.justmaily.com/preview")
 
 @lru_cache()
 def get_settings():

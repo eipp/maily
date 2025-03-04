@@ -125,7 +125,7 @@ class APIStandardization:
                     "campaign_id": f"campaign-{i}",
                     "task": f"Campaign {i}",
                     "status": "draft",
-                    "preview_url": f"http://localhost:3000/preview/campaign-{i}",
+                    "preview_url": f"https://preview.justmaily.com/preview/campaign-{i}",
                     "estimated_audience": 1000,
                     "created_at": datetime.now().isoformat(),
                     "updated_at": datetime.now().isoformat()
@@ -248,7 +248,7 @@ class APIStandardization:
                 "campaign_id": campaign_id,
                 "task": "Campaign Task",
                 "status": "draft",
-                "preview_url": f"http://localhost:3000/preview/{campaign_id}",
+                "preview_url": f"https://preview.justmaily.com/preview/{campaign_id}",
                 "estimated_audience": 1000,
                 "created_at": datetime.now().isoformat(),
                 "updated_at": datetime.now().isoformat()
@@ -285,7 +285,7 @@ class APIStandardization:
                 "campaign_id": campaign_id,
                 "task": body.get("name", "Updated Campaign"),
                 "status": "draft",
-                "preview_url": f"http://localhost:3000/preview/{campaign_id}",
+                "preview_url": f"https://preview.justmaily.com/preview/{campaign_id}",
                 "estimated_audience": 1000,
                 "created_at": datetime.now().isoformat(),
                 "updated_at": datetime.now().isoformat()
@@ -337,7 +337,7 @@ class APIStandardization:
                 "campaign_id": campaign_id,
                 "task": "Campaign Task",
                 "status": "sending",
-                "preview_url": f"http://localhost:3000/preview/{campaign_id}",
+                "preview_url": f"https://preview.justmaily.com/preview/{campaign_id}",
                 "estimated_audience": 1000,
                 "created_at": datetime.now().isoformat(),
                 "updated_at": datetime.now().isoformat()

@@ -70,8 +70,8 @@ scrape_configs:
       module: [http_2xx]
     static_configs:
       - targets:
-        - https://api.maily.app/health
-        - https://maily.app
+        - https://api.justmaily.com/health
+        - https://justmaily.com
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target

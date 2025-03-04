@@ -18,7 +18,7 @@ from ...cache.tiered_cache_service import TieredCacheService, CacheTier
 from ...monitoring.performance_metrics import PerformanceMetricsService, MetricType
 from ...errors.maily_error import ResourceNotFoundError, ValidationError
 
-logger = structlog.get_logger("maily.ai.prompts")
+logger = structlog.get_logger("justmaily.ai.prompts")
 
 class PromptCategory(str, Enum):
     """Categories of prompts."""

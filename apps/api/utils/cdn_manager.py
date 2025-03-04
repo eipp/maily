@@ -19,9 +19,9 @@ logger = logging.getLogger(__name__)
 # CDN configuration
 CDN_ENABLED = os.environ.get("CDN_ENABLED", "true").lower() == "true"
 CDN_PROVIDER = os.environ.get("CDN_PROVIDER", "cloudfront")
-CDN_MAIN_DOMAIN = os.environ.get("CDN_MAIN_DOMAIN", "assets.maily.app")
-CDN_ASSETS_DOMAIN = os.environ.get("CDN_ASSETS_DOMAIN", "static.maily.app")
-CDN_IMAGES_DOMAIN = os.environ.get("CDN_IMAGES_DOMAIN", "images.maily.app")
+CDN_MAIN_DOMAIN = os.environ.get("CDN_MAIN_DOMAIN", "assets.justmaily.com")
+CDN_ASSETS_DOMAIN = os.environ.get("CDN_ASSETS_DOMAIN", "static.justmaily.com")
+CDN_IMAGES_DOMAIN = os.environ.get("CDN_IMAGES_DOMAIN", "images.justmaily.com")
 
 # CDN paths
 STATIC_PATH = "/static"

@@ -76,7 +76,33 @@ npm test -- -t "test name"
 
 # Run Python tests
 cd apps/api && pytest
+
+# Run end-to-end tests against staging environment
+npm run test:e2e:staging
+
+# Run smoke tests
+npm run test:smoke
+
+# Run deployment verification
+npm run test:verify
 ```
+
+### Deployment Testing
+
+The deployment process includes comprehensive verification steps:
+
+1. **Smoke Testing**: Basic functionality checks using `enhanced-smoke-test.js`
+2. **Deployment Verification**: Resource validation using `verify-deployment.js`  
+3. **End-to-End Testing**: Complete workflow testing using `e2e-staging-test.js`
+
+End-to-end tests validate:
+- Infrastructure health
+- User authentication
+- Email campaign flows
+- AI integration
+- Database integrity
+- Performance metrics
+- Error handling
 
 ## 📚 Documentation
 

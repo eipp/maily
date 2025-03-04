@@ -46,3 +46,11 @@ strawberry-graphql==0.219.1
 strawberry-graphql-fastapi==0.17.0
 aiohttp==3.8.5
 graphql-core==3.2.3
+
+# Blockchain Integration
+web3==6.15.1
+eth-account==0.9.0
+eth-typing==3.5.2
+python-dotenv==1.0.1
+eth-hash==0.5.2
+eth-utils==2.3.1

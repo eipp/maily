@@ -17,10 +17,13 @@ echo "Timestamp: $(date)"
 command -v kubectl >/dev/null 2>&1 || { echo -e "${RED}Error: kubectl is required but not installed. Aborting.${NC}"; exit 1; }
 command -v vercel >/dev/null 2>&1 || { echo -e "${RED}Error: Vercel CLI is required but not installed. Aborting.${NC}"; exit 1; }
 
-# Load environment variables if needed
-if [ -f ".env.production" ]; then
+# Load environment variables
+if [ -f "config/.env.production" ]; then
     echo -e "${GREEN}Loading production environment variables...${NC}"
-    export $(grep -v '^#' .env.production | xargs)
+    export $(grep -v '^#' config/.env.production | xargs)
+else
+    echo -e "${RED}Error: config/.env.production file not found${NC}"
+    exit 1
 fi
 
 # Rollback Kubernetes deployments

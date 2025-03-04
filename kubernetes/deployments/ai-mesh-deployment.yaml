@@ -28,7 +28,7 @@ spec:
     spec:
       containers:
       - name: ai-mesh-network
-        image: ${DOCKER_REGISTRY}/maily/ai-mesh-network:${IMAGE_TAG}
+        image: justmaily/ai-mesh-network:v1.2.0
         imagePullPolicy: Always
         ports:
         - containerPort: 8080
@@ -116,9 +116,8 @@ spec:
         fsGroup: 1000
       affinity:
         podAntiAffinity:
-          {{ PAGERDUTY_SERVICE_KEY }}DuringExecution:
-          - weight: 100
-            podAffinityTerm:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
               labelSelector:
                 matchExpressions:
                 - key: app

@@ -106,10 +106,16 @@ class DatabaseConnectionManager:
         db_params = {
             "dbname": os.environ.get("POSTGRES_DB", "maily"),
             "user": os.environ.get("POSTGRES_USER", "postgres"),
-            "password": os.environ.get("POSTGRES_PASSWORD", "postgres"),
+            "password": os.environ.get("POSTGRES_PASSWORD", ""),
             "host": os.environ.get("POSTGRES_HOST", "localhost"),
             "port": int(os.environ.get("POSTGRES_PORT", "5432")),
         }
+        
+        # Check if DATABASE_URL is provided (preferred connection method)
+        database_url = os.environ.get("DATABASE_URL")
+        if database_url:
+            logger.info("Using DATABASE_URL for connection parameters")
+            db_params = {"dsn": database_url}
 
         # Create the default pool
         self.create_pool("default", db_params, DEFAULT_MIN_CONN, DEFAULT_MAX_CONN)

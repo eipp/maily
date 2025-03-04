@@ -20,7 +20,7 @@ spec:
     spec:
       containers:
       - name: maily-api
-        image: maily/api:latest
+        image: maily/api:v1.0.0
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 3000
@@ -73,7 +73,7 @@ spec:
     spec:
       containers:
       - name: maily-web
-        image: maily/web:latest
+        image: maily/web:v1.0.0
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 3000

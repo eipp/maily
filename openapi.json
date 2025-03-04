@@ -6,17 +6,17 @@
     "version": "1.0.0",
     "contact": {
       "name": "Maily Support",
-      "email": "support@maily.app",
-      "url": "https://docs.maily.app"
+      "email": "support@justmaily.com",
+      "url": "https://docs.justmaily.com"
     }
   },
   "servers": [
     {
-      "url": "https://api.maily.app/v1",
+      "url": "https://api.justmaily.com/v1",
       "description": "Production server"
     },
     {
-      "url": "https://staging-api.maily.app/v1",
+      "url": "https://staging-api.justmaily.com/v1",
       "description": "Staging server"
     },
     {
@@ -160,7 +160,7 @@
                 "example": {
                   "campaign_id": "camp_xyz789",
                   "status": "draft",
-                  "preview_url": "https://preview.maily.app/camp_xyz789",
+                  "preview_url": "https://preview.justmaily.com/camp_xyz789",
                   "estimated_audience": 15000
                 }
               }

@@ -10,9 +10,9 @@ import uuid
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from ai_service.services.agent_coordinator import AgentCoordinator, get_agent_coordinator
-from ai_service.utils.redis_client import RedisClient
-from ai_service.utils.llm_client import LLMClient
+from apps.ai_service.services.agent_coordinator import AgentCoordinator, get_agent_coordinator
+from apps.ai_service.utils.redis_client import RedisClient
+from apps.ai_service.utils.llm_client import LLMClient
 
 # Test data
 TEST_NETWORK_ID = f"network_{uuid.uuid4().hex[:8]}"
@@ -218,10 +218,13 @@ def mock_llm_client():
 @pytest.fixture
 def agent_coordinator(mock_redis_client, mock_llm_client):
     """Create an AgentCoordinator instance with mocked dependencies"""
-    coordinator = AgentCoordinator()
-    coordinator.redis = mock_redis_client
-    coordinator.llm_client = mock_llm_client
-    return coordinator
+    # Create the coordinator but patch the _cache_cleanup_task to avoid asyncio issues
+    with patch('apps.ai_service.services.agent_coordinator.asyncio.create_task') as mock_create_task:
+        coordinator = AgentCoordinator()
+        # Replace redis and llm_client with our mocks
+        coordinator.redis = mock_redis_client
+        coordinator.llm_client = mock_llm_client
+        return coordinator
 
 # Tests
 @pytest.mark.asyncio

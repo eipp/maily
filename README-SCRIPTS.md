@@ -239,17 +239,17 @@ Additionally, you should have appropriate credentials and access to:
 
 ### Load Testing
 
-**Script**: `scripts/load-testing.sh`
+**Script**: `scripts/testing/load-testing/consolidated-load-test.sh`
 
 **Purpose**: Perform load testing on the Maily application.
 
 **Usage**:
 ```bash
-./scripts/load-testing.sh --api-base-url https://api.maily.com --test-type api
+./scripts/testing/load-testing/consolidated-load-test.sh --api-base-url https://api.justmaily.com --test-type api
 ```
 
 **Options**:
-- `--api-base-url`: API base URL (default: https://api.maily.com)
+- `--api-base-url`: API base URL (default: https://api.justmaily.com)
 - `--test-duration`: Test duration (default: 5m)
 - `--virtual-users`: Number of virtual users (default: 50)
 - `--test-type`: Test type (api, web, email) (default: api)
@@ -259,13 +259,13 @@ Additionally, you should have appropriate credentials and access to:
 
 ### Security Scanning
 
-**Script**: `scripts/security-scanning.sh`
+**Script**: `scripts/security/security-scan.sh`
 
 **Purpose**: Perform security scanning on the Maily application.
 
 **Usage**:
 ```bash
-./scripts/security-scanning.sh --scan-type all --output-dir security-scan-results
+./scripts/security/security-scan.sh --scan-type all --output-dir security-scan-results
 ```
 
 **Options**:
@@ -285,11 +285,11 @@ Additionally, you should have appropriate credentials and access to:
 
 **Usage**:
 ```bash
-./scripts/configure-ssl-tls.sh --domain maily.com --environment production
+./scripts/configure-ssl-tls.sh --domain justmaily.com --environment production
 ```
 
 **Options**:
-- `--domain`: Domain name (default: maily.com)
+- `--domain`: Domain name (default: justmaily.com)
 - `--environment`: Environment (default: production)
 - `--use-lets-encrypt`: Use Let's Encrypt (default: true)
 - `--certificate-path`: Path to certificate file
@@ -307,11 +307,11 @@ Additionally, you should have appropriate credentials and access to:
 
 **Usage**:
 ```bash
-./scripts/configure-dns.sh --domain maily.com --dns-provider cloudflare
+./scripts/configure-dns.sh --domain justmaily.com --dns-provider cloudflare
 ```
 
 **Options**:
-- `--domain`: Domain name (default: maily.com)
+- `--domain`: Domain name (default: justmaily.com)
 - `--environment`: Environment (default: production)
 - `--dns-provider`: DNS provider (cloudflare, route53) (default: cloudflare)
 - `--cloudflare-api-token`: CloudFlare API token

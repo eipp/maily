@@ -15,7 +15,7 @@ class SalesforcePlugin(BasePlugin):
             version="1.0.0",
             description="Salesforce CRM integration for Maily",
             author="Maily Team",
-            website="https://maily.app/plugins/salesforce",
+            website="https://justmaily.com/plugins/salesforce",
             dependencies=["simple-salesforce>=1.12.0"],
             settings_schema={
                 "username": {"type": "string", "required": True},

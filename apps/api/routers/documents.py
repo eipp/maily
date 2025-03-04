@@ -1,6 +1,10 @@
 """Document generation router."""
 
 import logging
+import os
+import uuid
+import json
+from datetime import datetime
 from typing import Dict, Any, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status, UploadFile, File, Form
@@ -259,6 +263,8 @@ async def upload_document_file(
     file: UploadFile = File(...),
     document_type: str = Form(...),
     title: str = Form(...),
+    description: Optional[str] = Form(None),
+    metadata: Optional[str] = Form(None),
     user: Dict[str, Any] = Depends(require_auth)
 ):
     """Upload a document file.
@@ -267,25 +273,137 @@ async def upload_document_file(
         file: Document file
         document_type: Document type
         title: Document title
+        description: Optional document description
+        metadata: Optional JSON string containing metadata
         user: Authenticated user
 
     Returns:
-        Upload result
+        Upload result with document details
     """
     try:
-        # TODO: Implement file upload handling
-        # For now, return a placeholder response
-        return {
-            "id": "doc_placeholder",
+        # Validate document type
+        valid_types = ["pdf", "presentation", "contract", "report", "newsletter", "form", "invoice"]
+        if document_type not in valid_types:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid document type. Must be one of: {', '.join(valid_types)}"
+            )
+        
+        # Validate file content
+        content_type = file.content_type
+        file_extension = get_file_extension(file.filename)
+        
+        # Check file size (limit to 10MB)
+        MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+        file_size = 0
+        file_content = await file.read()
+        file_size = len(file_content)
+        
+        if file_size > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File too large. Maximum size is {MAX_FILE_SIZE / (1024 * 1024)}MB"
+            )
+        
+        # Seek back to beginning of file
+        await file.seek(0)
+        
+        # Prepare metadata if provided
+        metadata_dict = {}
+        if metadata:
+            try:
+                metadata_dict = json.loads(metadata)
+            except json.JSONDecodeError:
+                raise HTTPException(status_code=400, detail="Invalid metadata JSON format")
+        
+        # Add file information to metadata
+        metadata_dict.update({
+            "original_filename": file.filename,
+            "content_type": content_type,
+            "file_size": file_size,
+            "upload_date": datetime.now().isoformat()
+        })
+        
+        # Generate a unique document ID
+        document_id = f"doc_{uuid.uuid4().hex}"
+        
+        # Determine file extension based on document type
+        target_extension = document_generator._get_file_extension(document_type)
+        
+        # Create directory if it doesn't exist
+        document_dir = os.path.join(document_generator.document_base_path)
+        os.makedirs(document_dir, exist_ok=True)
+        
+        # Create subdirectory for previews
+        preview_dir = os.path.join(document_generator.document_base_path, "previews")
+        os.makedirs(preview_dir, exist_ok=True)
+        
+        # Save the uploaded file
+        file_path = os.path.join(document_dir, f"{document_id}.{target_extension}")
+        with open(file_path, "wb") as f:
+            # Write the file content we've already read
+            f.write(file_content)
+        
+        # Generate file URL
+        file_url = f"{document_generator.document_base_url}/{document_id}.{target_extension}"
+        
+        # Generate a preview (for demonstration, just adding a placeholder preview URL)
+        preview_url = f"{document_generator.document_base_url}/previews/{document_id}_preview.png"
+        
+        # Create document record
+        timestamp = datetime.utcnow().isoformat()
+        document = {
+            "id": document_id,
             "title": title,
+            "description": description,
             "type": document_type,
+            "user_id": user["id"],
             "status": "uploaded",
-            "file_url": "/documents/placeholder.pdf",
-            "created_at": "2025-03-03T12:00:00Z"
+            "file_url": file_url,
+            "preview_url": preview_url,
+            "created_at": timestamp,
+            "updated_at": timestamp,
+            "metadata": metadata_dict
         }
+        
+        # Save document record
+        document_generator.documents[document_id] = document
+        await document_generator._save_json_db(document_generator.documents_db_path, document_generator.documents)
+        
+        # Initialize analytics for this document
+        document_generator.analytics[document_id] = {
+            "views": 0,
+            "downloads": 0,
+            "shares": 0,
+            "last_viewed": None,
+            "view_history": []
+        }
+        await document_generator._save_json_db(document_generator.analytics_db_path, document_generator.analytics)
+        
+        # Log document upload
+        logger.info(f"Document uploaded: {document_id} ({title}) by user {user['id']}")
+        
+        return document
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
     except Exception as e:
         logger.error(f"Error uploading document: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error uploading document")
+        raise HTTPException(status_code=500, detail=f"Error uploading document: {str(e)}")
+
+
+def get_file_extension(filename: str) -> str:
+    """Extract file extension from filename.
+    
+    Args:
+        filename: Filename including extension
+        
+    Returns:
+        File extension without the dot
+    """
+    if not filename or "." not in filename:
+        return ""
+    return filename.rsplit(".", 1)[1].lower()
 
 
 @router.get("/{document_id}/analytics", response_model=Dict[str, Any])

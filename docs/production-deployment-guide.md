@@ -1,139 +1,100 @@
 # Production Deployment Guide
 
-This guide provides a concise summary of what needs to be implemented to make JustMaily ready for production deployment.
+This guide provides a comprehensive overview of the Maily production deployment process.
 
-## Critical Path Items
+## Deployment Architecture
 
-The following items are on the critical path for production deployment:
+Maily uses a modern, cloud-native architecture with the following components:
 
-1. **AI Service Database Integration**
-   - Implement the missing `get_session` function
-   - Complete database connectivity
-   - Add connection pooling
+- **Frontend**: React/Next.js application deployed on Vercel
+- **Backend Services**: Containerized microservices deployed on Kubernetes (AWS EKS)
+- **Database**: PostgreSQL on AWS RDS
+- **Caching**: Redis on AWS ElastiCache
+- **Blockchain Integration**: Connection to Polygon for verification
+- **Monitoring**: Prometheus, Grafana, and Datadog
 
-2. **Service Integration**
-   - Connect AI Mesh Network with Email Service
-   - Integrate Campaign Service with Predictive Analytics
-   - Implement Trust Verification across services
+## Deployment Tools
 
-3. **Resilience Engineering**
-   - Implement circuit breakers for external dependencies
-   - Add retry policies with exponential backoff
-   - Define fallback paths for critical operations
+The following tools are required for deploying Maily:
 
-4. **Security Enhancements**
-   - Implement homomorphic encryption for sensitive data
-   - Configure secure key management
-   - Implement least privilege access controls
+- `kubectl` - For Kubernetes operations
+- `jq` - For JSON processing in deployment scripts
+- `vercel` - For frontend deployment
+- PostgreSQL client tools for database migrations
 
-5. **Monitoring and Observability**
-   - Set up SLA monitoring
-   - Implement log retention policies
-   - Configure advanced alerting rules
+## Deployment Scripts
 
-## Component-Specific Requirements
+Maily uses a unified deployment approach with the following scripts:
 
-### Frontend Enhancements
-
-- **Real-time Collaboration**
-  - Implement Yjs for collaborative editing
-  - Add presence awareness indicators
-  - Implement conflict resolution
-
-- **Visualization Layers**
-  - Add AI Mesh Network agent visualization
-  - Implement trust verification visualization
-  - Create performance insights visualization
-
-### Backend Services
-
-- **API Service**
-  - Implement circuit breakers
-  - Add rate limiting middleware
-  - Complete OpenAPI 3.1 documentation
-
-- **Email Service**
-  - Implement blockchain verification
-  - Add certificate generation
-  - Connect to AI Mesh Network
-
-- **Campaign Service**
-  - Add verification features
-  - Implement certificate management
-  - Integrate with Predictive Analytics
-
-- **Analytics Service**
-  - Implement multi-platform data integration
-  - Enhance confidence visualization
-  - Add real-time analytics
-
-### Infrastructure
-
-- **Kubernetes**
-  - Implement network policies for service isolation
-  - Configure resource quotas for namespaces
-  - Set up advanced health checks
-
-- **Terraform**
-  - Implement VPC peering for database access
-  - Configure IAM roles for service accounts
-  - Add backup and restore infrastructure
-
-- **Secrets Management**
-  - Implement secret rotation
-  - Configure audit logging for secrets access
-  - Set up least privilege access controls
-
-## Testing Requirements
-
-- **Load Testing**
-  - Simulate 10,000 concurrent users
-  - Measure response times and throughput
-  - Identify and address bottlenecks
-
-- **Chaos Testing**
-  - Test service failures
-  - Simulate network partitions
-  - Verify circuit breaker functionality
-
-- **Security Testing**
-  - Conduct penetration testing
-  - Implement regular security scanning
-  - Add dependency scanning to CI/CD
-
-## Documentation Requirements
-
-- **API Documentation**
-  - Complete OpenAPI 3.1 documentation
-  - Include request/response examples
-  - Document error responses
-
-- **Operational Documentation**
-  - Create runbooks for incident response
-  - Document deployment and rollback procedures
-  - Include troubleshooting guides
+1. `/scripts/deploy-production.sh` - Main deployment script that supports:
+   - `--migrate-only` - Run only database migrations
+   - `--services-only` - Deploy only backend services
+   - `--frontend-only` - Deploy only frontend
 
 ## Deployment Process
 
-1. **Pre-Deployment Checklist**
-   - Verify all critical path items are complete
-   - Run comprehensive test suite
-   - Conduct security review
+### 1. Pre-Deployment Checklist
 
-2. **Staging Deployment**
-   - Deploy to staging environment
-   - Conduct load testing
-   - Verify all functionality
+Before deploying to production, ensure:
 
-3. **Production Deployment**
-   - Deploy to production environment
-   - Monitor closely for issues
-   - Have rollback plan ready
+- All tests are passing in the CI pipeline
+- Security scanning has been completed
+- Required infrastructure is provisioned via Terraform
+- Environment variables are configured in `config/.env.production`
 
-4. **Post-Deployment**
-   - Verify SLA compliance
-   - Monitor performance metrics
-   - Address any issues promptly
+### 2. Database Migrations
+
+Database migrations are executed first to ensure schema compatibility:
+
+```bash
+./scripts/deploy-production.sh --migrate-only
+```
+
+After migrations complete, a verification period ensures database stability.
+
+### 3. Backend Services Deployment
+
+Backend services are deployed using a canary deployment strategy:
+
+```bash
+./scripts/deploy-production.sh --services-only
+```
+
+The deployment:
+- Deploys Redis first as a dependency
+- Uses canary deployment for the API service
+- Deploys the AI service mesh
+- Sets up monitoring infrastructure
+- Includes a stabilization period
+
+### 4. Frontend Deployment
+
+The frontend is deployed to Vercel:
+
+```bash
+./scripts/deploy-production.sh --frontend-only
+```
+
+### 5. Monitoring and Verification
+
+After deployment:
+- Critical metrics are monitored (API response time, error rates, etc.)
+- Blockchain verification rates are checked
+- Service health endpoints are verified
+
+## Rollback Procedure
+
+If issues are detected post-deployment:
+
+1. Assess the impact and determine if rollback is necessary
+2. Execute the rollback script: `./scripts/rollback-production.sh`
+3. Verify service stability after rollback
+
+## Service URLs
+
+- Frontend: https://maily.vercel.app
+- API: https://api.maily.example.com
+- Monitoring: https://monitor.maily.example.com
 
 ## Success Criteria
 
@@ -141,4 +102,3 @@ The following items are on the critical path for production deployment:
 - Response times under 200ms for 99% of requests
 - System handles 10,000 concurrent users
 - Recovery time objective (RTO) of 15 minutes
-- All security requirements implemented

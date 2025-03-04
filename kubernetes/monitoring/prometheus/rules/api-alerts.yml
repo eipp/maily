@@ -10,7 +10,7 @@ groups:
         annotations:
           summary: "API Service Down: {{ $labels.service }}"
           description: "API service {{ $labels.service }} has been down for more than 1 minute."
-          runbook_url: "https://docs.maily.app/ops/runbooks/api-service-down"
+          runbook_url: "https://docs.justmaily.com/ops/runbooks/api-service-down"
 
       # API Latency Alerts
       - alert: ApiHighResponseTime
@@ -21,7 +21,7 @@ groups:
         annotations:
           summary: "High API Response Time: {{ $labels.service }}"
           description: "95th percentile of response time for {{ $labels.service }} is above 500ms for 5 minutes."
-          runbook_url: "https://docs.maily.app/ops/runbooks/api-high-latency"
+          runbook_url: "https://docs.justmaily.com/ops/runbooks/api-high-latency"
 
       - alert: ApiCriticalResponseTime
         expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job="maily-api-metrics"}[5m])) by (service, le)) > 1
@@ -31,7 +31,7 @@ groups:
         annotations:
           summary: "Critical API Response Time: {{ $labels.service }}"
           description: "95th percentile of response time for {{ $labels.service }} is above 1s for 5 minutes."
-          runbook_url: "https://docs.maily.app/ops/runbooks/api-critical-latency"
+          runbook_url: "https://docs.justmaily.com/ops/runbooks/api-critical-latency"
 
       # API Error Rate Alerts
       - alert: ApiHighErrorRate
@@ -42,7 +42,7 @@ groups:
         annotations:
           summary: "High API Error Rate: {{ $labels.service }}"
           description: "Error rate for {{ $labels.service }} is above 5% for 5 minutes."
-          runbook_url: "https://docs.maily.app/ops/runbooks/api-high-error-rate"
+          runbook_url: "https://docs.justmaily.com/ops/runbooks/api-high-error-rate"
 
       - alert: ApiCriticalErrorRate
         expr: sum(rate(http_request_errors_total{job="maily-api-metrics"}[5m])) by (service) / sum(rate(http_requests_total{job="maily-api-metrics"}[5m])) by (service) > 0.10
@@ -52,7 +52,7 @@ groups:
         annotations:
           summary: "Critical API Error Rate: {{ $labels.service }}"
           description: "Error rate for {{ $labels.service }} is above 10% for 5 minutes."
-          runbook_url: "https://docs.maily.app/ops/runbooks/api-critical-error-rate"
+          runbook_url: "https://docs.justmaily.com/ops/runbooks/api-critical-error-rate"
 
       # API Traffic Alerts
       - alert: ApiHighTraffic
@@ -63,7 +63,7 @@ groups:
         annotations:
           summary: "High API Traffic: {{ $labels.service }}"
           description: "Traffic for {{ $labels.service }} is above 1000 requests per second for 5 minutes."
-          runbook_url: "https://docs.maily.app/ops/runbooks/api-high-traffic"
+          runbook_url: "https://docs.justmaily.com/ops/runbooks/api-high-traffic"
 
       # API Rate Limiting Alerts
       - alert: ApiHighRateLimiting
@@ -74,7 +74,7 @@ groups:
         annotations:
           summary: "High API Rate Limiting: {{ $labels.service }}"
           description: "Rate limiting for {{ $labels.service }} is affecting more than 5% of requests for 5 minutes."
-          runbook_url: "https://docs.maily.app/ops/runbooks/api-high-rate-limiting"
+          runbook_url: "https://docs.justmaily.com/ops/runbooks/api-high-rate-limiting"
 
       # API Saturation Alerts
       - alert: ApiHighCPUUsage
@@ -85,7 +85,7 @@ groups:
         annotations:
           summary: "High API CPU Usage: {{ $labels.service }}"
           description: "CPU usage for {{ $labels.service }} is above 80% for 5 minutes."
-          runbook_url: "https://docs.maily.app/ops/runbooks/api-high-cpu-usage"
+          runbook_url: "https://docs.justmaily.com/ops/runbooks/api-high-cpu-usage"
 
       - alert: ApiHighMemoryUsage
         expr: process_resident_memory_bytes{job="maily-api-metrics"} / on(instance) node_memory_MemTotal_bytes > 0.8
@@ -95,7 +95,7 @@ groups:
         annotations:
           summary: "High API Memory Usage: {{ $labels.service }}"
           description: "Memory usage for {{ $labels.service }} is above 80% for 5 minutes."
-          runbook_url: "https://docs.maily.app/ops/runbooks/api-high-memory-usage"
+          runbook_url: "https://docs.justmaily.com/ops/runbooks/api-high-memory-usage"
 
       # Database Connection Pool Alerts
       - alert: ApiHighDbConnectionUsage
@@ -106,7 +106,7 @@ groups:
         annotations:
           summary: "High Database Connection Usage: {{ $labels.service }}"
           description: "Database connection pool usage for {{ $labels.service }} is above 80% for 5 minutes."
-          runbook_url: "https://docs.maily.app/ops/runbooks/api-high-db-connection-usage"
+          runbook_url: "https://docs.justmaily.com/ops/runbooks/api-high-db-connection-usage"
 
       # API Dependencies Alerts
       - alert: ApiDependencyIssues
@@ -117,4 +117,4 @@ groups:
         annotations:
           summary: "API Dependency Issues: {{ $labels.service }} -> {{ $labels.dependency }}"
           description: "Error rate for {{ $labels.service }} calling {{ $labels.dependency }} is above 5% for 5 minutes."
-          runbook_url: "https://docs.maily.app/ops/runbooks/api-dependency-issues"
+          runbook_url: "https://docs.justmaily.com/ops/runbooks/api-dependency-issues"

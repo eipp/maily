@@ -2,12 +2,12 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: email-processing-service
-  namespace: maily-production
+  namespace: staging
   labels:
     app: email-processing-service
     service: email
 spec:
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
       app: email-processing-service
@@ -27,7 +27,7 @@ spec:
     spec:
       containers:
       - name: email-processing-service
-        image: ${REGISTRY}/email-processing-service:${TAG}
+        image: justmaily/email-processing-service:v1.0.0
         imagePullPolicy: Always
         ports:
         - containerPort: 3000
