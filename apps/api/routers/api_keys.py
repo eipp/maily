@@ -11,7 +11,7 @@ from services.api_key_service import (
     revoke_api_key,
     list_api_keys
 )
-from errors.exceptions import NotFoundError, DatabaseError, AuthenticationError
+from packages.error_handling.python.error import ResourceNotFoundError, DatabaseError, UnauthorizedError
 
 router = APIRouter(prefix="/api-keys", tags=["API Keys"])
 
@@ -112,9 +112,9 @@ async def revoke_api_key_endpoint(
             db=db
         )
         return {"message": "API key revoked successfully"}
-    except NotFoundError as e:
+    except ResourceNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except AuthenticationError as e:
+    except UnauthorizedError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except DatabaseError as e:
         raise HTTPException(status_code=500, detail=str(e))

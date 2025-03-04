@@ -1,104 +1,163 @@
-# Error Handling Package
+# Maily Error Handling
 
-This package provides standardized error handling utilities for Maily.
+A standardized error handling system for the Maily application.
 
-## Features
+## Overview
 
-- **Standardized Error Classes**: A hierarchy of error classes for different error types
-- **Error Handlers**: Centralized error handling for different environments and frameworks
-- **Error Utilities**: Utilities for error logging, reporting, and formatting
-- **Zod Integration**: Built-in support for Zod validation errors
+This package provides a unified approach to error handling across all Maily services, with components for:
+
+- Python backends (FastAPI)
+- JavaScript/TypeScript frontends
+- React components
 
 ## Installation
 
-```bash
-npm install @maily/error-handling
+The package is pre-installed as part of the Maily monorepo.
+
+## Python Usage
+
+### Basic Error Classes
+
+```python
+from packages.error_handling.python.error import MailyError, ResourceNotFoundError, ValidationError
+
+# Raising a basic error
+raise MailyError("Something went wrong")
+
+# Raising a more specific error
+raise ResourceNotFoundError("User not found", 
+                           details={"user_id": "123"})
+
+# With trace ID and provider info
+raise ValidationError("Invalid parameters",
+                     trace_id="abcd-1234",
+                     provider="openai",
+                     request_id="req_123")
 ```
 
-## Basic Usage
+### Error Middleware for FastAPI
+
+```python
+from fastapi import FastAPI
+from packages.error_handling.python.middleware import setup_error_handling
+
+app = FastAPI()
+
+# Add standardized error handling
+setup_error_handling(app)
+```
+
+### Provider Error Mapping
+
+```python
+from packages.error_handling.python.error import map_provider_error
+
+try:
+    # OpenAI API call
+    response = await openai.Completion.create(...)
+except Exception as e:
+    # Map to standardized error
+    error = map_provider_error(
+        provider="openai",
+        error_type=e.type,
+        message=str(e),
+        request_id=e.request_id
+    )
+    raise error
+```
+
+## TypeScript Usage
+
+### Basic Error Classes
 
 ```typescript
-import { ValidationError, ApplicationError } from '@maily/error-handling';
+import { ApplicationError, ErrorType } from 'packages/error-handling';
 
-// Create a validation error
-const validationError = new ValidationError('Invalid input');
-validationError.addError('email', 'Email is required');
-validationError.addError('email', 'Email must be valid');
+// Basic error
+throw new ApplicationError('Something went wrong');
 
-// Check validation errors
-if (validationError.hasErrors()) {
-  console.log(validationError.getFieldErrors('email'));
-}
-
-// Create a custom application error
-const customError = new ApplicationError(
-  'Something went wrong',
-  'CUSTOM_ERROR',
-  500,
-  { additional: 'details' }
+// With error type and status
+throw new ApplicationError(
+  'Resource not found', 
+  ErrorType.NOT_FOUND,
+  404
 );
 
-// Convert error to JSON for logging
-console.log(customError.toJSON());
-
-// Create API response from error
-const response = customError.toResponse();
+// With metadata
+throw new ApplicationError(
+  'Invalid parameters',
+  ErrorType.VALIDATION_ERROR,
+  400,
+  { fields: ['email', 'password'] }
+);
 ```
 
-## Error Classes
+## React Usage
 
-The package provides the following error classes:
+### Basic ErrorBoundary
 
-- `ApplicationError`: Base error class for all application errors
-- `ValidationError`: Error for validation failures
-- `AuthenticationError`: Error for authentication failures
-- `AuthorizationError`: Error for authorization failures
-- `NotFoundError`: Error for resource not found
-- `ConflictError`: Error for resource conflicts
-- `RateLimitError`: Error for rate limiting
-- `ServerError`: Error for server-side issues
-- `NetworkError`: Error for network issues
-- `TimeoutError`: Error for operation timeouts
+```tsx
+import { ErrorBoundary } from 'packages/error-handling/src/react/ErrorBoundary';
 
-## Error Handlers
-
-The package provides error handlers for different environments:
-
-```typescript
-import { errorHandler, apiErrorHandler } from '@maily/error-handling';
-
-// Use in Express
-app.use(apiErrorHandler());
-
-// Use as a standalone handler
-try {
-  // Some code that might throw
-} catch (error) {
-  errorHandler.handle(error);
+function App() {
+  return (
+    <ErrorBoundary>
+      <YourComponent />
+    </ErrorBoundary>
+  );
 }
 ```
 
-## Zod Integration
+### Custom Fallback UI
 
-The package provides integration with Zod for validation:
+```tsx
+import { ErrorBoundary } from 'packages/error-handling/src/react/ErrorBoundary';
 
-```typescript
-import { z } from 'zod';
-import { ValidationError, zodErrorFormatter } from '@maily/error-handling';
-
-const schema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8),
-});
-
-try {
-  schema.parse({ email: 'invalid', password: '123' });
-} catch (error) {
-  // Convert Zod error to ValidationError
-  const validationError = ValidationError.fromZodError(error);
-  
-  // Or format the Zod error
-  const formatted = zodErrorFormatter(error);
-  console.log(formatted);
+function App() {
+  return (
+    <ErrorBoundary
+      fallback={({ error, reset }) => (
+        <div>
+          <h2>Oh no! Something went wrong</h2>
+          <p>{error.message}</p>
+          <button onClick={reset}>Try Again</button>
+        </div>
+      )}
+      onError={(error) => {
+        // Log to monitoring service
+        console.error('Component error:', error);
+      }}
+    >
+      <YourComponent />
+    </ErrorBoundary>
+  );
 }
 ```
+
+## Error Response Format
+
+All API errors are returned in this standardized format:
+
+```json
+{
+  "error": true,
+  "error_code": "not_found",
+  "message": "Resource not found",
+  "status_code": 404,
+  "trace_id": "550e8400-e29b-41d4-a716-446655440000",
+  "timestamp": 1717574880.123,
+  "details": [
+    {
+      "code": "not_found.details",
+      "message": "Error details",
+      "field": "resource_id"
+    }
+  ],
+  "documentation_url": "https://docs.maily.com/errors/not_found"
+}
+```
+
+## Documentation
+
+- See `MIGRATION-GUIDE.md` for instructions on migrating from legacy error handling.
+- See `ERROR-HANDLING-STANDARDIZATION.md` in the root directory for a high-level overview of the standardization effort.

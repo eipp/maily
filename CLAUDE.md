@@ -33,9 +33,25 @@ npm run format        # Run Prettier on all files
 - **Formatting**: 2 spaces, 100 char line limit, single quotes, trailing commas
 - **Imports**: Use path aliases (@/* for imports), organize imports (isort for Python)
 - **Components**: Functional components with React hooks, small and focused
-- **Error Handling**: ErrorBoundary for React, custom MailyError hierarchy in Python
+- **Error Handling**: Use standardized error handling from packages/error-handling
 - **Git Commits**: Follow conventional commits format (feat/fix/docs/chore/test)
 - **Node/NPM**: Requires Node ≥20.11.1, NPM ≥8.0.0
 - **Testing**: Use appropriate markers (unit/integration/e2e), mock external dependencies
 - **Python Testing**: Use pytest fixtures, parametrize for multiple test cases
 - **Convention**: Follow existing patterns from neighboring files when adding new code
+
+## Standardized Libraries
+- **HTTP Client**: Use `httpx` for all HTTP requests in Python code
+- **Testing**: Use Vitest for JavaScript/TypeScript tests (Jest is deprecated)
+- **Redis**: Use shared Redis client from `packages/database/src/redis/redis_client.py`
+- **GraphQL**: Use Apollo Client for GraphQL in JavaScript/TypeScript
+- **Telemetry**: Use OpenTelemetry packages from `packages/config/monitoring/telemetry-requirements.txt`
+- **Error Handling**: Use standardized error hierarchy from `packages/error-handling`
+
+## Deprecated Modules
+The following modules are deprecated and should not be used in new code:
+- `apps/api/cache/redis.py` - Use `packages/database/src/redis/redis_client.py` instead
+- `apps/api/cache/redis_service.py` - Use implementations based on standardized client
+- `apps/web/jest.config.js` - Use Vitest instead
+- HTTP Libraries: `requests`, `aiohttp`, `urllib3` - Use `httpx` instead
+- Multiple OpenTelemetry versions - Use centralized requirements instead

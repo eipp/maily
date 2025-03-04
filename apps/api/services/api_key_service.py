@@ -18,7 +18,7 @@ import base64
 
 # Redis for caching
 try:
-    from apps.api.cache.redis_client import get_redis_client
+    from packages.database.src.redis.redis_client import get_redis_client
     REDIS_AVAILABLE = True
 except ImportError:
     REDIS_AVAILABLE = False
@@ -26,7 +26,7 @@ except ImportError:
 from models.api_key import ApiKey
 from models.user import User
 from database.session import get_db
-from errors.exceptions import NotFoundError, DatabaseError, AuthenticationError
+from packages.error_handling.python.error import ResourceNotFoundError, DatabaseError, UnauthorizedError
 
 logger = logging.getLogger(__name__)
 
@@ -237,7 +237,7 @@ async def _create_api_key(user_id: str, name: str, db: AsyncSession, scopes: Lis
         )
         user = result.scalars().first()
         if not user:
-            raise NotFoundError(f"User with ID {user_id} not found")
+            raise ResourceNotFoundError(f"User with ID {user_id} not found")
 
         # Generate a new API key
         api_key = f"mil_{secrets.token_urlsafe(32)}"
@@ -287,8 +287,8 @@ async def revoke_api_key(api_key_id: str, user_id: str, db: Optional[AsyncSessio
         db: Optional database session.
 
     Raises:
-        NotFoundError: If the API key is not found.
-        AuthenticationError: If the user does not own the API key.
+        ResourceNotFoundError: If the API key is not found.
+        UnauthorizedError: If the user does not own the API key.
     """
     if db is None:
         async with get_db() as session:
@@ -306,8 +306,8 @@ async def _revoke_api_key(api_key_id: str, user_id: str, db: AsyncSession) -> No
         db: Database session.
 
     Raises:
-        NotFoundError: If the API key is not found.
-        AuthenticationError: If the user does not own the API key.
+        ResourceNotFoundError: If the API key is not found.
+        UnauthorizedError: If the user does not own the API key.
     """
     try:
         # Find the API key
@@ -317,18 +317,18 @@ async def _revoke_api_key(api_key_id: str, user_id: str, db: AsyncSession) -> No
         api_key = result.scalars().first()
 
         if not api_key:
-            raise NotFoundError(f"API key with ID {api_key_id} not found")
+            raise ResourceNotFoundError(f"API key with ID {api_key_id} not found")
 
         # Check if the user owns the API key
         if api_key.user_id != user_id:
-            raise AuthenticationError("You do not have permission to revoke this API key")
+            raise UnauthorizedError("You do not have permission to revoke this API key")
 
         # Revoke the API key
         api_key.is_active = False
 
         await db.commit()
         logger.info(f"API key {api_key_id} revoked by user {user_id}")
-    except (NotFoundError, AuthenticationError):
+    except (ResourceNotFoundError, UnauthorizedError):
         raise
     except Exception as e:
         await db.rollback()

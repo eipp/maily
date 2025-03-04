@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { ErrorBoundaryWrapper } from '../components/ErrorBoundary';
+import { ErrorBoundary } from 'packages/error-handling/src/react/ErrorBoundary';
 
 // Component that throws an error for testing
 const ThrowError = () => {
@@ -19,9 +19,9 @@ describe('ErrorBoundary', () => {
 
   it('renders children when there is no error', () => {
     const { getByText } = render(
-      <ErrorBoundaryWrapper>
+      <ErrorBoundary>
         <div>Normal content</div>
-      </ErrorBoundaryWrapper>
+      </ErrorBoundary>
     );
 
     expect(getByText('Normal content')).toBeInTheDocument();
@@ -31,13 +31,13 @@ describe('ErrorBoundary', () => {
     const onError = jest.fn();
 
     render(
-      <ErrorBoundaryWrapper onError={onError}>
+      <ErrorBoundary onError={onError}>
         <ThrowError />
-      </ErrorBoundaryWrapper>
+      </ErrorBoundary>
     );
 
     expect(screen.getByText('Something went wrong')).toBeInTheDocument();
-    expect(screen.getByText('Test error')).toBeInTheDocument();
+    expect(screen.getByText('Error details')).toBeInTheDocument();
     expect(onError).toHaveBeenCalled();
   });
 
@@ -45,9 +45,9 @@ describe('ErrorBoundary', () => {
     const onReset = jest.fn();
 
     render(
-      <ErrorBoundaryWrapper onReset={onReset}>
+      <ErrorBoundary onReset={onReset}>
         <ThrowError />
-      </ErrorBoundaryWrapper>
+      </ErrorBoundary>
     );
 
     const tryAgainButton = screen.getByText('Try again');
