@@ -797,6 +797,14 @@ def cleanup():
 atexit.register(cleanup)
 
 # Include routers
+try:
+    # Import and include canvas WebSocket router for real-time collaboration
+    from apps.api.routers.canvas_websocket import router as canvas_websocket_router
+    app.include_router(canvas_websocket_router)
+    info("Canvas WebSocket router successfully included")
+except ImportError as e:
+    warning(f"Canvas WebSocket router not available: {str(e)}")
+
 app.include_router(auth.router)
 app.include_router(health.router)
 app.include_router(ai.router)
