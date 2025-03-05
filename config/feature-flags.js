@@ -12,83 +12,76 @@
  *   }
  */
 
+// Import environment configuration
+const { getCurrentEnvironment, ENVIRONMENTS } = require('./environments');
+
 // Feature definitions with environment-specific controls
 const featureFlags = {
   // New Campaign Editor - enabled in all environments except production
   'new-campaign-editor': {
     description: 'New drag-and-drop campaign editor with enhanced analytics',
-    enabledIn: ['development', 'testing', 'staging'],
+    enabledIn: [ENVIRONMENTS.DEVELOPMENT, ENVIRONMENTS.TESTING, ENVIRONMENTS.STAGING],
     rolloutPercentage: {
-      development: 100,
-      testing: 100,
-      staging: 100,
-      production: 0
+      [ENVIRONMENTS.DEVELOPMENT]: 100,
+      [ENVIRONMENTS.TESTING]: 100,
+      [ENVIRONMENTS.STAGING]: 100,
+      [ENVIRONMENTS.PRODUCTION]: 0
     }
   },
   
   // AI-powered content suggestions - beta feature
   'ai-content-suggestions': {
     description: 'AI-powered content suggestions for email campaigns',
-    enabledIn: ['development', 'testing'],
+    enabledIn: [ENVIRONMENTS.DEVELOPMENT, ENVIRONMENTS.TESTING],
     rolloutPercentage: {
-      development: 100,
-      testing: 50,
-      staging: 0,
-      production: 0
+      [ENVIRONMENTS.DEVELOPMENT]: 100,
+      [ENVIRONMENTS.TESTING]: 50,
+      [ENVIRONMENTS.STAGING]: 0,
+      [ENVIRONMENTS.PRODUCTION]: 0
     }
   },
   
   // Advanced Analytics Dashboard
   'advanced-analytics': {
     description: 'Enhanced analytics dashboard with cohort analysis',
-    enabledIn: ['development', 'testing', 'staging', 'production'],
+    enabledIn: [ENVIRONMENTS.DEVELOPMENT, ENVIRONMENTS.TESTING, ENVIRONMENTS.STAGING, ENVIRONMENTS.PRODUCTION],
     rolloutPercentage: {
-      development: 100,
-      testing: 100,
-      staging: 100,
-      production: 20 // Gradual rollout in production
+      [ENVIRONMENTS.DEVELOPMENT]: 100,
+      [ENVIRONMENTS.TESTING]: 100,
+      [ENVIRONMENTS.STAGING]: 100,
+      [ENVIRONMENTS.PRODUCTION]: 20 // Gradual rollout in production
     }
   },
   
   // Multi-language Support
   'multi-language': {
     description: 'Support for multiple languages in the UI',
-    enabledIn: ['development', 'testing'],
+    enabledIn: [ENVIRONMENTS.DEVELOPMENT, ENVIRONMENTS.TESTING],
     rolloutPercentage: {
-      development: 100,
-      testing: 100,
-      staging: 0,
-      production: 0
+      [ENVIRONMENTS.DEVELOPMENT]: 100,
+      [ENVIRONMENTS.TESTING]: 100,
+      [ENVIRONMENTS.STAGING]: 0,
+      [ENVIRONMENTS.PRODUCTION]: 0
     }
   },
   
   // Team Collaboration Features
   'team-collaboration': {
     description: 'Enhanced team collaboration tools',
-    enabledIn: ['development', 'testing', 'staging'],
+    enabledIn: [ENVIRONMENTS.DEVELOPMENT, ENVIRONMENTS.TESTING, ENVIRONMENTS.STAGING],
     rolloutPercentage: {
-      development: 100,
-      testing: 100,
-      staging: 50,
-      production: 0
+      [ENVIRONMENTS.DEVELOPMENT]: 100,
+      [ENVIRONMENTS.TESTING]: 100,
+      [ENVIRONMENTS.STAGING]: 50,
+      [ENVIRONMENTS.PRODUCTION]: 0
     }
   }
 };
 
-// Get current environment
+// Get current environment using centralized function
 const getEnvironment = () => {
   // First check for environment variable
-  if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV) {
-    return process.env.NODE_ENV;
-  }
-  
-  // For client-side, check if window.ENV is available (should be injected by the server)
-  if (typeof window !== 'undefined' && window.ENV) {
-    return window.ENV;
-  }
-  
-  // Default to development if environment cannot be determined
-  return 'development';
+  return getCurrentEnvironment();
 };
 
 // Generate a consistent hash for a user ID to ensure the same users

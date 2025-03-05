@@ -1,0 +1,205 @@
+# Production Docker Compose configuration for Maily
+# This defines all services needed for production environment
+
+services:
+  # API Service
+  api:
+    image: ${DOCKER_REGISTRY}/maily/api:${IMAGE_TAG:-latest}
+    container_name: maily-api-production
+    restart: always
+    depends_on:
+      - redis
+    environment:
+      - NODE_ENV=production
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - PORT=8000
+    ports:
+      - "8000:8000"
+    networks:
+      - maily-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2G
+      replicas: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+
+  # Web Application
+  web:
+    image: ${DOCKER_REGISTRY}/maily/web:${IMAGE_TAG:-latest}
+    container_name: maily-web-production
+    restart: always
+    depends_on:
+      - api
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=https://api.justmaily.com
+    ports:
+      - "3000:3000"
+    networks:
+      - maily-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2G
+      replicas: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+
+  # AI Service
+  ai-service:
+    image: ${DOCKER_REGISTRY}/maily/ai-service:${IMAGE_TAG:-latest}
+    container_name: maily-ai-service-production
+    restart: always
+    depends_on:
+      - redis
+      - api
+    environment:
+      - PYTHONUNBUFFERED=1
+      - ENVIRONMENT=production
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - API_URL=http://api:8000
+      - PORT=8080
+    ports:
+      - "8080:8080"
+    networks:
+      - maily-network
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+      replicas: 2
+      update_config:
+        parallelism: 1
+        delay: 30s
+        order: start-first
+
+  # Email Service
+  email-service:
+    image: ${DOCKER_REGISTRY}/maily/email-service:${IMAGE_TAG:-latest}
+    container_name: maily-email-service-production
+    restart: always
+    depends_on:
+      - redis
+    environment:
+      - NODE_ENV=production
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - PORT=8001
+    ports:
+      - "8001:8001"
+    networks:
+      - maily-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2G
+      replicas: 2
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+
+  # Workers
+  workers:
+    image: ${DOCKER_REGISTRY}/maily/workers:${IMAGE_TAG:-latest}
+    container_name: maily-workers-production
+    restart: always
+    depends_on:
+      - redis
+      - api
+    environment:
+      - NODE_ENV=production
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - API_URL=http://api:8000
+    networks:
+      - maily-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2G
+      replicas: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+
+  # Redis
+  redis:
+    image: redis:6-alpine
+    container_name: maily-redis-production
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - maily-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Prometheus (for metrics)
+  prometheus:
+    image: prom/prometheus
+    container_name: maily-prometheus-production
+    restart: always
+    ports:
+      - "9090:9090"
+    volumes:
+      - ../../config/environments/production/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    networks:
+      - maily-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2G
+
+  # Grafana (for metrics visualization)
+  grafana:
+    image: grafana/grafana
+    container_name: maily-grafana-production
+    restart: always
+    ports:
+      - "3030:3000"
+    volumes:
+      - ../../config/environments/production/grafana/provisioning:/etc/grafana/provisioning
+      - grafana-data:/var/lib/grafana
+    networks:
+      - maily-network
+    depends_on:
+      - prometheus
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2G
+
+networks:
+  maily-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+  prometheus-data:
+  grafana-data: 

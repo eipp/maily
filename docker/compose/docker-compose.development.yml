@@ -1,5 +1,5 @@
-# Standardized Docker Compose configuration for Maily
-# This defines all services needed for local development
+# Development Docker Compose configuration for Maily
+# This defines all services needed for development environment
 
 services:
   # API Service
@@ -7,8 +7,10 @@ services:
     build:
       context: ../../
       dockerfile: docker/dockerfiles/api.Dockerfile
-    image: maily/api:local
-    container_name: maily-api
+      args:
+        - NODE_ENV=development
+    image: ${DOCKER_REGISTRY:-maily}/api:${IMAGE_TAG:-development}
+    container_name: maily-api-development
     restart: unless-stopped
     depends_on:
       - postgres
@@ -37,8 +39,10 @@ services:
     build:
       context: ../../
       dockerfile: docker/dockerfiles/web.Dockerfile
-    image: maily/web:local
-    container_name: maily-web
+      args:
+        - NODE_ENV=development
+    image: ${DOCKER_REGISTRY:-maily}/web:${IMAGE_TAG:-development}
+    container_name: maily-web-development
     restart: unless-stopped
     depends_on:
       - api
@@ -59,8 +63,10 @@ services:
     build:
       context: ../../
       dockerfile: docker/dockerfiles/ai-service.Dockerfile
-    image: maily/ai-service:local
-    container_name: maily-ai-service
+      args:
+        - ENVIRONMENT=development
+    image: ${DOCKER_REGISTRY:-maily}/ai-service:${IMAGE_TAG:-development}
+    container_name: maily-ai-service-development
     restart: unless-stopped
     depends_on:
       - redis
@@ -85,8 +91,10 @@ services:
     build:
       context: ../../
       dockerfile: docker/dockerfiles/email-service.Dockerfile
-    image: maily/email-service:local
-    container_name: maily-email-service
+      args:
+        - NODE_ENV=development
+    image: ${DOCKER_REGISTRY:-maily}/email-service:${IMAGE_TAG:-development}
+    container_name: maily-email-service-development
     restart: unless-stopped
     depends_on:
       - postgres
@@ -115,8 +123,10 @@ services:
     build:
       context: ../../
       dockerfile: docker/dockerfiles/workers.Dockerfile
-    image: maily/workers:local
-    container_name: maily-workers
+      args:
+        - NODE_ENV=development
+    image: ${DOCKER_REGISTRY:-maily}/workers:${IMAGE_TAG:-development}
+    container_name: maily-workers-development
     restart: unless-stopped
     depends_on:
       - postgres
@@ -142,7 +152,7 @@ services:
   # PostgreSQL Database
   postgres:
     image: postgres:14-alpine
-    container_name: maily-postgres
+    container_name: maily-postgres-development
     restart: unless-stopped
     environment:
       - POSTGRES_USER=maily
@@ -163,7 +173,7 @@ services:
   # Redis
   redis:
     image: redis:6-alpine
-    container_name: maily-redis
+    container_name: maily-redis-development
     restart: unless-stopped
     ports:
       - "6379:6379"
@@ -180,7 +190,7 @@ services:
   # PgAdmin (Optional, for database management)
   pgadmin:
     image: dpage/pgadmin4
-    container_name: maily-pgadmin
+    container_name: maily-pgadmin-development
     restart: unless-stopped
     environment:
       - PGADMIN_DEFAULT_EMAIL=admin@maily.com
@@ -197,12 +207,12 @@ services:
   # Prometheus (Optional, for metrics)
   prometheus:
     image: prom/prometheus
-    container_name: maily-prometheus
+    container_name: maily-prometheus-development
     restart: unless-stopped
     ports:
       - "9090:9090"
     volumes:
-      - ../../config/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ../../config/environments/development/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus-data:/prometheus
     networks:
       - maily-network
@@ -210,11 +220,12 @@ services:
   # Grafana (Optional, for metrics visualization)
   grafana:
     image: grafana/grafana
-    container_name: maily-grafana
+    container_name: maily-grafana-development
     restart: unless-stopped
     ports:
       - "3030:3000"
     volumes:
+      - ../../config/environments/development/grafana/provisioning:/etc/grafana/provisioning
       - grafana-data:/var/lib/grafana
     networks:
       - maily-network
@@ -237,4 +248,4 @@ volumes:
   api-node-modules:
   web-node-modules:
   email-node-modules:
-  workers-node-modules:
+  workers-node-modules: 

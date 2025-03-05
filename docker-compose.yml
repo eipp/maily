@@ -3,8 +3,6 @@
 # This is a symlink to the standardized configuration in docker/compose/docker-compose.yml
 # For detailed configuration, please see that file.
 
-version: '3.8'
-
 # Import the standardized Docker Compose configuration
 include:
   - path: ./docker/compose/docker-compose.yml
