@@ -1,0 +1,24 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "main.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/main.py"
+    }
+  ],
+  "env": {
+    "ENVIRONMENT": "testing",
+    "DATABASE_URL": "postgresql://maily:XXXXXXXXXXXX@maily-test.cluster-xyz.us-west-2.rds.amazonaws.com:5432/maily",
+    "REDIS_URL": "redis://redis-test.justmaily.com:6379",
+    "WEB_API_BASE_URL": "https://test-api.justmaily.com",
+    "ANALYTICS_API_ENDPOINT": "https://test-analytics.justmaily.com/api/v1",
+    "AI_SERVICE_MODEL_VERSION": "deepseek-chat",
+    "CAMPAIGN_SERVICE_MAX_THREADS": "4"
+  }
+} 

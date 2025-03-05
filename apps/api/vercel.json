@@ -13,8 +13,8 @@
     }
   ],
   "env": {
-    "ENVIRONMENT": "production",
-    "DATABASE_URL": "postgresql://postgres:9PGIsHAG6osk8pet@db.qdwghhckxtxrruuwioef.supabase.co:5432/postgres?sslmode=require",
-    "REDIS_URL": "redis://redis.justmaily.com:6379"
+    "ENVIRONMENT": "${ENVIRONMENT}",
+    "DATABASE_URL": "${DATABASE_URL}",
+    "REDIS_URL": "${REDIS_URL}"
   }
 }

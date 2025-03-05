@@ -3,7 +3,10 @@
   "builds": [
     {
       "src": "package.json",
-      "use": "@vercel/next"
+      "use": "@vercel/next",
+      "config": {
+        "nodeVersion": "20.11.1"
+      }
     }
   ],
   "routes": [
@@ -13,7 +16,7 @@
     }
   ],
   "env": {
-    "NEXT_PUBLIC_API_URL": "https://api.justmaily.com",
-    "NEXT_PUBLIC_ENVIRONMENT": "production"
+    "NEXT_PUBLIC_API_URL": "${NEXT_PUBLIC_API_URL}",
+    "NEXT_PUBLIC_ENVIRONMENT": "${NEXT_PUBLIC_ENVIRONMENT}"
   }
 }

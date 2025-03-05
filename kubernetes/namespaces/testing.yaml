@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: maily-test
+  labels:
+    name: maily-test
+    environment: testing 

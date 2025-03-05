@@ -1,0 +1,175 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: maily-api
+  namespace: maily-test
+  labels:
+    app: maily
+    component: api
+    environment: testing
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: maily
+      component: api
+  template:
+    metadata:
+      labels:
+        app: maily
+        component: api
+    spec:
+      containers:
+      - name: maily-api
+        image: maily/api:v1.0.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 3000
+        env:
+        - name: NODE_ENV
+          value: "testing"
+        - name: SUPABASE_URL
+          value: "postgresql://maily:XXXXXXXXXXXX@maily-test.cluster-xyz.us-west-2.rds.amazonaws.com:5432/maily"
+        - name: REDIS_URL
+          value: "redis://redis-test.justmaily.com:6379"
+        resources:
+          requests:
+            cpu: "200m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 15
+          periodSeconds: 20
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: maily-web
+  namespace: maily-test
+  labels:
+    app: maily
+    component: web
+    environment: testing
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: maily
+      component: web
+  template:
+    metadata:
+      labels:
+        app: maily
+        component: web
+    spec:
+      containers:
+      - name: maily-web
+        image: maily/web:v1.0.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 3000
+        env:
+        - name: NODE_ENV
+          value: "testing"
+        - name: API_URL
+          value: "https://test-api.justmaily.com"
+        - name: NEXT_PUBLIC_APP_URL
+          value: "https://test-app.justmaily.com"
+        - name: NEXT_PUBLIC_LANDING_URL
+          value: "https://test.justmaily.com"
+        - name: NEXT_PUBLIC_API_URL
+          value: "https://test-api.justmaily.com"
+        - name: NEXT_PUBLIC_ANALYTICS_URL
+          value: "https://test-analytics.justmaily.com"
+        resources:
+          requests:
+            cpu: "200m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: maily-api
+  namespace: maily-test
+  labels:
+    environment: testing
+spec:
+  selector:
+    app: maily
+    component: api
+  ports:
+  - port: 3000
+    targetPort: 3000
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: maily-web
+  namespace: maily-test
+  labels:
+    environment: testing
+spec:
+  selector:
+    app: maily
+    component: web
+  ports:
+  - port: 3000
+    targetPort: 3000
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: maily-ingress
+  namespace: maily-test
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    kubernetes.io/tls-acme: "true"
+  labels:
+    environment: testing
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - test-api.justmaily.com
+    - test-app.justmaily.com
+    secretName: maily-test-tls
+  rules:
+  - host: test-api.justmaily.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: maily-api
+            port:
+              number: 3000
+  - host: test-app.justmaily.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: maily-web
+            port:
+              number: 3000 
