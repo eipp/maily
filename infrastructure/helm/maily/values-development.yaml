@@ -1,0 +1,208 @@
+# Global values for development
+global:
+  environment: development
+  imageRegistry: ghcr.io/maily
+  imagePullSecrets: []
+  storageClass: standard
+
+# Frontend configuration
+frontend:
+  replicaCount: 1
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+  autoscaling:
+    enabled: false
+
+# Backend API configuration
+backend:
+  replicaCount: 1
+  resources:
+    limits:
+      cpu: 300m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  autoscaling:
+    enabled: false
+
+# Worker configuration
+worker:
+  replicaCount: 1
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+  autoscaling:
+    enabled: false
+
+# PostgreSQL configuration
+postgresql:
+  resources:
+    limits:
+      cpu: 300m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+  persistence:
+    size: 1Gi
+
+# Redis configuration
+redis:
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+  persistence:
+    size: 1Gi
+
+# RabbitMQ configuration
+rabbitmq:
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+  persistence:
+    size: 1Gi
+
+# Ingress configuration
+ingress:
+  enabled: true
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-staging
+  hosts:
+    - host: dev.justmaily.local
+      paths:
+        - path: /
+          pathType: Prefix
+          service: frontend
+          port: 80
+    - host: api.dev.justmaily.local
+      paths:
+        - path: /
+          pathType: Prefix
+          service: backend
+          port: 80
+  tls:
+    - secretName: maily-dev-tls
+      hosts:
+        - dev.justmaily.local
+        - api.dev.justmaily.local
+
+# API Edge Caching configuration
+apiEdgeCaching:
+  enabled: false
+
+# Security configuration
+security:
+  enabled: false
+  waf:
+    enabled: false
+  auditLogging:
+    enabled: false
+  networkPolicies:
+    enabled: false
+
+# Monitoring configuration
+monitoring:
+  enabled: true
+  elk:
+    enabled: false
+  prometheus:
+    replicas: 1
+    retention: 1d
+    resources:
+      limits:
+        cpu: 200m
+        memory: 512Mi
+      requests:
+        cpu: 50m
+        memory: 128Mi
+    persistence:
+      size: 1Gi
+  grafana:
+    replicas: 1
+    resources:
+      limits:
+        cpu: 100m
+        memory: 128Mi
+      requests:
+        cpu: 50m
+        memory: 64Mi
+    persistence:
+      size: 1Gi
+
+# Email Service configuration
+emailService:
+  enabled: false
+
+# Analytics Service configuration
+analyticsService:
+  enabled: false
+
+# AI Service configuration
+aiService:
+  replicas: 1
+  resources:
+    limits:
+      cpu: 500m
+      memory: 1Gi
+    requests:
+      cpu: 200m
+      memory: 512Mi
+  autoscaling:
+    enabled: false
+  memory:
+    persistenceEnabled: false
+
+# AI Operations Configuration
+aiOperations:
+  enabled: false
+
+# Circuit Breaker configuration
+circuitBreaker:
+  enabled: false
+
+# Visualization Service configuration
+visualizationService:
+  enabled: true
+  replicas: 1
+  resources:
+    limits:
+      cpu: 100m
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+  autoscaling:
+    enabled: false
+
+# Cognitive Canvas Feature Flags
+cognitiveCanvas:
+  enabled: true
+  trustVerification: true
+  performanceVisualization: true
+  aiReasoningVisualization: true
+
+# Development Features
+development:
+  enableHotReload: true
+  debugMode: true
+  mockExternalServices: true
+  localDevelopment: true

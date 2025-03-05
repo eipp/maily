@@ -1,5 +1,5 @@
-{{- if .Values.circuitBreaker.enabled }}
-apiVersion: networking.istio.io/v1alpha3
+{{- if or .Values.circuitBreaker.enabled .Values.global.istio.enabled }}
+apiVersion: networking.istio.io/v1beta1
 kind: DestinationRule
 metadata:
   name: {{ include "maily.fullname" . }}-external-services
@@ -17,14 +17,87 @@ spec:
         http1MaxPendingRequests: {{ .Values.circuitBreaker.http1MaxPendingRequests }}
         maxRetries: {{ .Values.circuitBreaker.maxRetries }}
     outlierDetection:
-      consecutiveErrors: {{ .Values.circuitBreaker.consecutiveErrors }}
+      consecutive5xxErrors: {{ .Values.circuitBreaker.consecutiveErrors }}
+      interval: {{ .Values.circuitBreaker.interval }}
+      baseEjectionTime: {{ .Values.circuitBreaker.baseEjectionTime }}
+      maxEjectionPercent: {{ .Values.circuitBreaker.maxEjectionPercent }}
+---
+# Circuit Breaker for API Service
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: {{ include "maily.fullname" . }}-api-cb
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+spec:
+  host: api-service
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: {{ .Values.global.istio.circuitBreaker.api.maxConnections | default .Values.circuitBreaker.maxConnections | default 100 }}
+        connectTimeout: {{ .Values.global.istio.circuitBreaker.api.connectTimeout | default .Values.circuitBreaker.connectTimeout | default "3s" }}
+      http:
+        maxRequestsPerConnection: {{ .Values.global.istio.circuitBreaker.api.maxRequestsPerConnection | default .Values.circuitBreaker.maxRequestsPerConnection | default 10 }}
+        http1MaxPendingRequests: {{ .Values.global.istio.circuitBreaker.api.http1MaxPendingRequests | default .Values.circuitBreaker.http1MaxPendingRequests | default 1000 }}
+        maxRetries: {{ .Values.global.istio.circuitBreaker.api.maxRetries | default .Values.circuitBreaker.maxRetries | default 3 }}
+    outlierDetection:
+      consecutive5xxErrors: {{ .Values.global.istio.circuitBreaker.api.consecutive5xxErrors | default .Values.circuitBreaker.consecutiveErrors | default 5 }}
+      interval: {{ .Values.global.istio.circuitBreaker.api.interval | default .Values.circuitBreaker.interval | default "15s" }}
+      baseEjectionTime: {{ .Values.global.istio.circuitBreaker.api.baseEjectionTime | default .Values.circuitBreaker.baseEjectionTime | default "30s" }}
+      maxEjectionPercent: {{ .Values.global.istio.circuitBreaker.api.maxEjectionPercent | default .Values.circuitBreaker.maxEjectionPercent | default 100 }}
+---
+# Circuit Breaker for AI Service
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: {{ include "maily.fullname" . }}-ai-service-cb
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+spec:
+  host: {{ include "maily.fullname" . }}-ai-service
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: {{ .Values.circuitBreaker.maxConnections }}
+        connectTimeout: {{ .Values.circuitBreaker.connectTimeout }}
+      http:
+        maxRequestsPerConnection: {{ .Values.circuitBreaker.maxRequestsPerConnection }}
+        http1MaxPendingRequests: {{ .Values.circuitBreaker.http1MaxPendingRequests }}
+        maxRetries: {{ .Values.circuitBreaker.maxRetries }}
+    outlierDetection:
+      consecutive5xxErrors: {{ .Values.circuitBreaker.consecutiveErrors }}
+      interval: {{ .Values.circuitBreaker.interval }}
+      baseEjectionTime: {{ .Values.circuitBreaker.baseEjectionTime }}
+      maxEjectionPercent: {{ .Values.circuitBreaker.maxEjectionPercent }}
+---
+# Circuit Breaker for Email Service
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: {{ include "maily.fullname" . }}-email-service-cb
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+spec:
+  host: {{ include "maily.fullname" . }}-email-service
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: {{ .Values.circuitBreaker.maxConnections }}
+        connectTimeout: {{ .Values.circuitBreaker.connectTimeout }}
+      http:
+        maxRequestsPerConnection: {{ .Values.circuitBreaker.maxRequestsPerConnection }}
+        http1MaxPendingRequests: {{ .Values.circuitBreaker.http1MaxPendingRequests }}
+        maxRetries: {{ .Values.circuitBreaker.maxRetries }}
+    outlierDetection:
+      consecutive5xxErrors: {{ .Values.circuitBreaker.consecutiveErrors }}
       interval: {{ .Values.circuitBreaker.interval }}
       baseEjectionTime: {{ .Values.circuitBreaker.baseEjectionTime }}
       maxEjectionPercent: {{ .Values.circuitBreaker.maxEjectionPercent }}
 ---
 # Circuit Breaker for SendGrid API
 {{- if .Values.circuitBreaker.services.sendgrid.enabled }}
-apiVersion: networking.istio.io/v1alpha3
+apiVersion: networking.istio.io/v1beta1
 kind: DestinationRule
 metadata:
   name: {{ include "maily.fullname" . }}-sendgrid
@@ -50,7 +123,7 @@ spec:
 
 # Circuit Breaker for Mailgun API
 {{- if .Values.circuitBreaker.services.mailgun.enabled }}
-apiVersion: networking.istio.io/v1alpha3
+apiVersion: networking.istio.io/v1beta1
 kind: DestinationRule
 metadata:
   name: {{ include "maily.fullname" . }}-mailgun
@@ -76,7 +149,7 @@ spec:
 
 # Circuit Breaker for SMTP Services
 {{- if .Values.circuitBreaker.services.smtp.enabled }}
-apiVersion: networking.istio.io/v1alpha3
+apiVersion: networking.istio.io/v1beta1
 kind: DestinationRule
 metadata:
   name: {{ include "maily.fullname" . }}-smtp
@@ -102,7 +175,7 @@ spec:
 
 # Circuit Breaker for Third-party Analytics API
 {{- if .Values.circuitBreaker.services.analytics.enabled }}
-apiVersion: networking.istio.io/v1alpha3
+apiVersion: networking.istio.io/v1beta1
 kind: DestinationRule
 metadata:
   name: {{ include "maily.fullname" . }}-analytics

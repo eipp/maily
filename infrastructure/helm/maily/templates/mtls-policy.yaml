@@ -1,0 +1,99 @@
+{{- if .Values.global.istio.enabled }}
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: {{ include "maily.fullname" . }}-mtls-policy
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "maily.selectorLabels" . | nindent 6 }}
+  mtls:
+    mode: {{ .Values.global.istio.mtls.mode | default "STRICT" }}
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ include "maily.fullname" . }}-backend-authz
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ include "maily.fullname" . }}-backend
+  rules:
+  - from:
+    - source:
+        principals: ["cluster.local/ns/{{ .Release.Namespace }}/sa/{{ include "maily.fullname" . }}-frontend"]
+    to:
+    - operation:
+        methods: ["GET", "POST", "PUT", "DELETE"]
+        paths: ["/api/*"]
+  - from:
+    - source:
+        principals: ["cluster.local/ns/{{ .Release.Namespace }}/sa/{{ include "maily.fullname" . }}-ai-service"]
+    to:
+    - operation:
+        methods: ["GET", "POST"]
+        paths: ["/api/ai/*", "/api/models/*"]
+  - from:
+    - source:
+        principals: ["cluster.local/ns/{{ .Release.Namespace }}/sa/{{ include "maily.fullname" . }}-email-service"]
+    to:
+    - operation:
+        methods: ["GET", "POST"]
+        paths: ["/api/campaigns/*", "/api/templates/*"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ include "maily.fullname" . }}-ai-service-authz
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ include "maily.fullname" . }}-ai-service
+  rules:
+  - from:
+    - source:
+        principals: ["cluster.local/ns/{{ .Release.Namespace }}/sa/{{ include "maily.fullname" . }}-backend"]
+    to:
+    - operation:
+        methods: ["GET", "POST"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ include "maily.fullname" . }}-email-service-authz
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ include "maily.fullname" . }}-email-service
+  rules:
+  - from:
+    - source:
+        principals: ["cluster.local/ns/{{ .Release.Namespace }}/sa/{{ include "maily.fullname" . }}-backend"]
+    to:
+    - operation:
+        methods: ["GET", "POST"]
+---
+# Default policy with PERMISSIVE mode to allow cross-namespace communication
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: {{ include "maily.fullname" . }}-default-policy
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+spec:
+  mtls:
+    mode: {{ .Values.global.istio.mtls.defaultMode | default "PERMISSIVE" }}
+{{- end }}

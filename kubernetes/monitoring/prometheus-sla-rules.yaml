@@ -129,3 +129,119 @@ spec:
         summary: "Email delivery time above 60s"
         description: "The 95th percentile email delivery time is {{ $value | humanizeDuration }} over the last 15 minutes, which is above the SLA target of 60s."
         runbook_url: "https://wiki.mailyapp.com/runbooks/email-delivery-issues"
+    
+  - name: maily-ai-service-slas
+    rules:
+    # Recording rules for AI Service metrics
+    - record: maily:sla:ai_service_response_time:5m
+      expr: histogram_quantile(0.95, sum(rate(ai_service_response_duration_seconds_bucket[5m])) by (le, model))
+    
+    - record: maily:sla:ai_service_success_rate:5m
+      expr: sum(rate(ai_service_requests_total{status="success"}[5m])) / sum(rate(ai_service_requests_total[5m]))
+    
+    - record: maily:sla:ai_service_token_usage:1h
+      expr: sum(increase(ai_service_token_usage_total[1h])) by (model)
+    
+    - record: maily:sla:ai_service_cost:1h
+      expr: sum(increase(ai_service_cost_dollars_total[1h])) by (model)
+    
+    # AI Service alerts
+    - alert: MailyAIServiceResponseTimeSlow
+      expr: maily:sla:ai_service_response_time:5m{model=~"gpt-4|claude-3"} > 2.5
+      for: 10m
+      labels:
+        severity: warning
+        service: ai_service
+        sla: response_time
+      annotations:
+        summary: "AI service response time above 2.5s"
+        description: "The {{ $labels.model }} model has a 95th percentile response time of {{ $value | humanizeDuration }} over the last 10 minutes, which is above the SLA target of 2.5s."
+        runbook_url: "https://wiki.mailyapp.com/runbooks/ai-service-issues"
+    
+    - alert: MailyAIServiceErrorRateHigh
+      expr: maily:sla:ai_service_success_rate:5m < 0.95
+      for: 10m
+      labels:
+        severity: warning
+        service: ai_service
+        sla: success_rate
+      annotations:
+        summary: "AI service success rate below 95%"
+        description: "The AI service success rate is {{ $value | humanizePercentage }} over the last 10 minutes, which is below the SLA target of 95%."
+        runbook_url: "https://wiki.mailyapp.com/runbooks/ai-service-issues"
+    
+    - alert: MailyAIServiceCostHigh
+      expr: sum(maily:sla:ai_service_cost:1h) > 200
+      for: 1h
+      labels:
+        severity: warning
+        service: ai_service
+        sla: cost
+      annotations:
+        summary: "AI service cost above $200/hour"
+        description: "The AI service cost is ${{ $value }} over the last hour, which is above the threshold of $200/hour."
+        runbook_url: "https://wiki.mailyapp.com/runbooks/ai-service-cost-issues"
+    
+    - alert: MailyAIServiceCostCritical
+      expr: sum(maily:sla:ai_service_cost:1h) > 500
+      for: 30m
+      labels:
+        severity: critical
+        service: ai_service
+        sla: cost
+      annotations:
+        summary: "AI service cost above $500/hour"
+        description: "The AI service cost is ${{ $value }} over the last hour, which is above the critical threshold of $500/hour."
+        runbook_url: "https://wiki.mailyapp.com/runbooks/ai-service-cost-issues"
+    
+  - name: maily-canvas-slas
+    rules:
+    # Recording rules for Canvas service metrics
+    - record: maily:sla:canvas_generation_time:5m
+      expr: histogram_quantile(0.95, sum(rate(canvas_generation_duration_seconds_bucket[5m])) by (le, type))
+    
+    - record: maily:sla:canvas_verification_success:5m
+      expr: sum(rate(canvas_verification_total{status="verified"}[5m])) / sum(rate(canvas_verification_total[5m]))
+    
+    - record: maily:sla:canvas_collaboration_users:5m
+      expr: avg(canvas_active_collaborators) by (canvas_id)
+    
+    - record: maily:sla:canvas_real_time_latency:5m
+      expr: histogram_quantile(0.95, sum(rate(canvas_update_propagation_seconds_bucket[5m])) by (le))
+    
+    # Canvas Service alerts
+    - alert: MailyCanvasGenerationTimeSlow
+      expr: maily:sla:canvas_generation_time:5m > 3
+      for: 10m
+      labels:
+        severity: warning
+        service: canvas_service
+        sla: generation_time
+      annotations:
+        summary: "Canvas generation time above 3s"
+        description: "The {{ $labels.type }} canvas has a 95th percentile generation time of {{ $value | humanizeDuration }} over the last 10 minutes, which is above the SLA target of 3s."
+        runbook_url: "https://wiki.mailyapp.com/runbooks/canvas-service-issues"
+    
+    - alert: MailyCanvasVerificationRateLow
+      expr: maily:sla:canvas_verification_success:5m < 0.9
+      for: 15m
+      labels:
+        severity: warning
+        service: canvas_service
+        sla: verification_success
+      annotations:
+        summary: "Canvas verification success rate below 90%"
+        description: "The canvas verification success rate is {{ $value | humanizePercentage }} over the last 15 minutes, which is below the SLA target of 90%."
+        runbook_url: "https://wiki.mailyapp.com/runbooks/canvas-verification-issues"
+    
+    - alert: MailyCanvasRealTimeLatencyHigh
+      expr: maily:sla:canvas_real_time_latency:5m > 0.5
+      for: 10m
+      labels:
+        severity: warning
+        service: canvas_service
+        sla: real_time_latency
+      annotations:
+        summary: "Canvas real-time update latency above 500ms"
+        description: "The canvas real-time update propagation has a 95th percentile latency of {{ $value | humanizeDuration }} over the last 10 minutes, which is above the SLA target of 500ms."
+        runbook_url: "https://wiki.mailyapp.com/runbooks/canvas-collaboration-issues"

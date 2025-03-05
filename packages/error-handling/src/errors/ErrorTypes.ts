@@ -2,6 +2,30 @@
  * Type definitions for error handling
  */
 
+// Error severity levels
+export enum ErrorSeverity {
+  LOW = 'low',
+  MEDIUM = 'medium',
+  HIGH = 'high',
+  CRITICAL = 'critical'
+}
+
+// Error categories
+export enum ErrorCategory {
+  VALIDATION = 'validation',
+  AUTHENTICATION = 'authentication',
+  AUTHORIZATION = 'authorization',
+  NOT_FOUND = 'not_found',
+  CONFLICT = 'conflict',
+  EXTERNAL_SERVICE = 'external_service',
+  DATABASE = 'database',
+  NETWORK = 'network',
+  TIMEOUT = 'timeout',
+  RATE_LIMIT = 'rate_limit',
+  INTERNAL = 'internal',
+  UNKNOWN = 'unknown'
+}
+
 /**
  * Standard error response format
  */
@@ -12,6 +36,8 @@ export interface ErrorResponse {
     statusCode: number;
     details?: Record<string, any>;
     traceId?: string;
+    severity?: ErrorSeverity;
+    category?: ErrorCategory;
   };
 }
 

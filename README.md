@@ -5,11 +5,13 @@ Maily is an AI-powered email campaign platform with advanced features including 
 ## 🚀 Features
 
 - **AI Mesh Network**: Collaborative AI agents working together on complex tasks
+- **Cognitive Canvas**: Interactive canvas with real-time collaboration and layer management
 - **Email Campaign Management**: Create, send, and track email campaigns
 - **Analytics Dashboard**: Real-time insights and performance metrics
 - **Template Library**: Customizable email templates
 - **Trust Verification**: Blockchain-based verification of email campaigns
 - **Multi-platform Integration**: Connect with various marketing platforms
+- **Service Mesh**: Istio-based service mesh with mutual TLS and traffic management
 
 ## 📋 Project Structure
 
@@ -117,17 +119,33 @@ npm run build --filter=web
 
 ### Deployment
 
-Deployment is handled through Kubernetes:
+Deployment is handled through Kubernetes using a unified command-line tool with phased deployment capabilities and service mesh integration:
 
 ```bash
-# Deploy to staging
-scripts/deploy/staging.sh
+# Deploy to staging with service mesh
+./mailyctl.py phased-deploy --env=staging
 
 # Deploy to production
-scripts/deploy/production.sh
+./mailyctl.py phased-deploy --env=production
+
+# Deploy as canary with 10% traffic weight
+./mailyctl.py phased-deploy --env=production --canary --canary-weight=10
+
+# Deploy with custom service mesh version
+./mailyctl.py phased-deploy --env=staging --version=1.2.0
+
+# Verify service mesh configuration
+./mailyctl.py verify-mesh --env=staging --component=api
 ```
 
-For detailed deployment instructions, see the [Production Deployment Guide](docs/production-deployment-guide.md).
+The deployment includes:
+- Automated service mesh configuration with Istio
+- Mutual TLS for secure service communication
+- Circuit breakers for resilience
+- Retry policies and timeout configuration
+- Observability dashboards for service mesh metrics
+
+For detailed deployment instructions, see the [Production Deployment Guide](docs/production-deployment-guide.md) and [Helm Chart README](infrastructure/helm/maily/README.md).
 
 ## 🤝 Contributing
 

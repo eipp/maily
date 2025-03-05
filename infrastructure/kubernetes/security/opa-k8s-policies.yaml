@@ -1,0 +1,350 @@
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8sresourcelimits
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sResourceLimits
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            cpu:
+              type: object
+              properties:
+                min:
+                  type: string
+                max:
+                  type: string
+            memory:
+              type: object
+              properties:
+                min:
+                  type: string
+                max:
+                  type: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package kubernetes.resourcelimits
+
+        import data.kubernetes.resourcelimits
+
+        missing(obj, field) = true {
+          not obj[field]
+        }
+        
+        missing(obj, field) = true {
+          obj[field] == ""
+        }
+
+        # Helper function to parse CPU/memory values
+        get_quantity(value) = num {
+          contains(value, "m")
+          trimmed = replace(value, "m", "")
+          num = to_number(trimmed) / 1000
+        }
+        
+        get_quantity(value) = num {
+          contains(value, "Mi")
+          trimmed = replace(value, "Mi", "")
+          num = to_number(trimmed)
+        }
+        
+        get_quantity(value) = num {
+          not contains(value, "m")
+          not contains(value, "Mi")
+          num = to_number(value)
+        }
+
+        # Check for required resource limits
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          missing(container.resources, "limits")
+          msg := sprintf("Container %s has no resource limits", [container.name])
+        }
+        
+        # Check CPU limits within range
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          not missing(container.resources, "limits")
+          not missing(container.resources.limits, "cpu")
+          
+          # Get CPU limit
+          cpu := container.resources.limits.cpu
+          cpu_quantity := get_quantity(cpu)
+          
+          # Check against min
+          input.parameters.cpu.min
+          min_cpu := get_quantity(input.parameters.cpu.min)
+          cpu_quantity < min_cpu
+          
+          msg := sprintf("Container %s CPU limit (%s) is below the minimum (%s)", [
+            container.name, cpu, input.parameters.cpu.min
+          ])
+        }
+        
+        # Check CPU limits within range (max)
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          not missing(container.resources, "limits")
+          not missing(container.resources.limits, "cpu")
+          
+          # Get CPU limit
+          cpu := container.resources.limits.cpu
+          cpu_quantity := get_quantity(cpu)
+          
+          # Check against max
+          input.parameters.cpu.max
+          max_cpu := get_quantity(input.parameters.cpu.max)
+          cpu_quantity > max_cpu
+          
+          msg := sprintf("Container %s CPU limit (%s) is above the maximum (%s)", [
+            container.name, cpu, input.parameters.cpu.max
+          ])
+        }
+        
+        # Check memory limits within range (min)
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          not missing(container.resources, "limits")
+          not missing(container.resources.limits, "memory")
+          
+          # Get memory limit
+          memory := container.resources.limits.memory
+          memory_quantity := get_quantity(memory)
+          
+          # Check against min
+          input.parameters.memory.min
+          min_memory := get_quantity(input.parameters.memory.min)
+          memory_quantity < min_memory
+          
+          msg := sprintf("Container %s memory limit (%s) is below the minimum (%s)", [
+            container.name, memory, input.parameters.memory.min
+          ])
+        }
+        
+        # Check memory limits within range (max)
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          not missing(container.resources, "limits")
+          not missing(container.resources.limits, "memory")
+          
+          # Get memory limit
+          memory := container.resources.limits.memory
+          memory_quantity := get_quantity(memory)
+          
+          # Check against max
+          input.parameters.memory.max
+          max_memory := get_quantity(input.parameters.memory.max)
+          memory_quantity > max_memory
+          
+          msg := sprintf("Container %s memory limit (%s) is above the maximum (%s)", [
+            container.name, memory, input.parameters.memory.max
+          ])
+        }
+
+---
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8srequiredlabels
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sRequiredLabels
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            labels:
+              type: array
+              items:
+                type: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package kubernetes.requiredlabels
+        
+        violation[{"msg": msg}] {
+          input.review.object.kind == "Deployment"
+          resource := input.review.object
+          label := input.parameters.labels[_]
+          not resource.metadata.labels[label]
+          msg := sprintf("Deployment %s in namespace %s is missing required label %s", [
+            resource.metadata.name, 
+            resource.metadata.namespace, 
+            label
+          ])
+        }
+        
+        violation[{"msg": msg}] {
+          input.review.object.kind == "Service"
+          resource := input.review.object
+          label := input.parameters.labels[_]
+          not resource.metadata.labels[label]
+          msg := sprintf("Service %s in namespace %s is missing required label %s", [
+            resource.metadata.name, 
+            resource.metadata.namespace, 
+            label
+          ])
+        }
+        
+        violation[{"msg": msg}] {
+          input.review.object.kind == "ConfigMap"
+          resource := input.review.object
+          label := input.parameters.labels[_]
+          not resource.metadata.labels[label]
+          msg := sprintf("ConfigMap %s in namespace %s is missing required label %s", [
+            resource.metadata.name, 
+            resource.metadata.namespace, 
+            label
+          ])
+        }
+
+---
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8shealthchecks
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sHealthChecks
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package kubernetes.healthchecks
+        
+        violation[{"msg": msg}] {
+          input.review.object.kind == "Deployment"
+          deployment := input.review.object
+          container := deployment.spec.template.spec.containers[_]
+          
+          # Check for missing readiness probe
+          not container.readinessProbe
+          
+          msg := sprintf("Container %s in Deployment %s is missing a readiness probe", [
+            container.name, 
+            deployment.metadata.name
+          ])
+        }
+        
+        violation[{"msg": msg}] {
+          input.review.object.kind == "Deployment"
+          deployment := input.review.object
+          container := deployment.spec.template.spec.containers[_]
+          
+          # Check for missing liveness probe
+          not container.livenessProbe
+          
+          msg := sprintf("Container %s in Deployment %s is missing a liveness probe", [
+            container.name, 
+            deployment.metadata.name
+          ])
+        }
+
+---
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8snetworkpolicies
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sNetworkPolicies
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package kubernetes.networkpolicies
+        
+        # Get all namespaces that have pods
+        namespace_has_pods[namespace] {
+          input.review.object.kind == "Pod"
+          namespace := input.review.object.metadata.namespace
+        }
+        
+        # Get all namespaces that have network policies
+        namespace_has_networkpolicy[namespace] {
+          input.review.object.kind == "NetworkPolicy"
+          namespace := input.review.object.metadata.namespace
+        }
+        
+        # Verify namespaces with pods have a network policy
+        violation[{"msg": msg}] {
+          namespace := namespace_has_pods[_]
+          not namespace_has_networkpolicy[namespace]
+          msg := sprintf("Namespace %s has pods but does not have a NetworkPolicy", [
+            namespace
+          ])
+        }
+
+---
+# Apply the resource limits constraint
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sResourceLimits
+metadata:
+  name: maily-container-limits
+spec:
+  match:
+    kinds:
+      - apiGroups: ["apps"]
+        kinds: ["Deployment"]
+    excludedNamespaces: ["kube-system", "gatekeeper-system"]
+  parameters:
+    cpu:
+      min: "50m"
+      max: "2000m"
+    memory:
+      min: "64Mi"
+      max: "4096Mi"
+
+---
+# Apply the required labels constraint
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sRequiredLabels
+metadata:
+  name: maily-deployment-labels
+spec:
+  match:
+    kinds:
+      - apiGroups: ["apps"]
+        kinds: ["Deployment"]
+    excludedNamespaces: ["kube-system", "gatekeeper-system"]
+  parameters:
+    labels:
+      - "app.kubernetes.io/name"
+      - "app.kubernetes.io/part-of"
+      - "app.kubernetes.io/version"
+      - "environment"
+
+---
+# Apply the health checks constraint
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sHealthChecks
+metadata:
+  name: maily-deployment-healthchecks
+spec:
+  match:
+    kinds:
+      - apiGroups: ["apps"]
+        kinds: ["Deployment"]
+    excludedNamespaces: ["kube-system", "gatekeeper-system"]
+
+---
+# Apply the network policies constraint
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sNetworkPolicies
+metadata:
+  name: maily-namespace-networkpolicies
+spec:
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod", "NetworkPolicy"]
+    excludedNamespaces: ["kube-system", "gatekeeper-system", "cert-manager"]

@@ -4,6 +4,78 @@ global:
   imageRegistry: ghcr.io/maily
   imagePullSecrets: []
   storageClass: standard
+  
+  # Istio Service Mesh Configuration
+  istio:
+    enabled: true
+    version: "1.19.3"
+    gateway: "istio-system/maily-gateway"
+    mtls:
+      mode: "STRICT"
+      defaultMode: "PERMISSIVE"
+    timeout:
+      api: "15s"
+      ai: "30s"
+      email: "20s"
+      web: "10s"
+    retries:
+      api:
+        attempts: 3
+        perTryTimeout: "2s"
+        retryOn: "connect-failure,refused-stream,gateway-error,5xx"
+      ai:
+        attempts: 2
+        perTryTimeout: "5s"
+        retryOn: "connect-failure,refused-stream,5xx"
+      email:
+        attempts: 3
+        perTryTimeout: "3s"
+        retryOn: "connect-failure,refused-stream,5xx"
+    circuitBreaker:
+      api:
+        maxConnections: 100
+        connectTimeout: "3s"
+        maxRequestsPerConnection: 10
+        http1MaxPendingRequests: 1000
+        maxRetries: 3
+        consecutive5xxErrors: 5
+        interval: "15s"
+        baseEjectionTime: "30s"
+        maxEjectionPercent: 100
+      ai:
+        maxConnections: 50
+        connectTimeout: "5s"
+        maxRequestsPerConnection: 5
+        http1MaxPendingRequests: 500
+        maxRetries: 2
+        consecutive5xxErrors: 3
+        interval: "10s"
+        baseEjectionTime: "60s" 
+        maxEjectionPercent: 50
+      email:
+        maxConnections: 75
+        connectTimeout: "3s"
+        maxRequestsPerConnection: 10
+        http1MaxPendingRequests: 750
+        maxRetries: 3
+        consecutive5xxErrors: 5
+        interval: "15s"
+        baseEjectionTime: "30s"
+        maxEjectionPercent: 80
+      web:
+        maxConnections: 200
+        connectTimeout: "2s"
+        maxRequestsPerConnection: 0
+        http1MaxPendingRequests: 2000
+        maxRetries: 1
+        consecutive5xxErrors: 10
+        interval: "30s"
+        baseEjectionTime: "15s"
+        maxEjectionPercent: 50
+    canary:
+      enabled: false
+      host: "api.maily.app"
+      weight: 10
 
 # Frontend configuration
 frontend:
@@ -29,7 +101,7 @@ frontend:
     minReplicas: 3
     maxReplicas: 10
     targetCPUUtilizationPercentage: 80
-    {{ PAGERDUTY_SERVICE_KEY }}e: 80
+    targetMemoryUtilizationPercentage: 80
   nodeSelector: {}
   tolerations: []
   affinity: {}
@@ -61,7 +133,7 @@ backend:
     minReplicas: 3
     maxReplicas: 10
     targetCPUUtilizationPercentage: 80
-    {{ PAGERDUTY_SERVICE_KEY }}e: 80
+    targetMemoryUtilizationPercentage: 80
   nodeSelector: {}
   tolerations: []
   affinity: {}
@@ -98,7 +170,7 @@ worker:
     minReplicas: 3
     maxReplicas: 10
     targetCPUUtilizationPercentage: 80
-    {{ PAGERDUTY_SERVICE_KEY }}e: 80
+    targetMemoryUtilizationPercentage: 80
   nodeSelector: {}
   tolerations: []
   affinity: {}
@@ -296,7 +368,7 @@ apiEdgeCaching:
     minReplicas: 2
     maxReplicas: 10
     targetCPUUtilizationPercentage: 70
-    {{ PAGERDUTY_SERVICE_KEY }}e: 70
+    targetMemoryUtilizationPercentage: 70
   nodeSelector: {}
   tolerations: []
   affinity: {}
@@ -495,6 +567,54 @@ circuitBreaker:
     analytics:
       action: "log"
 
+# Istio Service Mesh configuration
+istio:
+  enabled: true
+  backend:
+    subset: v1
+    timeout: "10s"
+    retries:
+      attempts: 3
+      perTryTimeout: "2s"
+      retryOn: "gateway-error,connect-failure,refused-stream,5xx"
+  aiService:
+    subset: v1
+    timeout: "30s"
+    retries:
+      attempts: 3
+      perTryTimeout: "2s"
+      retryOn: "gateway-error,connect-failure,refused-stream,5xx"
+  emailService:
+    subset: v1
+    timeout: "15s"
+    retries:
+      attempts: 3
+      perTryTimeout: "2s"
+      retryOn: "gateway-error,connect-failure,refused-stream,5xx"
+  canary:
+    enabled: false
+    backend:
+      weight: 10
+    aiService:
+      weight: 5
+    emailService:
+      weight: 5
+  mtls:
+    mode: STRICT  # PERMISSIVE, STRICT, DISABLE
+  metrics:
+    enabled: true
+    prometheus:
+      enabled: true
+    grafana:
+      enabled: true
+    dashboards:
+      - name: maily-service-mesh
+        url: https://grafana.com/grafana/dashboards/7639
+      - name: maily-istio-workload
+        url: https://grafana.com/grafana/dashboards/7636
+      - name: maily-istio-service
+        url: https://grafana.com/grafana/dashboards/7636
+
 # Incident Response Automation configuration
 incidentResponse:
   enabled: true
@@ -517,7 +637,7 @@ incidentResponse:
     connectionPoolIncrease: 10
   notifications:
     slackWebhook: "https://hooks.slack.com/services/XXXXX/YYYYY/ZZZZZ"
-    pagerDutyServiceKey: "{{ PAGERDUTY_SERVICE_KEY }}"
+    pagerDutyServiceKey: ""
     emailNotifications: "ops@justmaily.com"
     cloudSupportEmail: "support@cloud-provider.com"
 

@@ -345,25 +345,52 @@ def trace_function(name: Optional[str] = None, kind: trace.SpanKind = trace.Span
     return decorator
 
 
-def setup_tracing(app: FastAPI,
+def setup_tracing(app_or_service_name, 
                   db_engine=None,
                   redis_client=None,
                   enable_logging_integration=True):
     """
-    Set up tracing for a FastAPI application
+    Set up tracing for a FastAPI application or a service
 
     Args:
-        app: FastAPI application
+        app_or_service_name: FastAPI application or service name string
         db_engine: Optional SQLAlchemy engine to instrument
         redis_client: Optional Redis client to instrument
         enable_logging_integration: Whether to integrate with logging
 
     Returns:
-        The instrumented application
+        The instrumented application or tracer instance
     """
     # Initialize tracing provider
     tracer_provider = MailyTracerProvider()
-
+    
+    # If a string is provided instead of an app, set up tracing for a service component
+    if isinstance(app_or_service_name, str):
+        # Update the SERVICE_NAME for this tracer
+        global SERVICE_NAME
+        SERVICE_NAME = app_or_service_name
+        
+        # Instrument requests and httpx
+        RequestsInstrumentor().instrument()
+        HTTPXInstrumentor().instrument()
+        
+        # Instrument Redis if provided
+        if redis_client:
+            RedisInstrumentor().instrument(client=redis_client)
+        
+        # Integrate with logging system
+        if enable_logging_integration:
+            LoggingInstrumentor().instrument(
+                set_logging_format=True,
+                log_level=logging.INFO,
+            )
+            
+        logger.info(f"Tracing setup complete for service: {SERVICE_NAME}")
+        return tracer_provider.tracer
+    
+    # If an app is provided, set up tracing for the app
+    app = app_or_service_name
+    
     # Add custom middleware
     app.add_middleware(TracingMiddleware)
 
@@ -397,7 +424,7 @@ def setup_tracing(app: FastAPI,
     async def shutdown_tracing():
         tracer_provider.trace_provider.shutdown()
 
-    logger.info("Tracing setup complete")
+    logger.info("Tracing setup complete for FastAPI application")
     return app
 
 
@@ -452,6 +479,157 @@ def record_span_exception(exception: Exception, escaped: bool = False):
     span = get_current_span()
     if span:
         span.record_exception(exception, escaped=escaped)
+
+
+def create_canvas_visualization_span(canvas_id: str, user_id: Optional[str] = None, 
+                                   layer_id: Optional[str] = None, context: Dict[str, Any] = None) -> Span:
+    """
+    Create a specialized span for canvas visualization operations
+    
+    Args:
+        canvas_id: ID of the canvas being visualized
+        user_id: Optional user ID
+        layer_id: Optional layer ID if working with a specific layer
+        context: Additional context information
+        
+    Returns:
+        Created span
+    """
+    tracer = MailyTracerProvider().tracer
+    span_name = f"canvas.visualization.{layer_id if layer_id else 'all'}"
+    
+    span = tracer.start_span(span_name)
+    
+    # Add standardized attributes
+    span.set_attribute("canvas.id", canvas_id)
+    if user_id:
+        span.set_attribute("user.id", user_id)
+    if layer_id:
+        span.set_attribute("visualization.layer.id", layer_id)
+    
+    # Add additional context if provided
+    if context:
+        for key, value in context.items():
+            if not _is_sensitive_param(key):
+                span.set_attribute(f"context.{key}", str(value))
+    
+    return span
+
+
+def create_websocket_span(operation: str, room_id: Optional[str] = None, 
+                         message_type: Optional[str] = None, user_id: Optional[str] = None) -> Span:
+    """
+    Create a specialized span for WebSocket operations
+    
+    Args:
+        operation: Type of WebSocket operation (connect, message, broadcast, etc.)
+        room_id: Optional room/channel ID
+        message_type: Optional message type identifier
+        user_id: Optional user ID
+        
+    Returns:
+        Created span
+    """
+    tracer = MailyTracerProvider().tracer
+    span_name = f"websocket.{operation}"
+    
+    span = tracer.start_span(span_name, kind=trace.SpanKind.PRODUCER)
+    
+    # Add standardized attributes
+    span.set_attribute("websocket.operation", operation)
+    if room_id:
+        span.set_attribute("websocket.room_id", room_id)
+    if message_type:
+        span.set_attribute("websocket.message_type", message_type)
+    if user_id:
+        span.set_attribute("user.id", user_id)
+    
+    return span
+
+
+def trace_canvas_operation(canvas_id: str, operation_type: str):
+    """
+    Decorator for tracing canvas operations
+    
+    Args:
+        canvas_id: Canvas ID template (can include "{0}" to be replaced with the first argument)
+        operation_type: Type of operation (render, save, export, etc.)
+    
+    Returns:
+        Decorator function
+    """
+    def decorator(func):
+        @wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            # Get the actual canvas_id, replacing template if needed
+            actual_canvas_id = canvas_id
+            if "{0}" in canvas_id and len(args) > 0:
+                actual_canvas_id = canvas_id.format(args[0])
+                
+            # If canvas_id is a kwarg, use that instead
+            if "canvas_id" in kwargs:
+                actual_canvas_id = kwargs["canvas_id"]
+                
+            # Determine user_id if available
+            user_id = kwargs.get("user_id", None)
+            
+            # Create the span
+            tracer = MailyTracerProvider().tracer
+            with tracer.start_as_current_span(
+                f"canvas.{operation_type}.{func.__name__}",
+                kind=trace.SpanKind.INTERNAL
+            ) as span:
+                span.set_attribute("canvas.id", actual_canvas_id)
+                span.set_attribute("canvas.operation", operation_type)
+                
+                if user_id:
+                    span.set_attribute("user.id", user_id)
+                
+                try:
+                    return await func(*args, **kwargs)
+                except Exception as e:
+                    span.record_exception(e)
+                    span.set_status(Status(StatusCode.ERROR, str(e)))
+                    raise
+                    
+        @wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            # Get the actual canvas_id, replacing template if needed
+            actual_canvas_id = canvas_id
+            if "{0}" in canvas_id and len(args) > 0:
+                actual_canvas_id = canvas_id.format(args[0])
+                
+            # If canvas_id is a kwarg, use that instead
+            if "canvas_id" in kwargs:
+                actual_canvas_id = kwargs["canvas_id"]
+                
+            # Determine user_id if available
+            user_id = kwargs.get("user_id", None)
+            
+            # Create the span
+            tracer = MailyTracerProvider().tracer
+            with tracer.start_as_current_span(
+                f"canvas.{operation_type}.{func.__name__}",
+                kind=trace.SpanKind.INTERNAL
+            ) as span:
+                span.set_attribute("canvas.id", actual_canvas_id)
+                span.set_attribute("canvas.operation", operation_type)
+                
+                if user_id:
+                    span.set_attribute("user.id", user_id)
+                
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    span.record_exception(e)
+                    span.set_status(Status(StatusCode.ERROR, str(e)))
+                    raise
+                    
+        if asyncio.iscoroutinefunction(func):
+            return async_wrapper
+        return sync_wrapper
+            
+    return decorator
 
 
 # Import at the end to avoid circular imports

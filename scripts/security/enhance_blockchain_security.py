@@ -552,7 +552,15 @@ class BlockchainSecurityEnhancer:
 
         if vault_service_path.exists():
             logger.info(f"Vault service already exists at {vault_service_path}")
-            # TODO: Update existing vault service if needed
+            # Update existing vault service
+            existing_code = vault_service_path.read_text()
+            if "rotate_key" not in existing_code:
+                logger.info("Updating existing Vault service with key rotation functionality")
+                if not self.dry_run:
+                    vault_service_path.write_text(VAULT_SERVICE_CODE)
+                    self.files_updated += 1
+                else:
+                    self._log(f"Would update Vault service at {vault_service_path} (dry run)")
         else:
             logger.info(f"Creating Vault service at {vault_service_path}")
             if not self.dry_run:

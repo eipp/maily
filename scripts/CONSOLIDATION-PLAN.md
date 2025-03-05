@@ -9,13 +9,11 @@ This document outlines the comprehensive plan for reorganizing and consolidating
 ```
 scripts/
 ├── core/                   # Core deployment scripts
-│   ├── maily-deploy.sh
 │   ├── deployment-validator.sh
 │   ├── config-collector.sh
-│   ├── update-image-tags.sh
-│   ├── phase1-staging.sh
-│   ├── phase2-prod-initial.sh
-│   └── phase3-prod-full.sh
+│   └── update-image-tags.sh
+│
+# NOTE: Deployment scripts (maily-deploy.sh and phase*.sh) have been consolidated into the root-level mailyctl.py script
 │
 ├── testing/                # Testing frameworks
 │   ├── smoke-test.js
@@ -34,8 +32,9 @@ scripts/
 │
 ├── security/               # Security scanning tools
 │   ├── security-scan.sh    # Consolidated scanning tool
-│   ├── secret-rotation.sh
 │   ├── create-k8s-secrets.sh
+│
+# NOTE: Secret rotation functionality has been consolidated into the root-level mailyctl.py script
 │   ├── setup-auth-security.sh
 │   ├── zap-scan.sh
 │   ├── enhance_blockchain_security.py
@@ -98,6 +97,22 @@ scripts/
 ## Script Consolidations
 
 The following scripts have been consolidated into more comprehensive utilities:
+
+### Main CLI Tool Consolidation
+| Original Scripts | Consolidated Into |
+|------------------|------------------|
+| scripts/core/maily-deploy.sh | mailyctl.py (phased-deploy command) |
+| scripts/core/deploy-phases/* | mailyctl.py (phased-deploy command) |
+| vault/scripts/auto-rotate-secrets.py | mailyctl.py (secrets rotate command) |
+| system/verifiers/service-mesh-verifier.js | mailyctl.py (verify-mesh command) |
+
+The consolidated mailyctl.py script provides a unified CLI interface for:
+- Regular deployments and rollbacks
+- Phased deployments with multiple environments
+- Canary deployment capabilities
+- Secret rotation with Vault integration
+- Service mesh verification
+- Status monitoring and logging
 
 ### Security Scanning
 | Original Scripts | Consolidated Into |

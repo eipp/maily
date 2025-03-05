@@ -42,6 +42,7 @@ run_migrations() {
     echo -e "${GREEN}Running database migrations...${NC}"
     
     # Check database connection
+    echo "Checking database connection to staging database..."
     DATABASE_URL=${DATABASE_URL} node -e "
         const { Client } = require('pg');
         const client = new Client({
@@ -60,15 +61,19 @@ run_migrations() {
     
     # Run SQL migrations
     echo "Running SQL migrations..."
-    cd migrations/sql
-    for sql_file in $(find . -name "*.sql" | sort); do
-        echo "Applying migration: $sql_file"
-        PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -U $DB_USER -d $DB_NAME -f $sql_file || { 
-            echo -e "${RED}Error: Failed to apply migration $sql_file${NC}"
-            exit 1
-        }
-    done
-    cd ../..
+    if [ -d "migrations/sql" ]; then
+        cd migrations/sql
+        for sql_file in $(find . -name "*.sql" | sort); do
+            echo "Applying migration: $sql_file"
+            PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -U $DB_USER -d $DB_NAME -f $sql_file || { 
+                echo -e "${RED}Error: Failed to apply migration $sql_file${NC}"
+                exit 1
+            }
+        done
+        cd ../..
+    else
+        echo "No SQL migrations directory found. Skipping SQL migrations."
+    fi
     
     # Run Prisma migrations if needed
     if [ -f "prisma/schema.prisma" ]; then

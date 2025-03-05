@@ -31,13 +31,16 @@ This document lists the scripts that have been made redundant by the consolidati
 | `scripts/validate-migrations.js` | `scripts/database/manage-migrations.sh` | Migration validation is now performed by the consolidated migration manager. |
 | `scripts/consolidate-migrations.sh` | `scripts/database/manage-migrations.sh` | Migration consolidation is now available as an operation in the migration manager. |
 
-## Deployment Phase Scripts
+## Unified CLI Tool Migration
 
 | Redundant Script | Replaced By | Reason |
 |------------------|-------------|--------|
-| `scripts/deploy-phases/phase1-staging.sh` | `scripts/core/phase1-staging.sh` | Moved to the core scripts directory to better organize deployment scripts. |
-| `scripts/deploy-phases/phase2-prod-initial.sh` | `scripts/core/phase2-prod-initial.sh` | Relocated to improve script organization and maintainability. |
-| `scripts/deploy-phases/phase3-prod-full.sh` | `scripts/core/phase3-prod-full.sh` | Relocated to the core scripts directory to follow the new organization structure. |
+| `scripts/core/maily-deploy.sh` | `mailyctl.py phased-deploy` | Consolidated into the unified CLI tool with enhanced functionality and better parameter handling. |
+| `scripts/core/deploy-phases/phase1-staging.sh` | `mailyctl.py phased-deploy` | Integrated into the phased deployment command of the unified CLI tool. |
+| `scripts/core/deploy-phases/phase2-prod-initial.sh` | `mailyctl.py phased-deploy` | Integrated into the phased deployment command with consistent parameter handling. |
+| `scripts/core/deploy-phases/phase3-prod-full.sh` | `mailyctl.py phased-deploy` | Integrated into the phased deployment command with improved error handling. |
+| `vault/scripts/auto-rotate-secrets.py` | `mailyctl.py secrets rotate` | Secret rotation functionality consolidated into the unified CLI tool. |
+| `system/verifiers/service-mesh-verifier.js` | `mailyctl.py verify-mesh` | Service mesh verification functionality moved to the Python-based unified CLI tool. |
 
 ## Safe Cleanup Process
 

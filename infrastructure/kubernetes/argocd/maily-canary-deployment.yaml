@@ -1,0 +1,204 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: maily-canary
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    # Enable analysis on the canary rollout
+    "argocd-image-updater.argoproj.io/image-list": "maily-api=ghcr.io/maily/api,maily-web=ghcr.io/maily/web,maily-ai-service=ghcr.io/maily/ai-service"
+    "argocd-image-updater.argoproj.io/write-back-method": "git"
+    "argocd-image-updater.argoproj.io/git-branch": "main"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/maily/maily-gitops.git
+    targetRevision: HEAD
+    path: overlays/staging
+    plugin:
+      name: kustomized-helm
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: maily-staging
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: maily-production
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/maily/maily-gitops.git
+    targetRevision: HEAD
+    path: overlays/production
+    plugin:
+      name: kustomized-helm
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: maily-production
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m
+---
+# Configure Argo Rollouts for Canary Deployments
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: maily-api-rollout
+  namespace: maily-production
+spec:
+  replicas: 5
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: maily-api
+  template:
+    metadata:
+      labels:
+        app: maily-api
+    spec:
+      containers:
+      - name: maily-api
+        image: ghcr.io/maily/api:latest
+        ports:
+        - containerPort: 8000
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 15
+          periodSeconds: 20
+  strategy:
+    canary:
+      analysis:
+        templates:
+        - templateName: maily-api-analysis
+        startingStep: 2
+        args:
+        - name: service-name
+          value: maily-api-canary
+      steps:
+      - setWeight: 5
+      - pause: {duration: 5m}
+      - setWeight: 20
+      - pause: {duration: 5m}
+      - setWeight: 40
+      - pause: {duration: 5m}
+      - setWeight: 60
+      - pause: {duration: 5m}
+      - setWeight: 80
+      - pause: {duration: 5m}
+      canaryService: maily-api-canary
+      stableService: maily-api-stable
+      trafficRouting:
+        istio:
+          virtualService:
+            name: maily-api-vs
+            routes:
+            - primary
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: maily-api-analysis
+  namespace: maily-production
+spec:
+  metrics:
+  - name: success-rate
+    interval: 1m
+    successCondition: result[0] >= 0.95
+    failureCondition: result[0] < 0.95
+    provider:
+      prometheus:
+        address: http://prometheus-server.monitoring.svc.cluster.local:9090
+        query: |
+          sum(rate(http_requests_total{service="{{args.service-name}}",status=~"2.."}[5m])) / 
+          sum(rate(http_requests_total{service="{{args.service-name}}"}[5m]))
+  - name: latency-p99
+    interval: 1m
+    successCondition: result[0] <= 200
+    failureCondition: result[0] > 300
+    provider:
+      prometheus:
+        address: http://prometheus-server.monitoring.svc.cluster.local:9090
+        query: |
+          histogram_quantile(0.99, sum(rate(http_request_duration_ms_bucket{service="{{args.service-name}}"}[5m])) by (le))
+  - name: error-rate
+    interval: 1m
+    successCondition: result[0] <= 0.01
+    failureCondition: result[0] > 0.05
+    provider:
+      prometheus:
+        address: http://prometheus-server.monitoring.svc.cluster.local:9090
+        query: |
+          sum(rate(http_requests_total{service="{{args.service-name}}",status=~"5.."}[5m])) / 
+          sum(rate(http_requests_total{service="{{args.service-name}}"}[5m])) 
+---
+# Istio VirtualService for traffic routing
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: maily-api-vs
+  namespace: maily-production
+spec:
+  hosts:
+  - maily-api.maily-production.svc.cluster.local
+  - api.maily.com
+  gateways:
+  - maily-gateway
+  http:
+  - name: primary
+    route:
+    - destination:
+        host: maily-api-stable
+        port:
+          number: 8000
+      weight: 100
+    - destination:
+        host: maily-api-canary
+        port:
+          number: 8000
+      weight: 0

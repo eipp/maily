@@ -1,154 +1,273 @@
-# Maily Staging Environment Configuration
-
+# Global values for staging
 global:
   environment: staging
-  domain: staging.justmaily.com
+  imageRegistry: ghcr.io/maily
+  imagePullSecrets: []
+  storageClass: standard
+  
+  # Istio Service Mesh Configuration for staging
+  istio:
+    enabled: true
+    version: "1.19.3"
+    gateway: "istio-system/maily-staging-gateway"
+    mtls:
+      mode: "STRICT"
+      defaultMode: "PERMISSIVE"
+    timeout:
+      api: "20s"  # Slightly longer timeouts for staging
+      ai: "45s"
+      email: "30s"
+      web: "15s"
+    retries:
+      api:
+        attempts: 3
+        perTryTimeout: "3s"
+        retryOn: "connect-failure,refused-stream,gateway-error,5xx"
+      ai:
+        attempts: 3
+        perTryTimeout: "10s"
+        retryOn: "connect-failure,refused-stream,5xx"
+      email:
+        attempts: 3
+        perTryTimeout: "5s"
+        retryOn: "connect-failure,refused-stream,5xx"
+    # Circuit breaker values can match production
 
-image:
-  repository: ghcr.io/maily/maily
-  tag: latest
-  pullPolicy: Always
+# Frontend configuration
+frontend:
+  replicaCount: 2
+  resources:
+    limits:
+      cpu: 300m
+      memory: 384Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  autoscaling:
+    minReplicas: 2
+    maxReplicas: 5
 
-replicaCount:
-  api: 2
-  frontend: 2
-  worker: 2
-
-resources:
-  api:
+# Backend API configuration
+backend:
+  replicaCount: 2
+  resources:
+    limits:
+      cpu: 500m
+      memory: 768Mi
     requests:
       cpu: 200m
-      memory: 512Mi
+      memory: 256Mi
+  autoscaling:
+    minReplicas: 2
+    maxReplicas: 5
+
+# Worker configuration
+worker:
+  replicaCount: 2
+  resources:
+    limits:
+      cpu: 300m
+      memory: 384Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  autoscaling:
+    minReplicas: 2
+    maxReplicas: 5
+
+# PostgreSQL configuration
+postgresql:
+  resources:
     limits:
       cpu: 500m
       memory: 1Gi
-  frontend:
     requests:
-      cpu: 100m
-      memory: 256Mi
+      cpu: 200m
+      memory: 512Mi
+  persistence:
+    size: 5Gi
+
+# Redis configuration
+redis:
+  resources:
     limits:
       cpu: 300m
       memory: 512Mi
-  worker:
     requests:
-      cpu: 200m
-      memory: 512Mi
+      cpu: 100m
+      memory: 256Mi
+  persistence:
+    size: 2Gi
+
+# RabbitMQ configuration
+rabbitmq:
+  resources:
     limits:
-      cpu: 500m
-      memory: 1Gi
+      cpu: 300m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+  persistence:
+    size: 2Gi
 
-autoscaling:
-  api:
-    enabled: true
-    minReplicas: 2
-    maxReplicas: 5
-    targetCPUUtilizationPercentage: 70
-    {{ PAGERDUTY_SERVICE_KEY }}e: 80
-  frontend:
-    enabled: true
-    minReplicas: 2
-    maxReplicas: 5
-    targetCPUUtilizationPercentage: 70
-    {{ PAGERDUTY_SERVICE_KEY }}e: 80
-  worker:
-    enabled: true
-    minReplicas: 2
-    maxReplicas: 5
-    targetCPUUtilizationPercentage: 70
-    {{ PAGERDUTY_SERVICE_KEY }}e: 80
-
+# Ingress configuration
 ingress:
-  enabled: true
-  annotations:
-    kubernetes.io/ingress.class: nginx
-    cert-manager.io/cluster-issuer: letsencrypt-staging
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
   hosts:
     - host: staging.justmaily.com
       paths:
         - path: /
           pathType: Prefix
+          service: frontend
+          port: 80
+    - host: staging-app.justmaily.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: frontend
+          port: 80
+    - host: staging-api.justmaily.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: backend
+          port: 80
+    - host: staging-api-edge.justmaily.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: api-edge-caching
+          port: 80
   tls:
     - secretName: maily-staging-tls
       hosts:
         - staging.justmaily.com
+        - staging-app.justmaily.com
+        - staging-api.justmaily.com
+        - staging-api-edge.justmaily.com
 
-database:
-  host: ${DATABASE_HOST}
-  port: 5432
-  name: maily
-  user: ${DATABASE_USER}
-  existingSecret: maily-secrets
-  existingSecretPasswordKey: postgres-password
+# API Edge Caching configuration
+apiEdgeCaching:
+  replicaCount: 1
+  resources:
+    limits:
+      cpu: 300m
+      memory: 384Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  autoscaling:
+    minReplicas: 1
+    maxReplicas: 3
 
-redis:
-  host: ${REDIS_HOST}
-  port: 6379
-  existingSecret: maily-secrets
-  existingSecretPasswordKey: redis-password
+# Security configuration
+security:
+  waf:
+    replicaCount: 1
+  auditLogging:
+    replicaCount: 1
+  networkPolicies:
+    enabled: false
 
-rabbitmq:
-  host: ${RABBITMQ_HOST}
-  port: 5672
-  user: ${RABBITMQ_USER}
-  existingSecret: maily-secrets
-  existingSecretPasswordKey: rabbitmq-password
-
-ai:
-  enabled: true
-  providers:
-    - name: openai
-      enabled: true
-      existingSecret: maily-secrets
-      existingSecretKeyKey: openai-api-key
-    - name: anthropic
-      enabled: true
-      existingSecret: maily-secrets
-      existingSecretKeyKey: anthropic-api-key
-    - name: google
-      enabled: true
-      existingSecret: maily-secrets
-      existingSecretKeyKey: google-api-key
-
+# Monitoring configuration
 monitoring:
   enabled: true
-  serviceMonitor:
-    enabled: true
-  prometheusRule:
-    enabled: true
-  grafanaDashboards:
-    enabled: true
+  elk:
+    replicas: 1
+    elasticsearch:
+      heapSize: 512m
+      resources:
+        limits:
+          cpu: 1000m
+          memory: 1Gi
+        requests:
+          cpu: 200m
+          memory: 512Mi
+      persistence:
+        size: 10Gi
+    logstash:
+      heapSize: 256m
+      resources:
+        limits:
+          cpu: 500m
+          memory: 512Mi
+        requests:
+          cpu: 100m
+          memory: 256Mi
+    kibana:
+      resources:
+        limits:
+          cpu: 500m
+          memory: 512Mi
+        requests:
+          cpu: 100m
+          memory: 256Mi
+  prometheus:
+    replicas: 1
+    retention: 7d
+    resources:
+      limits:
+        cpu: 500m
+        memory: 1Gi
+      requests:
+        cpu: 100m
+        memory: 512Mi
+    persistence:
+      size: 10Gi
+  grafana:
+    replicas: 1
+    resources:
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 50m
+        memory: 64Mi
+    persistence:
+      size: 2Gi
 
-security:
-  networkPolicies:
-    enabled: true
-  podSecurityPolicies:
-    enabled: true
-  securityContext:
-    enabled: true
-    runAsNonRoot: true
-    runAsUser: 1000
-  containerSecurityContext:
-    enabled: true
-    allowPrivilegeEscalation: false
-    readOnlyRootFilesystem: true
+# Email Service configuration
+emailService:
+  replicas: 1
+  resources:
+    limits:
+      cpu: 300m
+      memory: 384Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  autoscaling:
+    enabled: false
 
-nodeSelector: {}
+# Analytics Service configuration
+analyticsService:
+  replicas: 1
+  resources:
+    limits:
+      cpu: 300m
+      memory: 384Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  autoscaling:
+    enabled: false
 
-tolerations: []
+# AI Service configuration
+aiService:
+  replicas: 1
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+    requests:
+      cpu: 500m
+      memory: 1Gi
+  autoscaling:
+    minReplicas: 1
+    maxReplicas: 3
+  memory:
+    persistenceEnabled: true
 
-affinity:
-  podAntiAffinity:
-    {{ PAGERDUTY_SERVICE_KEY }}DuringExecution:
-      - weight: 100
-        podAffinityTerm:
-          labelSelector:
-            matchExpressions:
-              - key: app
-                operator: In
-                values:
-                  - maily-api
-                  - maily-frontend
-                  - maily-worker
-          topologyKey: kubernetes.io/hostname
+# AI Operations Configuration
+aiOperations:
+  enabled: false

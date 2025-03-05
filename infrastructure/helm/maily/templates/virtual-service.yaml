@@ -1,0 +1,122 @@
+{{- if or .Values.istio.enabled .Values.global.istio.enabled }}
+---
+# VirtualService for API Service
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: {{ include "maily.fullname" . }}-backend-vs
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+spec:
+  hosts:
+  - {{ include "maily.fullname" . }}-backend
+  http:
+  - route:
+    - destination:
+        host: {{ include "maily.fullname" . }}-backend
+        subset: {{ .Values.istio.backend.subset | default "v1" }}
+    retries:
+      attempts: {{ .Values.istio.backend.retries.attempts | default 3 }}
+      perTryTimeout: {{ .Values.istio.backend.retries.perTryTimeout | default "2s" }}
+      retryOn: {{ .Values.istio.backend.retries.retryOn | default "gateway-error,connect-failure,refused-stream" }}
+    timeout: {{ .Values.istio.backend.timeout | default "10s" }}
+---
+# VirtualService for AI Service
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: {{ include "maily.fullname" . }}-ai-service-vs
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+spec:
+  hosts:
+  - {{ include "maily.fullname" . }}-ai-service
+  http:
+  - route:
+    - destination:
+        host: {{ include "maily.fullname" . }}-ai-service
+        subset: {{ .Values.istio.aiService.subset | default "v1" }}
+    retries:
+      attempts: {{ .Values.istio.aiService.retries.attempts | default 3 }}
+      perTryTimeout: {{ .Values.istio.aiService.retries.perTryTimeout | default "2s" }}
+      retryOn: {{ .Values.istio.aiService.retries.retryOn | default "gateway-error,connect-failure,refused-stream" }}
+    timeout: {{ .Values.istio.aiService.timeout | default "30s" }}
+---
+# VirtualService for Email Service
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: {{ include "maily.fullname" . }}-email-service-vs
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+spec:
+  hosts:
+  - {{ include "maily.fullname" . }}-email-service
+  http:
+  - route:
+    - destination:
+        host: {{ include "maily.fullname" . }}-email-service
+        subset: {{ .Values.istio.emailService.subset | default "v1" }}
+    retries:
+      attempts: {{ .Values.istio.emailService.retries.attempts | default 3 }}
+      perTryTimeout: {{ .Values.istio.emailService.retries.perTryTimeout | default "2s" }}
+      retryOn: {{ .Values.istio.emailService.retries.retryOn | default "gateway-error,connect-failure,refused-stream" }}
+    timeout: {{ .Values.istio.emailService.timeout | default "15s" }}
+---
+# DestinationRule for API Service versions
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: {{ include "maily.fullname" . }}-backend-dr
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+spec:
+  host: {{ include "maily.fullname" . }}-backend
+  subsets:
+  - name: v1
+    labels:
+      version: v1
+  {{- if .Values.istio.canary.enabled }}
+  - name: v2
+    labels:
+      version: v2
+  {{- end }}
+---
+# DestinationRule for AI Service versions
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: {{ include "maily.fullname" . }}-ai-service-dr
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+spec:
+  host: {{ include "maily.fullname" . }}-ai-service
+  subsets:
+  - name: v1
+    labels:
+      version: v1
+  {{- if .Values.istio.canary.enabled }}
+  - name: v2
+    labels:
+      version: v2
+  {{- end }}
+---
+# DestinationRule for Email Service versions
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: {{ include "maily.fullname" . }}-email-service-dr
+  labels:
+    {{- include "maily.labels" . | nindent 4 }}
+spec:
+  host: {{ include "maily.fullname" . }}-email-service
+  subsets:
+  - name: v1
+    labels:
+      version: v1
+  {{- if .Values.istio.canary.enabled }}
+  - name: v2
+    labels:
+      version: v2
+  {{- end }}
+{{- end }}

@@ -313,6 +313,10 @@ async def update_ai_reasoning_layer(
         # Get visualization service
         visualization_service = get_visualization_service()
         
+        # Initialize service if needed
+        if not getattr(visualization_service, "initialized", False):
+            await visualization_service.initialize()
+        
         # Update layer
         updated_layer = await visualization_service.update_ai_reasoning_layer(
             canvas_id=canvas_id,
@@ -330,6 +334,7 @@ async def update_ai_reasoning_layer(
 async def update_performance_layer(
     canvas_id: str,
     request: PerformanceUpdateRequest,
+    campaign_id: Optional[str] = None,
     current_user: User = Depends(get_current_user)
 ):
     """Update performance insights visualization layer"""
@@ -337,12 +342,17 @@ async def update_performance_layer(
         # Get visualization service
         visualization_service = get_visualization_service()
         
+        # Initialize service if needed
+        if not getattr(visualization_service, "initialized", False):
+            await visualization_service.initialize()
+        
         # Update layer
         updated_layer = await visualization_service.update_performance_layer(
             canvas_id=canvas_id,
             metrics=request.metrics,
             historical_data=request.historical_data,
-            benchmarks=request.benchmarks
+            benchmarks=request.benchmarks,
+            campaign_id=campaign_id
         )
         
         return updated_layer
@@ -353,7 +363,8 @@ async def update_performance_layer(
 @router.put("/{canvas_id}/visualization/layers/trust_verification")
 async def update_trust_verification_layer(
     canvas_id: str,
-    request: TrustVerificationUpdateRequest,
+    request: TrustVerificationUpdateRequest = Body(...),
+    content: Optional[str] = None,
     current_user: User = Depends(get_current_user)
 ):
     """Update trust verification visualization layer"""
@@ -361,12 +372,17 @@ async def update_trust_verification_layer(
         # Get visualization service
         visualization_service = get_visualization_service()
         
+        # Initialize service if needed
+        if not getattr(visualization_service, "initialized", False):
+            await visualization_service.initialize()
+        
         # Update layer
         updated_layer = await visualization_service.update_trust_verification_layer(
             canvas_id=canvas_id,
             verification_status=request.verification_status,
             certificate_data=request.certificate_data,
-            blockchain_info=request.blockchain_info
+            blockchain_info=request.blockchain_info,
+            content=content
         )
         
         return updated_layer
@@ -385,6 +401,10 @@ async def update_layer_visibility(
     try:
         # Get visualization service
         visualization_service = get_visualization_service()
+        
+        # Initialize service if needed
+        if not getattr(visualization_service, "initialized", False):
+            await visualization_service.initialize()
         
         # Update layer visibility
         updated_layer = await visualization_service.update_layer_visibility(
@@ -405,6 +425,7 @@ async def update_layer_visibility(
 async def get_performance_metrics(
     canvas_id: str,
     campaign_id: Optional[str] = None,
+    sync_visualization: Optional[bool] = False,
     current_user: User = Depends(get_current_user)
 ):
     """Get performance metrics for a canvas or campaign"""
@@ -417,6 +438,19 @@ async def get_performance_metrics(
             canvas_id=canvas_id,
             campaign_id=campaign_id
         )
+        
+        # Optionally sync with visualization layer
+        if sync_visualization:
+            visualization_service = get_visualization_service()
+            
+            # Initialize service if needed
+            if not getattr(visualization_service, "initialized", False):
+                await visualization_service.initialize()
+                
+            await visualization_service.sync_visualization_with_performance(
+                canvas_id=canvas_id,
+                campaign_id=campaign_id
+            )
         
         return metrics
     except Exception as e:
@@ -433,6 +467,7 @@ class VerifyContentRequest(BaseModel):
 async def verify_canvas_content(
     canvas_id: str,
     request: VerifyContentRequest,
+    sync_visualization: Optional[bool] = True,
     current_user: User = Depends(get_current_user)
 ):
     """Verify canvas content and store on blockchain"""
@@ -440,12 +475,28 @@ async def verify_canvas_content(
         # Get trust verification service
         verification_service = get_trust_verification_service()
         
+        # Initialize service if needed
+        if not hasattr(verification_service, "redis") or verification_service.redis is None:
+            await verification_service.initialize()
+        
         # Verify content
         verification_data = await verification_service.verify_canvas_content(
             canvas_id=canvas_id,
             content=request.content,
             user_id=current_user.id
         )
+        
+        # Optionally sync with visualization layer
+        if sync_visualization:
+            visualization_service = get_visualization_service()
+            
+            # Initialize service if needed
+            if not getattr(visualization_service, "initialized", False):
+                await visualization_service.initialize()
+                
+            await visualization_service.sync_visualization_with_verification(
+                canvas_id=canvas_id
+            )
         
         return verification_data
     except Exception as e:
@@ -455,6 +506,7 @@ async def verify_canvas_content(
 @router.get("/{canvas_id}/verification")
 async def get_verification_data(
     canvas_id: str,
+    sync_visualization: Optional[bool] = False,
     current_user: User = Depends(get_current_user)
 ):
     """Get verification data for a canvas"""
@@ -462,8 +514,24 @@ async def get_verification_data(
         # Get trust verification service
         verification_service = get_trust_verification_service()
         
+        # Initialize service if needed
+        if not hasattr(verification_service, "redis") or verification_service.redis is None:
+            await verification_service.initialize()
+        
         # Get verification data
         verification_data = await verification_service.get_verification_data(canvas_id)
+        
+        # Optionally sync with visualization layer
+        if sync_visualization:
+            visualization_service = get_visualization_service()
+            
+            # Initialize service if needed
+            if not getattr(visualization_service, "initialized", False):
+                await visualization_service.initialize()
+                
+            await visualization_service.sync_visualization_with_verification(
+                canvas_id=canvas_id
+            )
         
         return verification_data
     except Exception as e:
@@ -480,10 +548,136 @@ async def get_verification_badge(
         # Get trust verification service
         verification_service = get_trust_verification_service()
         
+        # Initialize service if needed
+        if not hasattr(verification_service, "redis") or verification_service.redis is None:
+            await verification_service.initialize()
+        
         # Get verification badge
         badge = await verification_service.generate_verification_badge(canvas_id)
         
         return badge
     except Exception as e:
         logger.error(f"Failed to get verification badge: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+        
+# New endpoints for visualization layer synchronization
+
+@router.post("/{canvas_id}/visualization/sync-performance")
+async def sync_performance_visualization(
+    canvas_id: str,
+    campaign_id: Optional[str] = None,
+    current_user: User = Depends(get_current_user)
+):
+    """Synchronize performance visualization layer with latest data"""
+    try:
+        # Get visualization service
+        visualization_service = get_visualization_service()
+        
+        # Initialize service if needed
+        if not getattr(visualization_service, "initialized", False):
+            await visualization_service.initialize()
+            
+        # Sync visualization with performance data
+        updated_layer = await visualization_service.sync_visualization_with_performance(
+            canvas_id=canvas_id,
+            campaign_id=campaign_id
+        )
+        
+        return {
+            "status": "success",
+            "message": "Performance visualization layer synchronized",
+            "layer": updated_layer
+        }
+    except Exception as e:
+        logger.error(f"Failed to sync performance visualization: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/{canvas_id}/visualization/sync-verification")
+async def sync_verification_visualization(
+    canvas_id: str,
+    content: Optional[str] = None,
+    current_user: User = Depends(get_current_user)
+):
+    """Synchronize trust verification visualization layer with latest data"""
+    try:
+        # Get visualization service
+        visualization_service = get_visualization_service()
+        
+        # Initialize service if needed
+        if not getattr(visualization_service, "initialized", False):
+            await visualization_service.initialize()
+            
+        # Sync visualization with verification data
+        updated_layer = await visualization_service.sync_visualization_with_verification(
+            canvas_id=canvas_id,
+            content=content
+        )
+        
+        return {
+            "status": "success",
+            "message": "Trust verification visualization layer synchronized",
+            "layer": updated_layer
+        }
+    except Exception as e:
+        logger.error(f"Failed to sync verification visualization: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+        
+@router.post("/{canvas_id}/visualization/verify-and-visualize")
+async def verify_and_visualize_canvas(
+    canvas_id: str,
+    request: VerifyContentRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Verify canvas content and prepare visualization in one operation"""
+    try:
+        # Get visualization service
+        visualization_service = get_visualization_service()
+        
+        # Initialize service if needed
+        if not getattr(visualization_service, "initialized", False):
+            await visualization_service.initialize()
+            
+        # Verify and visualize canvas in one operation
+        result = await visualization_service.verify_and_visualize_canvas(
+            canvas_id=canvas_id,
+            content=request.content
+        )
+        
+        # Notify about verification via websockets
+        room_id = f"room_{canvas_id}"
+        await pubsub.publish(f"canvas:{room_id}", {
+            "type": "content_verified",
+            "canvasId": canvas_id,
+            "userId": current_user.id,
+            "userName": current_user.name,
+            "status": result["status"],
+            "badge": result.get("badge"),
+            "timestamp": datetime.utcnow().isoformat()
+        })
+        
+        return result
+    except Exception as e:
+        logger.error(f"Failed to verify and visualize canvas: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+        
+@router.get("/{canvas_id}/visualization/trust-overlay")
+async def get_trust_verification_overlay(
+    canvas_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Generate trust verification overlay for the canvas"""
+    try:
+        # Get visualization service
+        visualization_service = get_visualization_service()
+        
+        # Initialize service if needed
+        if not getattr(visualization_service, "initialized", False):
+            await visualization_service.initialize()
+            
+        # Generate trust verification overlay
+        overlay = await visualization_service.generate_trust_verification_overlay(canvas_id)
+        
+        return overlay
+    except Exception as e:
+        logger.error(f"Failed to generate trust verification overlay: {e}")
         raise HTTPException(status_code=500, detail=str(e))

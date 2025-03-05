@@ -1,163 +1,182 @@
-# Maily Error Handling
+# Maily Error Handling Package
 
-A standardized error handling system for the Maily application.
-
-## Overview
-
-This package provides a unified approach to error handling across all Maily services, with components for:
-
-- Python backends (FastAPI)
-- JavaScript/TypeScript frontends
-- React components
+A standardized error handling package for the Maily platform.
 
 ## Installation
 
-The package is pre-installed as part of the Maily monorepo.
-
-## Python Usage
-
-### Basic Error Classes
-
-```python
-from packages.error_handling.python.error import MailyError, ResourceNotFoundError, ValidationError
-
-# Raising a basic error
-raise MailyError("Something went wrong")
-
-# Raising a more specific error
-raise ResourceNotFoundError("User not found", 
-                           details={"user_id": "123"})
-
-# With trace ID and provider info
-raise ValidationError("Invalid parameters",
-                     trace_id="abcd-1234",
-                     provider="openai",
-                     request_id="req_123")
+```bash
+npm install @maily/error-handling
 ```
 
-### Error Middleware for FastAPI
+## Usage
 
-```python
-from fastapi import FastAPI
-from packages.error_handling.python.middleware import setup_error_handling
-
-app = FastAPI()
-
-# Add standardized error handling
-setup_error_handling(app)
-```
-
-### Provider Error Mapping
-
-```python
-from packages.error_handling.python.error import map_provider_error
-
-try:
-    # OpenAI API call
-    response = await openai.Completion.create(...)
-except Exception as e:
-    # Map to standardized error
-    error = map_provider_error(
-        provider="openai",
-        error_type=e.type,
-        message=str(e),
-        request_id=e.request_id
-    )
-    raise error
-```
-
-## TypeScript Usage
-
-### Basic Error Classes
+### Basic Usage
 
 ```typescript
-import { ApplicationError, ErrorType } from 'packages/error-handling';
+import { ApplicationError, NotFoundError } from '@maily/error-handling';
 
-// Basic error
-throw new ApplicationError('Something went wrong');
+// Create a custom error
+throw new ApplicationError('Something went wrong', 'CUSTOM_ERROR', 500);
 
-// With error type and status
-throw new ApplicationError(
-  'Resource not found', 
-  ErrorType.NOT_FOUND,
-  404
-);
-
-// With metadata
-throw new ApplicationError(
-  'Invalid parameters',
-  ErrorType.VALIDATION_ERROR,
-  400,
-  { fields: ['email', 'password'] }
-);
+// Use pre-defined errors
+throw new NotFoundError('User not found', { userId: '123' });
 ```
 
-## React Usage
+### Domain-Specific Errors
 
-### Basic ErrorBoundary
+```typescript
+import { 
+  CampaignNotFoundError, 
+  TemplateRenderingError 
+} from '@maily/error-handling';
+
+// Campaign errors
+throw new CampaignNotFoundError('campaign-123');
+
+// Template errors
+throw new TemplateRenderingError('template-456', { 
+  missingVariables: ['name', 'email'] 
+});
+```
+
+### Error Handling in Express
+
+```typescript
+import { errorHandler } from '@maily/error-handling/handlers';
+
+// Add middleware
+app.use(errorHandler());
+
+// In your route handlers
+app.get('/users/:id', async (req, res, next) => {
+  try {
+    const user = await userService.findById(req.params.id);
+    if (!user) {
+      throw new NotFoundError(`User with ID ${req.params.id} not found`);
+    }
+    res.json(user);
+  } catch (error) {
+    next(error);
+  }
+});
+```
+
+### Error Handling in FastAPI
+
+```python
+from packages.error_handling.middleware import error_handler
+from packages.error_handling.errors import NotFoundError
+
+app.add_middleware(error_handler)
+
+@app.get("/users/{user_id}")
+async def get_user(user_id: str):
+    user = await user_service.find_by_id(user_id)
+    if not user:
+        raise NotFoundError(f"User with ID {user_id} not found")
+    return user
+```
+
+### React Error Boundary
 
 ```tsx
-import { ErrorBoundary } from 'packages/error-handling/src/react/ErrorBoundary';
+import { ErrorBoundary } from '@maily/error-handling/react';
 
 function App() {
   return (
-    <ErrorBoundary>
+    <ErrorBoundary fallback={<ErrorPage />}>
       <YourComponent />
     </ErrorBoundary>
   );
 }
 ```
 
-### Custom Fallback UI
+### Using Error Hooks
 
 ```tsx
-import { ErrorBoundary } from 'packages/error-handling/src/react/ErrorBoundary';
+import { useErrorHandler } from '@maily/error-handling/react';
 
-function App() {
-  return (
-    <ErrorBoundary
-      fallback={({ error, reset }) => (
-        <div>
-          <h2>Oh no! Something went wrong</h2>
-          <p>{error.message}</p>
-          <button onClick={reset}>Try Again</button>
-        </div>
-      )}
-      onError={(error) => {
-        // Log to monitoring service
-        console.error('Component error:', error);
-      }}
-    >
-      <YourComponent />
-    </ErrorBoundary>
-  );
+function UserProfile({ userId }) {
+  const handleError = useErrorHandler();
+  
+  useEffect(() => {
+    async function fetchUser() {
+      try {
+        const user = await api.getUser(userId);
+        setUser(user);
+      } catch (error) {
+        handleError(error);
+      }
+    }
+    
+    fetchUser();
+  }, [userId, handleError]);
+  
+  // ...
 }
 ```
+
+## Available Error Classes
+
+### Base Errors
+
+- `ApplicationError`: Base error class
+- `ValidationError`: For validation errors
+
+### HTTP Errors
+
+- `BadRequestError`: 400 Bad Request
+- `UnauthorizedError`: 401 Unauthorized
+- `ForbiddenError`: 403 Forbidden
+- `NotFoundError`: 404 Not Found
+- `ConflictError`: 409 Conflict
+- `UnprocessableEntityError`: 422 Unprocessable Entity
+- `TooManyRequestsError`: 429 Too Many Requests
+- `InternalServerError`: 500 Internal Server Error
+- `BadGatewayError`: 502 Bad Gateway
+- `ServiceUnavailableError`: 503 Service Unavailable
+- `GatewayTimeoutError`: 504 Gateway Timeout
+
+### Domain Errors
+
+- User Errors: `UserError`, `UserNotFoundError`
+- Auth Errors: `AuthenticationError`, `InvalidCredentialsError`, `TokenExpiredError`
+- Campaign Errors: `CampaignError`, `CampaignNotFoundError`, `CampaignAlreadyExistsError`
+- Template Errors: `TemplateError`, `TemplateNotFoundError`, `TemplateRenderingError`
+- AI Errors: `AIError`, `ModelNotAvailableError`, `ContentModerationError`
+
+## Best Practices
+
+1. **Use Specific Error Types**: Use the most specific error type that matches your error condition.
+
+2. **Include Useful Details**: Add relevant details to help with debugging.
+
+3. **Use Consistent Status Codes**: Follow HTTP standards for status codes.
+
+4. **Use Error Boundaries in React**: Wrap components in ErrorBoundary to gracefully handle errors.
+
+5. **Handle Errors at the Right Level**: Handle errors at the appropriate abstraction level.
+
+6. **Log Errors**: Log errors for monitoring and debugging.
+
+7. **Provide User-Friendly Messages**: Ensure error messages are helpful to end-users.
 
 ## Error Response Format
 
-All API errors are returned in this standardized format:
+All errors are transformed into a consistent response format:
 
 ```json
 {
-  "error": true,
-  "error_code": "not_found",
-  "message": "Resource not found",
-  "status_code": 404,
-  "trace_id": "550e8400-e29b-41d4-a716-446655440000",
-  "timestamp": 1717574880.123,
-  "details": [
-    {
-      "code": "not_found.details",
-      "message": "Error details",
-      "field": "resource_id"
-    }
-  ],
-  "documentation_url": "https://docs.maily.com/errors/not_found"
+  "error": {
+    "code": "RESOURCE_NOT_FOUND",
+    "message": "User with ID 123 not found",
+    "statusCode": 404,
+    "details": {
+      "userId": "123"
+    },
+    "traceId": "4f90a2f8-9b6d-4098-8a80-35e7c0f5317d",
+    "severity": "medium",
+    "category": "not_found"
+  }
 }
 ```
-
-## Documentation
-
-- See `MIGRATION-GUIDE.md` for instructions on migrating from legacy error handling.
-- See `ERROR-HANDLING-STANDARDIZATION.md` in the root directory for a high-level overview of the standardization effort.

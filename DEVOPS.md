@@ -95,7 +95,7 @@ chmod +x scripts/setup-devops-infrastructure.sh
 
 ## Deployment System
 
-The Maily Unified Deployment System provides a robust, phased approach to ensure production readiness.
+The Maily Unified Deployment System provides a robust, phased approach to ensure production readiness, now centralized in the `mailyctl.py` command-line tool.
 
 ### Production Readiness Features
 
@@ -106,30 +106,35 @@ The Maily Unified Deployment System provides a robust, phased approach to ensure
 
 ### System Components
 
-- `scripts/maily-deploy.sh`: Main controller script
-- `scripts/deploy-phases/phase1-staging.sh`: Staging deployment
-- `scripts/deploy-phases/phase2-prod-initial.sh`: Non-critical services
-- `scripts/deploy-phases/phase3-prod-full.sh`: Critical services
+The `mailyctl.py` script provides a unified interface for all deployment operations including:
+- Phased deployments across environments
+- Service mesh verification
+- Secret rotation with Vault integration
+- Status monitoring
+- Logging and rollbacks
 
 ### Usage
 
 Basic deployment:
 ```bash
-./scripts/maily-deploy.sh --version v1.0.0
+# Regular deployment
+./mailyctl.py deploy --version=v1.0.0
+
+# Phased deployment (formerly maily-deploy.sh)
+./mailyctl.py phased-deploy --version=v1.0.0
 ```
 
-Options:
+Phased Deployment Options:
 ```
---help                    Show help message
---version VERSION         Set deployment version
---dry-run                 Execute without changes
---skip-staging            Skip to production
---skip-confirmation       Non-interactive mode
---skip-monitoring         Skip monitoring waits
---start-phase PHASE       Start at phase (1-3)
---end-phase PHASE         End at phase (1-3)
---staging-namespace NAME  Set staging namespace
---prod-namespace NAME     Set production namespace
+--help                     Show help message
+--version=<version>        Set deployment version
+--env=<environment>        Target environment
+--dry-run                  Execute without changes
+--skip-staging             Skip to production
+--start-phase=<phase>      Start at phase (1-3)
+--end-phase=<phase>        End at phase (1-3)
+--canary                   Deploy as canary release
+--canary-weight=<weight>   Traffic percentage for canary
 ```
 
 ### Deployment Phases
@@ -204,19 +209,22 @@ Recovery objectives:
 
 **Full System Rollback**:
 ```bash
-./scripts/rollback-production.sh
+# Using mailyctl.py
+./mailyctl.py rollback --env=production --components=all --to-version=v1.0.0
 ```
 
 **Individual Service Rollbacks**:
 ```bash
-# API Service
-kubectl rollout undo deployment/maily-api
+# Using mailyctl.py
+./mailyctl.py rollback --env=production --components=api --to-version=v1.0.0
+./mailyctl.py rollback --env=production --components=ai-service --to-version=v1.0.0
 
-# AI Service
+# Alternatively, directly with kubectl
+kubectl rollout undo deployment/maily-api
 kubectl rollout undo deployment/ai-mesh
 
 # Frontend
-vercel rollback --project=maily-web
+./mailyctl.py rollback --env=production --components=frontend --to-version=v1.0.0
 ```
 
 **Database Rollbacks**:

@@ -1,0 +1,252 @@
+apiVersion: install.istio.io/v1alpha1
+kind: IstioOperator
+metadata:
+  name: maily-istio-control-plane
+  namespace: istio-system
+spec:
+  profile: default
+  components:
+    base:
+      enabled: true
+    pilot:
+      enabled: true
+    ingressGateways:
+    - name: istio-ingressgateway
+      enabled: true
+      k8s:
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        service:
+          ports:
+          - name: http2
+            port: 80
+            targetPort: 8080
+          - name: https
+            port: 443
+            targetPort: 8443
+          - name: tcp-metrics
+            port: 15020
+            targetPort: 15020
+        hpaSpec:
+          minReplicas: 2
+          maxReplicas: 5
+          metrics:
+          - type: Resource
+            resource:
+              name: cpu
+              targetAverageUtilization: 80
+    egressGateways:
+    - name: istio-egressgateway
+      enabled: true
+      k8s:
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 300m
+            memory: 256Mi
+  meshConfig:
+    accessLogFile: /dev/stdout
+    enableTracing: true
+    defaultConfig:
+      tracing:
+        sampling: 100
+        zipkin:
+          address: jaeger-collector.monitoring:9411
+    outboundTrafficPolicy:
+      mode: REGISTRY_ONLY
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: Gateway
+metadata:
+  name: maily-gateway
+  namespace: istio-system
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - "*.maily.com"
+    tls:
+      httpsRedirect: true
+  - port:
+      number: 443
+      name: https
+      protocol: HTTPS
+    hosts:
+    - "*.maily.com"
+    tls:
+      mode: SIMPLE
+      credentialName: maily-tls-cert
+---
+# Maily Service Mesh
+apiVersion: networking.istio.io/v1alpha3
+kind: ServiceEntry
+metadata:
+  name: external-email-providers
+  namespace: maily-production
+spec:
+  hosts:
+  - "api.sendgrid.com"
+  - "api.mailgun.net"
+  - "api.postmarkapp.com"
+  location: MESH_EXTERNAL
+  ports:
+  - number: 443
+    name: https
+    protocol: HTTPS
+  resolution: DNS
+---
+# Circuit Breaker for External Services
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: email-providers-circuit-breaker
+  namespace: maily-production
+spec:
+  host: "api.sendgrid.com"
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 100
+      http:
+        http1MaxPendingRequests: 50
+        maxRequestsPerConnection: 10
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 60s
+      maxEjectionPercent: 100
+---
+# Internal Service Mesh Policies
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: maily-api-destination
+  namespace: maily-production
+spec:
+  host: maily-api
+  trafficPolicy:
+    loadBalancer:
+      simple: ROUND_ROBIN
+    connectionPool:
+      tcp:
+        maxConnections: 200
+      http:
+        http2MaxRequests: 100
+        maxRequestsPerConnection: 10
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 100
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: maily-ai-service-destination
+  namespace: maily-production
+spec:
+  host: maily-ai-service
+  trafficPolicy:
+    loadBalancer:
+      simple: LEAST_CONN
+    connectionPool:
+      tcp:
+        maxConnections: 100
+      http:
+        http2MaxRequests: 50
+        maxRequestsPerConnection: 5
+    outlierDetection:
+      consecutive5xxErrors: 3
+      interval: 20s
+      baseEjectionTime: 40s
+      maxEjectionPercent: 100
+---
+# Mutual TLS for Service-to-Service Communication
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: maily-services-mtls
+  namespace: maily-production
+spec:
+  mtls:
+    mode: STRICT
+---
+# Service-to-Service Authorization Policies
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: maily-service-authorization
+  namespace: maily-production
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: maily
+  rules:
+  - from:
+    - source:
+        principals: ["cluster.local/ns/maily-production/sa/maily-api"]
+    to:
+    - operation:
+        methods: ["GET", "POST"]
+  - from:
+    - source:
+        principals: ["cluster.local/ns/maily-production/sa/maily-ai-service"]
+    to:
+    - operation:
+        methods: ["GET", "POST"]
+---
+# Retry Policy for Internal Services
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: maily-retry-policy
+  namespace: maily-production
+spec:
+  hosts:
+  - maily-ai-service
+  http:
+  - route:
+    - destination:
+        host: maily-ai-service
+    retries:
+      attempts: 3
+      perTryTimeout: 2s
+      retryOn: connect-failure,refused-stream,unavailable,cancelled,resource-exhausted
+---
+# Tracing and Metrics
+apiVersion: telemetry.istio.io/v1alpha1
+kind: Telemetry
+metadata:
+  name: maily-telemetry
+  namespace: maily-production
+spec:
+  tracing:
+  - providers:
+    - name: zipkin
+    randomSamplingPercentage: 100.0
+  metrics:
+  - providers:
+    - name: prometheus
+    overrides:
+    - match:
+        metric: REQUEST_COUNT
+        mode: CLIENT_AND_SERVER
+      tagOverrides:
+        service_name:
+          value: destination.service.name
+        api_version:
+          value: request.headers["x-api-version"]
+        user_id:
+          value: request.headers["x-user-id"]
