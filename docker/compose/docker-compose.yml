@@ -6,7 +6,7 @@ services:
   api:
     build:
       context: ../../
-      dockerfile: docker/dockerfiles/api.Dockerfile
+      dockerfile: docker/services/api.Dockerfile
     image: maily/api:local
     container_name: maily-api
     restart: unless-stopped
@@ -36,7 +36,7 @@ services:
   web:
     build:
       context: ../../
-      dockerfile: docker/dockerfiles/web.Dockerfile
+      dockerfile: docker/services/web.Dockerfile
     image: maily/web:local
     container_name: maily-web
     restart: unless-stopped
@@ -58,7 +58,7 @@ services:
   ai-service:
     build:
       context: ../../
-      dockerfile: docker/dockerfiles/ai-service.Dockerfile
+      dockerfile: docker/services/ai-service.Dockerfile
     image: maily/ai-service:local
     container_name: maily-ai-service
     restart: unless-stopped
@@ -84,7 +84,7 @@ services:
   email-service:
     build:
       context: ../../
-      dockerfile: docker/dockerfiles/email-service.Dockerfile
+      dockerfile: docker/services/email-service.Dockerfile
     image: maily/email-service:local
     container_name: maily-email-service
     restart: unless-stopped
@@ -114,7 +114,7 @@ services:
   workers:
     build:
       context: ../../
-      dockerfile: docker/dockerfiles/workers.Dockerfile
+      dockerfile: docker/services/workers.Dockerfile
     image: maily/workers:local
     container_name: maily-workers
     restart: unless-stopped
