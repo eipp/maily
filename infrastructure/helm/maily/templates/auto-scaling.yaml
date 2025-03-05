@@ -1,3 +1,4 @@
+{{- if hasKey .Values "autoscaling" }}
 {{- if .Values.autoscaling.enabled }}
 # Frontend Autoscaling
 {{- if .Values.frontend.enabled }}
@@ -27,7 +28,7 @@ spec:
       name: memory
       target:
         type: Utilization
-        averageUtilization: {{ .Values.frontend.autoscaling.{{ PAGERDUTY_SERVICE_KEY }}e }}
+        averageUtilization: {{ .Values.frontend.autoscaling.targetMemoryUtilizationPercentage }}
   {{- if .Values.frontend.autoscaling.custom }}
   - type: Pods
     pods:
@@ -84,7 +85,7 @@ spec:
       name: memory
       target:
         type: Utilization
-        averageUtilization: {{ .Values.backend.autoscaling.{{ PAGERDUTY_SERVICE_KEY }}e }}
+        averageUtilization: {{ .Values.backend.autoscaling.targetMemoryUtilizationPercentage }}
   {{- if .Values.backend.autoscaling.custom }}
   - type: Pods
     pods:
@@ -152,7 +153,7 @@ spec:
       name: memory
       target:
         type: Utilization
-        averageUtilization: {{ .Values.worker.autoscaling.{{ PAGERDUTY_SERVICE_KEY }}e }}
+        averageUtilization: {{ .Values.worker.autoscaling.targetMemoryUtilizationPercentage }}
   {{- if .Values.worker.autoscaling.custom }}
   - type: Object
     object:
@@ -213,7 +214,7 @@ spec:
       name: memory
       target:
         type: Utilization
-        averageUtilization: {{ .Values.apiEdgeCaching.autoscaling.{{ PAGERDUTY_SERVICE_KEY }}e }}
+        averageUtilization: {{ .Values.apiEdgeCaching.autoscaling.targetMemoryUtilizationPercentage }}
   {{- if .Values.apiEdgeCaching.autoscaling.custom }}
   - type: Pods
     pods:
@@ -270,7 +271,7 @@ spec:
       name: memory
       target:
         type: Utilization
-        averageUtilization: {{ .Values.security.waf.autoscaling.{{ PAGERDUTY_SERVICE_KEY }}e | default 70 }}
+        averageUtilization: {{ .Values.security.waf.autoscaling.targetMemoryUtilizationPercentage | default 70 }}
   {{- if .Values.security.waf.autoscaling.custom }}
   - type: Pods
     pods:
@@ -297,5 +298,6 @@ spec:
         value: 2
         periodSeconds: 30
       selectPolicy: Max
+{{- end }}
 {{- end }}
 {{- end }}

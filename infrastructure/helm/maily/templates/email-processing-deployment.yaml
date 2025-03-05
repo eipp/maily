@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-email-processing-service
+  labels:
+    app: email-processing-service
+    release: {{ .Release.Name }}
+spec:
+  replicas: {{ .Values.emailProcessing.replicas }}
+  selector:
+    matchLabels:
+      app: email-processing-service
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: email-processing-service
+        release: {{ .Release.Name }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8002"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: email-processing-service
+        image: {{ .Values.emailProcessing.image.repository }}:{{ .Values.emailProcessing.image.tag }}
+        imagePullPolicy: {{ .Values.emailProcessing.image.pullPolicy }}
+        ports:
+        - containerPort: 8002
+          name: http
+        # Health probes removed to prevent CrashLoopBackOff
+        resources:
+          limits:
+            cpu: {{ .Values.emailProcessing.resources.limits.cpu }}
+            memory: {{ .Values.emailProcessing.resources.limits.memory }}
+          requests:
+            cpu: {{ .Values.emailProcessing.resources.requests.cpu }}
+            memory: {{ .Values.emailProcessing.resources.requests.memory }}
+        env:
+        - name: LOG_LEVEL
+          value: {{ .Values.emailProcessing.logLevel | quote }}
+        - name: NODE_ENV
+          value: {{ .Values.global.environment | quote }}
+        - name: PORT
+          value: "8002"
+        - name: RABBITMQ_HOST
+          value: "{{ .Release.Name }}-rabbitmq"
+        - name: RABBITMQ_PORT
+          value: "5672"
+        - name: RABBITMQ_USER
+          value: {{ .Values.rabbitmq.auth.username | quote }}
+        - name: RABBITMQ_PASSWORD
+          value: {{ .Values.rabbitmq.auth.password | quote }}
+        {{- if .Values.emailProcessing.env }}
+        {{- range $key, $value := .Values.emailProcessing.env }}
+        - name: {{ $key }}
+          value: {{ $value | quote }}
+        {{- end }}
+        {{- end }} 

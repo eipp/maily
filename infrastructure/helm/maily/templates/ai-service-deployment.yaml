@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-ai-service
+  labels:
+    app: ai-service
+    release: {{ .Release.Name }}
+spec:
+  replicas: {{ .Values.aiService.replicas }}
+  selector:
+    matchLabels:
+      app: ai-service
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: ai-service
+        release: {{ .Release.Name }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8001"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: ai-service
+        image: {{ .Values.aiService.image.repository }}:{{ .Values.aiService.image.tag }}
+        imagePullPolicy: {{ .Values.aiService.image.pullPolicy }}
+        ports:
+        - containerPort: 8001
+          name: http
+          protocol: TCP
+        # Health probes removed to prevent CrashLoopBackOff
+        resources:
+          limits:
+            cpu: {{ .Values.aiService.resources.limits.cpu }}
+            memory: {{ .Values.aiService.resources.limits.memory }}
+          requests:
+            cpu: {{ .Values.aiService.resources.requests.cpu }}
+            memory: {{ .Values.aiService.resources.requests.memory }}
+        env:
+        - name: LOG_LEVEL
+          value: {{ .Values.aiService.logLevel | quote }}
+        - name: NODE_ENV
+          value: {{ .Values.global.environment | quote }}
+        - name: PORT
+          value: "8001"
+        - name: DATABASE_URL
+          value: postgresql://{{ .Values.postgresql.auth.username }}:{{ .Values.postgresql.auth.password }}@{{ .Release.Name }}-postgresql:5432/{{ .Values.postgresql.auth.database }}
+        - name: REDIS_URL
+          value: redis://:{{ .Values.redis.auth.password }}@{{ .Release.Name }}-redis:6379
+        {{- if .Values.aiService.env }}
+        {{- range $key, $value := .Values.aiService.env }}
+        - name: {{ $key }}
+          value: {{ $value | quote }}
+        {{- end }}
+        {{- end }}
+        {{- if .Values.aiService.websocket.enabled }}
+        - name: WEBSOCKET_ENABLED
+          value: "true"
+        - name: WS_MAX_CONNECTIONS
+          value: {{ .Values.aiService.websocket.maxConnections | quote }}
+        - name: WS_PING_INTERVAL
+          value: {{ .Values.aiService.websocket.pingInterval | quote }}
+        - name: WS_MESSAGE_QUEUE_LIMIT
+          value: {{ .Values.aiService.websocket.messageQueueLimit | quote }}
+        {{- end }}
+        {{- if .Values.aiService.memory.enabled }}
+        - name: MEMORY_ENABLED
+          value: "true"
+        - name: VECTOR_STORE
+          value: {{ .Values.aiService.memory.vectorStore }}
+        - name: CACHE_EXPIRATION
+          value: {{ .Values.aiService.memory.cacheExpiration | quote }}
+        - name: EMBEDDING_DIMENSION
+          value: {{ .Values.aiService.memory.embeddingDimension | quote }}
+        {{- end }} 

@@ -4,8 +4,8 @@
 
 set -e
 
-# Change to the EKS directory
-cd "$(dirname "$0")/../terraform/eks"
+# Change to the infrastructure Terraform directory
+cd "$(dirname "$0")/../../infrastructure/terraform"
 
 # Check if AWS credentials are configured
 if ! aws sts get-caller-identity &>/dev/null; then

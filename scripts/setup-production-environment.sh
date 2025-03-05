@@ -104,10 +104,10 @@ create_eks_cluster() {
     echo -e "Creating cluster using Terraform..."
     
     # Run Terraform to create EKS cluster
-    if [ -d "infrastructure/terraform/eks" ]; then
+    if [ -d "infrastructure/terraform" ]; then
       read -p "Would you like to create the EKS cluster now? (y/n): " CREATE_CLUSTER
       if [[ "$CREATE_CLUSTER" == "y" || "$CREATE_CLUSTER" == "Y" ]]; then
-        cd infrastructure/terraform/eks
+        cd infrastructure/terraform
         terraform init
         terraform plan -out=tfplan
         
@@ -124,7 +124,7 @@ create_eks_cluster() {
         echo -e "${YELLOW}Skipping EKS cluster creation.${NC}"
       fi
     else
-      echo -e "${RED}Terraform EKS configuration not found in infrastructure/terraform/eks${NC}"
+      echo -e "${RED}Terraform configuration not found in infrastructure/terraform${NC}"
       echo -e "Please check the repository structure."
     fi
   fi

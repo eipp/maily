@@ -1,6 +1,4 @@
-provider "aws" {
-  region = var.region
-}
+# Provider configuration will be passed from the root module
 
 resource "aws_kms_key" "vault_kms" {
   description             = "KMS Key for Vault auto-unseal"

@@ -1,4 +1,4 @@
-{{- if .Values.global.istio.enabled }}
+{{- if and (or .Values.istio.enabled .Values.global.istio.enabled) (not .Values.skipIstio) }}
 apiVersion: security.istio.io/v1beta1
 kind: PeerAuthentication
 metadata:

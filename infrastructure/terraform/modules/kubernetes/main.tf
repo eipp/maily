@@ -11,21 +11,8 @@ terraform {
   }
 }
 
-# Configure Kubernetes provider
-provider "kubernetes" {
-  host                   = var.cluster_endpoint
-  cluster_ca_certificate = base64decode(var.cluster_ca_certificate)
-  token                  = var.kubernetes_token
-}
-
-# Configure Helm provider
-provider "helm" {
-  kubernetes {
-    host                   = var.cluster_endpoint
-    cluster_ca_certificate = base64decode(var.cluster_ca_certificate)
-    token                  = var.kubernetes_token
-  }
-}
+# The providers will be passed from the root module
+# instead of being configured locally
 
 # Create the maily-production namespace
 resource "kubernetes_namespace" "maily_production" {

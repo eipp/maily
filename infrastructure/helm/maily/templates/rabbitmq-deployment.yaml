@@ -26,8 +26,8 @@ spec:
       {{- end }}
       containers:
         - name: rabbitmq
-          image: "{{ .Values.rabbitmq.image.repository }}:{{ .Values.rabbitmq.image.tag }}"
-          imagePullPolicy: {{ .Values.rabbitmq.image.pullPolicy }}
+          image: rabbitmq:3.12-alpine
+          imagePullPolicy: IfNotPresent
           ports:
             - name: amqp
               containerPort: 5672
@@ -35,23 +35,39 @@ spec:
             - name: management
               containerPort: 15672
               protocol: TCP
-          resources:
-            {{- toYaml .Values.rabbitmq.resources | nindent 12 }}
           env:
-            {{- range $key, $value := .Values.rabbitmq.env }}
-            - name: {{ $key }}
-              value: {{ $value | quote }}
-            {{- end }}
+            - name: RABBITMQ_DEFAULT_USER
+              value: {{ .Values.rabbitmq.auth.username }}
             - name: RABBITMQ_DEFAULT_PASS
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.secrets.name }}
-                  key: rabbitmq-password
+              value: {{ .Values.rabbitmq.auth.password }}
           volumeMounts:
             - name: data
               mountPath: /var/lib/rabbitmq
+          resources:
+            {{- toYaml .Values.rabbitmq.resources | nindent 12 }}
       volumes:
         - name: data
-          persistentVolumeClaim:
-            claimName: {{ .Release.Name }}-rabbitmq
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-rabbitmq
+  labels:
+    app.kubernetes.io/name: {{ .Release.Name }}-rabbitmq
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: amqp
+      port: 5672
+      targetPort: amqp
+      protocol: TCP
+    - name: management
+      port: 15672
+      targetPort: management
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: {{ .Release.Name }}-rabbitmq
+    app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}

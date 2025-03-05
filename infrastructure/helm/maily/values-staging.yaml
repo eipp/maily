@@ -1,9 +1,10 @@
 # Global values for staging
 global:
   environment: staging
-  imageRegistry: ghcr.io/maily
+  imageRegistry: docker.io/library
   imagePullSecrets: []
-  storageClass: standard
+  storageClass: ""
+  domain: staging.maily.ai
   
   # Istio Service Mesh Configuration for staging
   istio:
@@ -33,9 +34,16 @@ global:
         retryOn: "connect-failure,refused-stream,5xx"
     # Circuit breaker values can match production
 
+# Skip Istio resources for now
+skipIstio: true
+
+# Global autoscaling configuration
+autoscaling:
+  enabled: false
+
 # Frontend configuration
 frontend:
-  replicaCount: 2
+  replicaCount: 1
   resources:
     limits:
       cpu: 300m
@@ -44,12 +52,18 @@ frontend:
       cpu: 100m
       memory: 128Mi
   autoscaling:
-    minReplicas: 2
-    maxReplicas: 5
+    enabled: false
+  image:
+    repository: nginx
+    tag: latest
+  livenessProbe:
+    enabled: false
+  readinessProbe:
+    enabled: false
 
 # Backend API configuration
 backend:
-  replicaCount: 2
+  replicaCount: 1
   resources:
     limits:
       cpu: 500m
@@ -58,12 +72,18 @@ backend:
       cpu: 200m
       memory: 256Mi
   autoscaling:
-    minReplicas: 2
-    maxReplicas: 5
+    enabled: false
+  image:
+    repository: nginx
+    tag: latest
+  livenessProbe:
+    enabled: false
+  readinessProbe:
+    enabled: false
 
 # Worker configuration
 worker:
-  replicaCount: 2
+  replicaCount: 1
   resources:
     limits:
       cpu: 300m
@@ -72,11 +92,25 @@ worker:
       cpu: 100m
       memory: 128Mi
   autoscaling:
-    minReplicas: 2
-    maxReplicas: 5
+    enabled: false
+  image:
+    repository: nginx
+    tag: latest
 
 # PostgreSQL configuration
 postgresql:
+  enabled: true
+  architecture: standalone
+  primary:
+    persistence:
+      enabled: false
+      storageClass: ""
+      existingClaim: ""
+      emptyDir: {}
+  auth:
+    database: maily
+    username: postgres
+    password: postgres
   resources:
     limits:
       cpu: 500m
@@ -84,11 +118,20 @@ postgresql:
     requests:
       cpu: 200m
       memory: 512Mi
-  persistence:
-    size: 5Gi
 
 # Redis configuration
 redis:
+  enabled: true
+  architecture: standalone
+  master:
+    persistence:
+      enabled: false
+      storageClass: ""
+      existingClaim: ""
+      emptyDir: {}
+  auth:
+    enabled: true
+    password: redis
   resources:
     limits:
       cpu: 300m
@@ -96,11 +139,18 @@ redis:
     requests:
       cpu: 100m
       memory: 256Mi
-  persistence:
-    size: 2Gi
 
 # RabbitMQ configuration
 rabbitmq:
+  enabled: true
+  persistence:
+    enabled: false
+    storageClass: ""
+    existingClaim: ""
+    emptyDir: {}
+  auth:
+    username: rabbit
+    password: rabbit
   resources:
     limits:
       cpu: 300m
@@ -108,8 +158,6 @@ rabbitmq:
     requests:
       cpu: 100m
       memory: 256Mi
-  persistence:
-    size: 2Gi
 
 # Ingress configuration
 ingress:
@@ -148,6 +196,7 @@ ingress:
 
 # API Edge Caching configuration
 apiEdgeCaching:
+  enabled: false
   replicaCount: 1
   resources:
     limits:
@@ -157,13 +206,18 @@ apiEdgeCaching:
       cpu: 100m
       memory: 128Mi
   autoscaling:
-    minReplicas: 1
-    maxReplicas: 3
+    enabled: false
 
 # Security configuration
 security:
+  enabled: false
   waf:
     replicaCount: 1
+    autoscaling:
+      minReplicas: 1
+      maxReplicas: 3
+      targetCPUUtilizationPercentage: 80
+      targetMemoryUtilizationPercentage: 80
   auditLogging:
     replicaCount: 1
   networkPolicies:
@@ -171,7 +225,7 @@ security:
 
 # Monitoring configuration
 monitoring:
-  enabled: true
+  enabled: false
   elk:
     replicas: 1
     elasticsearch:
@@ -184,6 +238,7 @@ monitoring:
           cpu: 200m
           memory: 512Mi
       persistence:
+        enabled: false
         size: 10Gi
     logstash:
       heapSize: 256m
@@ -213,6 +268,7 @@ monitoring:
         cpu: 100m
         memory: 512Mi
     persistence:
+      enabled: false
       size: 10Gi
   grafana:
     replicas: 1
@@ -224,10 +280,12 @@ monitoring:
         cpu: 50m
         memory: 64Mi
     persistence:
+      enabled: false
       size: 2Gi
 
 # Email Service configuration
 emailService:
+  enabled: false
   replicas: 1
   resources:
     limits:
@@ -237,10 +295,37 @@ emailService:
       cpu: 100m
       memory: 128Mi
   autoscaling:
+    enabled: false
+  livenessProbe:
+    enabled: false
+  readinessProbe:
+    enabled: false
+
+# Email Processing Service configuration
+emailProcessing:
+  replicas: 1
+  image:
+    repository: nginx
+    tag: latest
+  livenessProbe:
+    enabled: false
+  readinessProbe:
+    enabled: false
+
+# Contact Management Service configuration
+contactManagement:
+  replicas: 1
+  image:
+    repository: nginx
+    tag: latest
+  livenessProbe:
+    enabled: false
+  readinessProbe:
     enabled: false
 
 # Analytics Service configuration
 analyticsService:
+  enabled: false
   replicas: 1
   resources:
     limits:
@@ -251,9 +336,17 @@ analyticsService:
       memory: 128Mi
   autoscaling:
     enabled: false
+  image:
+    repository: nginx
+    tag: latest
+  livenessProbe:
+    enabled: false
+  readinessProbe:
+    enabled: false
 
 # AI Service configuration
 aiService:
+  enabled: true
   replicas: 1
   resources:
     limits:
@@ -263,11 +356,18 @@ aiService:
       cpu: 500m
       memory: 1Gi
   autoscaling:
-    minReplicas: 1
-    maxReplicas: 3
+    enabled: false
   memory:
-    persistenceEnabled: true
+    persistenceEnabled: false
+  livenessProbe:
+    enabled: false
+  readinessProbe:
+    enabled: false
 
 # AI Operations Configuration
 aiOperations:
+  enabled: false
+
+# BackupRestore configuration
+backupRestore:
   enabled: false

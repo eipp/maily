@@ -47,26 +47,11 @@ spec:
     spec:
       containers:
       - name: analytics-service
-        image: "{{ .Values.analyticsService.image.repository }}:{{ .Values.analyticsService.image.tag }}"
+        image: {{ .Values.analyticsService.image.repository }}:{{ .Values.analyticsService.image.tag }}
         imagePullPolicy: {{ .Values.analyticsService.image.pullPolicy }}
         ports:
         - containerPort: 3002
           name: http
-        env:
-        - name: NODE_ENV
-          value: {{ .Values.environment }}
-        - name: PORT
-          value: "3002"
-        - name: API_URL
-          value: http://{{ .Release.Name }}-backend:80
-        - name: REDIS_URL
-          value: redis://{{ .Release.Name }}-redis:6379
-        {{- if .Values.analyticsService.env }}
-        {{- range $key, $value := .Values.analyticsService.env }}
-        - name: {{ $key }}
-          value: {{ $value | quote }}
-        {{- end }}
-        {{- end }}
         resources:
           limits:
             cpu: {{ .Values.analyticsService.resources.limits.cpu }}
@@ -74,22 +59,21 @@ spec:
           requests:
             cpu: {{ .Values.analyticsService.resources.requests.cpu }}
             memory: {{ .Values.analyticsService.resources.requests.memory }}
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: http
-          initialDelaySeconds: 30
-          periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 3
-        readinessProbe:
-          httpGet:
-            path: /ready
-            port: http
-          initialDelaySeconds: 5
-          periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 3
+        env:
+        - name: NODE_ENV
+          value: {{ .Values.global.environment | quote }}
+        - name: PORT
+          value: "3002"
+        - name: API_URL
+          value: "http://{{ .Release.Name }}-backend:80"
+        - name: REDIS_URL
+          value: "redis://{{ .Release.Name }}-redis:6379"
+        {{- if .Values.analyticsService.env }}
+        {{- range $key, $value := .Values.analyticsService.env }}
+        - name: {{ $key }}
+          value: {{ $value | quote }}
+        {{- end }}
+        {{- end }}
       {{- with .Values.analyticsService.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

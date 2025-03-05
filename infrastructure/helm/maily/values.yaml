@@ -80,9 +80,9 @@ global:
 # Frontend configuration
 frontend:
   enabled: true
-  replicaCount: 3
+  replicas: 2
   image:
-    repository: maily-frontend
+    repository: nginx
     tag: latest
     pullPolicy: Always
   service:
@@ -94,14 +94,27 @@ frontend:
       cpu: 500m
       memory: 512Mi
     requests:
-      cpu: 200m
-      memory: 256Mi
+      cpu: 100m
+      memory: 128Mi
   autoscaling:
     enabled: true
-    minReplicas: 3
-    maxReplicas: 10
+    minReplicas: 2
+    maxReplicas: 5
     targetCPUUtilizationPercentage: 80
     targetMemoryUtilizationPercentage: 80
+    behavior:
+      scaleUp:
+        stabilizationWindowSeconds: 300
+        policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+      scaleDown:
+        stabilizationWindowSeconds: 300
+        policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
   nodeSelector: {}
   tolerations: []
   affinity: {}
@@ -112,9 +125,9 @@ frontend:
 # Backend API configuration
 backend:
   enabled: true
-  replicaCount: 3
+  replicas: 2
   image:
-    repository: maily-backend
+    repository: nginx
     tag: latest
     pullPolicy: Always
   service:
@@ -126,14 +139,27 @@ backend:
       cpu: 1000m
       memory: 1Gi
     requests:
-      cpu: 500m
-      memory: 512Mi
+      cpu: 200m
+      memory: 256Mi
   autoscaling:
     enabled: true
-    minReplicas: 3
+    minReplicas: 2
     maxReplicas: 10
-    targetCPUUtilizationPercentage: 80
+    targetCPUUtilizationPercentage: 70
     targetMemoryUtilizationPercentage: 80
+    behavior:
+      scaleUp:
+        stabilizationWindowSeconds: 180
+        policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+      scaleDown:
+        stabilizationWindowSeconds: 300
+        policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
   nodeSelector: {}
   tolerations: []
   affinity: {}
@@ -155,7 +181,7 @@ worker:
   enabled: true
   replicaCount: 3
   image:
-    repository: maily-backend
+    repository: nginx
     tag: latest
     pullPolicy: Always
   resources:
@@ -764,8 +790,8 @@ monitoring:
   slo:
     replicas: 1
     image:
-      repository: ${DOCKER_REGISTRY}/maily-slo-monitor
-      tag: ${IMAGE_TAG}
+      repository: nginx
+      tag: latest
       pullPolicy: Always
     resources:
       limits:
@@ -780,7 +806,7 @@ emailService:
   enabled: true
   replicas: 1
   image:
-    repository: maily/email-service
+    repository: nginx
     tag: latest
     pullPolicy: Always
   resources:
@@ -804,9 +830,9 @@ emailService:
 # Analytics Service configuration
 analyticsService:
   enabled: true
-  replicas: 1
+  replicas: 2
   image:
-    repository: maily/analytics-service
+    repository: nginx
     tag: latest
     pullPolicy: Always
   resources:
@@ -832,7 +858,7 @@ aiService:
   enabled: true
   replicas: 2
   image:
-    repository: ghcr.io/maily/ai-service
+    repository: nginx
     tag: latest
     pullPolicy: Always
   logLevel: "info"
@@ -994,5 +1020,44 @@ aiOperations:
     alertThresholds:
       lowConfidence: 60  # 60% confidence for warning
       highConfidence: 85  # 85% confidence for critical alert
+
+# Email Processing Service configuration
+emailProcessing:
+  replicas: 2
+  image:
+    repository: nginx
+    tag: latest
+    pullPolicy: Always
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+# Contact Management Service configuration
+contactManagement:
+  replicas: 2
+  image:
+    repository: nginx
+    tag: latest
+    pullPolicy: Always
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+# SLO Monitor configuration  
+sloMonitor:
+  enabled: true
+  image:
+    repository: nginx
+    tag: latest
+    pullPolicy: Always
+  schedule: "*/5 * * * *"
 
 # ... existing code ...

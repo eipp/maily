@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-email-service
+  labels:
+    app: email-service
+    release: {{ .Release.Name }}
+spec:
+  replicas: {{ .Values.emailService.replicas }}
+  selector:
+    matchLabels:
+      app: email-service
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: email-service
+        release: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: email-service
+          image: {{ .Values.emailService.image.repository }}:{{ .Values.emailService.image.tag }}
+          imagePullPolicy: {{ .Values.emailService.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          # Remove health probes
+          resources:
+            {{- toYaml .Values.emailService.resources | nindent 12 }}
+          env:
+            - name: NODE_ENV
+              value: {{ .Values.global.environment }}
+            - name: DATABASE_URL
+              value: postgresql://{{ .Values.postgresql.auth.username }}:{{ .Values.postgresql.auth.password }}@{{ .Release.Name }}-postgresql:5432/{{ .Values.postgresql.auth.database }}
+            - name: REDIS_URL
+              value: redis://:{{ .Values.redis.auth.password }}@{{ .Release.Name }}-redis:6379
+            - name: RABBITMQ_URL
+              value: amqp://{{ .Values.rabbitmq.auth.username }}:{{ .Values.rabbitmq.auth.password }}@{{ .Release.Name }}-rabbitmq:5672 

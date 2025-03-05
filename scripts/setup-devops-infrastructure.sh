@@ -124,7 +124,7 @@ setup_eks_cluster() {
     echo -e "${YELLOW}EKS cluster does not exist. Creating...${NC}"
     
     # Run Terraform to create EKS cluster
-    cd "$(dirname "$0")/../terraform/eks"
+    cd "$(dirname "$0")/../infrastructure/terraform"
     
     # Initialize Terraform
     terraform init

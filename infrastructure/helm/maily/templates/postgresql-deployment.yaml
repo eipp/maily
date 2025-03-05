@@ -26,29 +26,43 @@ spec:
       {{- end }}
       containers:
         - name: postgresql
-          image: "{{ .Values.postgresql.image.repository }}:{{ .Values.postgresql.image.tag }}"
-          imagePullPolicy: {{ .Values.postgresql.image.pullPolicy }}
+          image: postgres:15-alpine
+          imagePullPolicy: IfNotPresent
           ports:
-            - name: postgresql
+            - name: tcp-postgresql
               containerPort: 5432
               protocol: TCP
-          resources:
-            {{- toYaml .Values.postgresql.resources | nindent 12 }}
           env:
-            {{- range $key, $value := .Values.postgresql.env }}
-            - name: {{ $key }}
-              value: {{ $value | quote }}
-            {{- end }}
+            - name: POSTGRES_DB
+              value: {{ .Values.postgresql.auth.database }}
+            - name: POSTGRES_USER
+              value: {{ .Values.postgresql.auth.username }}
             - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.secrets.name }}
-                  key: postgres-password
+              value: {{ .Values.postgresql.auth.password }}
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
+          resources:
+            {{- toYaml .Values.postgresql.resources | nindent 12 }}
       volumes:
         - name: data
-          persistentVolumeClaim:
-            claimName: {{ .Release.Name }}-postgresql
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-postgresql
+  labels:
+    app.kubernetes.io/name: {{ .Release.Name }}-postgresql
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: tcp-postgresql
+      port: 5432
+      targetPort: tcp-postgresql
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: {{ .Release.Name }}-postgresql
+    app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}

@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-contact-management-service
+  labels:
+    app: contact-management-service
+    release: {{ .Release.Name }}
+spec:
+  replicas: {{ .Values.contactManagement.replicas }}
+  selector:
+    matchLabels:
+      app: contact-management-service
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: contact-management-service
+        release: {{ .Release.Name }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8003"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: contact-management-service
+        image: {{ .Values.contactManagement.image.repository }}:{{ .Values.contactManagement.image.tag }}
+        imagePullPolicy: {{ .Values.contactManagement.image.pullPolicy }}
+        ports:
+        - containerPort: 8003
+          name: http
+        # Health probes removed to prevent CrashLoopBackOff
+        resources:
+          limits:
+            cpu: {{ .Values.contactManagement.resources.limits.cpu }}
+            memory: {{ .Values.contactManagement.resources.limits.memory }}
+          requests:
+            cpu: {{ .Values.contactManagement.resources.requests.cpu }}
+            memory: {{ .Values.contactManagement.resources.requests.memory }}
+        env:
+        - name: LOG_LEVEL
+          value: {{ .Values.contactManagement.logLevel | quote }}
+        - name: NODE_ENV
+          value: {{ .Values.global.environment | quote }}
+        - name: PORT
+          value: "8003"
+        - name: POSTGRES_HOST
+          value: "{{ .Release.Name }}-postgresql"
+        - name: POSTGRES_PORT
+          value: "5432"
+        - name: POSTGRES_DB
+          value: {{ .Values.postgresql.auth.database | quote }}
+        - name: POSTGRES_USER
+          value: {{ .Values.postgresql.auth.username | quote }}
+        - name: POSTGRES_PASSWORD
+          value: {{ .Values.postgresql.auth.password | quote }}
+        {{- if .Values.contactManagement.env }}
+        {{- range $key, $value := .Values.contactManagement.env }}
+        - name: {{ $key }}
+          value: {{ $value | quote }}
+        {{- end }}
+        {{- end }} 

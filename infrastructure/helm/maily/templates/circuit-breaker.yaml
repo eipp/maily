@@ -1,4 +1,4 @@
-{{- if or .Values.circuitBreaker.enabled .Values.global.istio.enabled }}
+{{- if and (or .Values.istio.enabled .Values.global.istio.enabled) (not .Values.skipIstio) }}
 apiVersion: networking.istio.io/v1beta1
 kind: DestinationRule
 metadata:
