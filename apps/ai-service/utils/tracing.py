@@ -14,7 +14,7 @@ from fastapi import FastAPI, Request
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from opentelemetry.instrumentation.requests import RequestsInstrumentor
+from opentelemetry.instrumentation.httpx import HTTPXInstrumentor
 from opentelemetry.instrumentation.redis import RedisInstrumentor
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
@@ -75,8 +75,8 @@ class AIMeshTracingManager:
             # Instrument FastAPI
             FastAPIInstrumentor.instrument_app(app)
 
-            # Instrument requests library
-            RequestsInstrumentor().instrument()
+            # Instrument httpx library (standardized HTTP client)
+            HTTPXInstrumentor().instrument()
 
             # Instrument Redis if provided
             if redis_client:

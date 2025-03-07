@@ -23,11 +23,12 @@ import time
 import uuid
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple
-import aiohttp
 import statistics
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
+import httpx
+from packages.error_handling.python.http_client import HttpClient
 
 # Configure logging
 logging.basicConfig(
@@ -113,7 +114,7 @@ class IntensitySettings:
     }
 
 async def make_api_request(
-    session: aiohttp.ClientSession,
+    client: HttpClient,
     method: str,
     endpoint: str,
     data: Optional[Dict[str, Any]] = None,
@@ -121,10 +122,10 @@ async def make_api_request(
     operation_name: str = "unknown"
 ) -> Tuple[bool, Dict[str, Any], float]:
     """
-    Make an API request to the AI Mesh Network
+    Make an API request to the AI Mesh Network using standardized HTTP client
     
     Args:
-        session: aiohttp session
+        client: Standardized HTTP client
         method: HTTP method (GET, POST, etc.)
         endpoint: API endpoint
         data: Request data
@@ -148,42 +149,46 @@ async def make_api_request(
     # Use semaphore to limit concurrent requests
     async with api_semaphore:
         try:
-            # Make request
-            async with session.request(
-                method, 
-                endpoint, 
-                json=data, 
-                headers=headers,
-                timeout=30  # 30 second timeout
-            ) as response:
-                # Calculate latency
-                latency_ms = (time.time() - start_time) * 1000
-                
-                # Parse response
-                try:
-                    response_data = await response.json()
-                except:
-                    response_data = {"text": await response.text()}
-                
-                # Check for success
-                if 200 <= response.status < 300:
-                    success = True
-                    latencies[operation_name].append(latency_ms)
-                    successful_operations[operation_name] += 1
+            # Make request using the appropriate method based on the HTTP verb
+            if method.upper() == "GET":
+                response = await client.async_get(endpoint, headers=headers, timeout=30.0)
+            elif method.upper() == "POST":
+                response = await client.async_post(endpoint, json=data, headers=headers, timeout=30.0)
+            elif method.upper() == "PUT":
+                response = await client.async_put(endpoint, json=data, headers=headers, timeout=30.0)
+            elif method.upper() == "DELETE":
+                response = await client.async_delete(endpoint, headers=headers, timeout=30.0)
+            else:
+                raise ValueError(f"Unsupported HTTP method: {method}")
+            
+            # Calculate latency
+            latency_ms = (time.time() - start_time) * 1000
+            
+            # Parse response
+            try:
+                response_data = response.json()
+            except:
+                response_data = {"text": response.text}
+            
+            # Check for success
+            if 200 <= response.status_code < 300:
+                success = True
+                latencies[operation_name].append(latency_ms)
+                successful_operations[operation_name] += 1
+            else:
+                # Check if it's a rate limit error
+                if response.status_code == 429 or "rate limit" in str(response_data).lower():
+                    error_counts["rate_limited"] += 1
                 else:
-                    # Check if it's a rate limit error
-                    if response.status == 429 or "rate limit" in str(response_data).lower():
-                        error_counts["rate_limited"] += 1
-                    else:
-                        error_counts[operation_name] += 1
-                    
-                    logger.warning(
-                        f"{operation_name} failed: {response.status} - {json.dumps(response_data)[:100]}..."
-                    )
+                    error_counts[operation_name] += 1
                 
-                return success, response_data, latency_ms
-                
-        except asyncio.TimeoutError:
+                logger.warning(
+                    f"{operation_name} failed: {response.status_code} - {json.dumps(response_data)[:100]}..."
+                )
+            
+            return success, response_data, latency_ms
+            
+        except httpx.TimeoutException:
             latency_ms = (time.time() - start_time) * 1000
             error_counts[operation_name] += 1
             logger.warning(f"{operation_name} timed out after {latency_ms:.2f}ms")
@@ -195,7 +200,7 @@ async def make_api_request(
             logger.error(f"{operation_name} error: {str(e)}")
             return False, {"error": str(e)}, latency_ms
 
-async def create_network(session: aiohttp.ClientSession, base_url: str, api_key: str, user_id: str) -> Tuple[bool, str]:
+async def create_network(client: HttpClient, base_url: str, api_key: str, user_id: str) -> Tuple[bool, str]:
     """Create an AI Mesh Network"""
     network_name = f"Test Network {user_id[:8]} {uuid.uuid4().hex[:6]}"
     
@@ -219,7 +224,7 @@ async def create_network(session: aiohttp.ClientSession, base_url: str, api_key:
     }
     
     success, response, _ = await make_api_request(
-        session, 
+        client, 
         "POST", 
         f"{base_url}/api/mesh/networks",
         data=data,
@@ -235,7 +240,7 @@ async def create_network(session: aiohttp.ClientSession, base_url: str, api_key:
     return False, ""
 
 async def submit_task(
-    session: aiohttp.ClientSession, 
+    client: HttpClient, 
     base_url: str, 
     api_key: str, 
     network_id: str,
@@ -261,7 +266,7 @@ async def submit_task(
     }
     
     success, response, _ = await make_api_request(
-        session, 
+        client, 
         "POST", 
         f"{base_url}/api/mesh/networks/{network_id}/tasks",
         data=data,
@@ -273,7 +278,7 @@ async def submit_task(
     return success, task_id
 
 async def process_task(
-    session: aiohttp.ClientSession, 
+    client: HttpClient, 
     base_url: str, 
     api_key: str, 
     network_id: str,
@@ -281,7 +286,7 @@ async def process_task(
 ) -> bool:
     """Process a task in an AI Mesh Network"""
     success, _, _ = await make_api_request(
-        session, 
+        client, 
         "POST", 
         f"{base_url}/api/mesh/networks/{network_id}/tasks/{task_id}/process",
         api_key=api_key,
@@ -291,7 +296,7 @@ async def process_task(
     return success
 
 async def add_memory(
-    session: aiohttp.ClientSession, 
+    client: HttpClient, 
     base_url: str, 
     api_key: str, 
     network_id: str,
@@ -317,7 +322,7 @@ async def add_memory(
     }
     
     success, response, _ = await make_api_request(
-        session, 
+        client, 
         "POST", 
         f"{base_url}/api/mesh/networks/{network_id}/memories",
         data=data,
@@ -329,14 +334,14 @@ async def add_memory(
     return success, memory_id
 
 async def get_memories(
-    session: aiohttp.ClientSession, 
+    client: HttpClient, 
     base_url: str, 
     api_key: str, 
     network_id: str
 ) -> bool:
     """Get memories from an AI Mesh Network"""
     success, _, _ = await make_api_request(
-        session, 
+        client, 
         "GET", 
         f"{base_url}/api/mesh/networks/{network_id}/memories",
         api_key=api_key,
@@ -346,7 +351,7 @@ async def get_memories(
     return success
 
 async def search_memories(
-    session: aiohttp.ClientSession, 
+    client: HttpClient, 
     base_url: str, 
     api_key: str, 
     network_id: str,
@@ -354,7 +359,7 @@ async def search_memories(
 ) -> bool:
     """Search memories in an AI Mesh Network"""
     success, _, _ = await make_api_request(
-        session, 
+        client, 
         "GET", 
         f"{base_url}/api/mesh/networks/{network_id}/memories/search?query={query}",
         api_key=api_key,
@@ -382,12 +387,14 @@ async def user_workflow(
     # Set end time for this user's test
     end_time = time.time() + test_duration
     
-    # Create session for this user
-    async with aiohttp.ClientSession() as session:
+    # Create HTTP client for this user
+    client = HttpClient(base_url=base_url)
+    
+    try:
         # Create networks for this user
         user_networks = []
         for _ in range(settings['network_count']):
-            success, network_id = await create_network(session, base_url, api_key, user_id)
+            success, network_id = await create_network(client, base_url, api_key, user_id)
             if success:
                 user_networks.append(network_id)
             
@@ -407,7 +414,7 @@ async def user_workflow(
                     
                 # Add memory
                 success, _ = await add_memory(
-                    session, base_url, api_key, network_id, 
+                    client, base_url, api_key, network_id, 
                     settings['memory_size']
                 )
                 
@@ -416,14 +423,14 @@ async def user_workflow(
             
             # Get network memories
             if time.time() < end_time:
-                await get_memories(session, base_url, api_key, network_id)
+                await get_memories(client, base_url, api_key, network_id)
                 await asyncio.sleep(random.uniform(*settings['think_time']))
             
             # Search memories with random words
             if time.time() < end_time:
                 search_terms = ["test", "important", "decision", "result", "analysis"]
                 await search_memories(
-                    session, base_url, api_key, network_id, 
+                    client, base_url, api_key, network_id, 
                     random.choice(search_terms)
                 )
                 await asyncio.sleep(random.uniform(*settings['think_time']))
@@ -436,7 +443,7 @@ async def user_workflow(
                     
                 # Submit task
                 success, task_id = await submit_task(
-                    session, base_url, api_key, network_id,
+                    client, base_url, api_key, network_id,
                     settings['task_complexity']
                 )
                 
@@ -449,7 +456,7 @@ async def user_workflow(
                 # Process some tasks (50% chance)
                 if task_ids and random.random() < 0.5 and time.time() < end_time:
                     task_id = random.choice(task_ids)
-                    await process_task(session, base_url, api_key, network_id, task_id)
+                    await process_task(client, base_url, api_key, network_id, task_id)
                     await asyncio.sleep(random.uniform(*settings['think_time']))
             
             # Process remaining tasks
@@ -457,8 +464,11 @@ async def user_workflow(
                 if time.time() >= end_time:
                     break
                     
-                await process_task(session, base_url, api_key, network_id, task_id)
+                await process_task(client, base_url, api_key, network_id, task_id)
                 await asyncio.sleep(random.uniform(*settings['think_time']))
+    finally:
+        # Close the HTTP client to release resources
+        await client.close()
 
 async def run_load_test(args):
     """Run the AI Mesh Network load test"""

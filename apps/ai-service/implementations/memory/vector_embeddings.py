@@ -12,7 +12,7 @@ from typing import Dict, List, Any, Optional, Tuple, Set, Union
 import asyncio
 from datetime import datetime
 
-from ...utils.redis_client import get_redis_client
+from packages.database.src.redis import redis_client, get, set, delete
 from ...utils.llm_client import get_llm_client
 
 logger = logging.getLogger("ai_service.implementations.memory.vector_embeddings")
@@ -32,7 +32,7 @@ class VectorEmbeddingService:
     
     def __init__(self):
         """Initialize the vector embedding service"""
-        self.redis = get_redis_client()
+        self.redis = redis_client  # Use the standardized Redis client
         self.llm_client = get_llm_client()
         self.embedding_dimension = 1536  # Default dimension for embeddings
         self.embedding_batch_size = 16  # Process this many embeddings at once
@@ -131,14 +131,14 @@ class VectorEmbeddingService:
                 logger.error(f"Failed to generate embedding for memory {memory_id}")
                 return False
             
-            # Store embedding in Redis
+            # Store embedding in Redis using standardized client
             vector_key = f"{VECTOR_INDEX_PREFIX}{network_id}:{memory_id}"
-            await self.redis.set(vector_key, json.dumps(embedding))
+            await set(vector_key, json.dumps(embedding))
             
             # Update mapping for quick lookup
             mapping_key = f"{VECTOR_MAPPING_PREFIX}{network_id}"
             mapping_dict = {memory_id: datetime.utcnow().timestamp()}
-            await self.redis.hset(mapping_key, mapping=mapping_dict)
+            await self.redis.hset(mapping_key, memory_id, datetime.utcnow().timestamp())
             
             logger.debug(f"Indexed memory {memory_id} with vector embedding")
             return True
@@ -217,9 +217,9 @@ class VectorEmbeddingService:
             True if successful, False otherwise
         """
         try:
-            # Remove embedding vector
+            # Remove embedding vector using standardized client
             vector_key = f"{VECTOR_INDEX_PREFIX}{network_id}:{memory_id}"
-            await self.redis.delete(vector_key)
+            await delete(vector_key)
             
             # Remove from mapping
             mapping_key = f"{VECTOR_MAPPING_PREFIX}{network_id}"
