@@ -23,19 +23,37 @@ from tenacity import (
     RetryError,
 )
 
-from .errors import (
-    NetworkError,
-    TimeoutError,
-    InfrastructureError,
-    BadRequestError,
-    UnauthorizedError,
-    ForbiddenError,
-    NotFoundError,
-    ConflictError,
-    RateLimitExceededError,
-    ServerError,
-    ValidationError,
-)
+# Use absolute imports to allow standalone imports
+try:
+    # First try relative import (for normal package structure)
+    from .errors import (
+        NetworkError,
+        TimeoutError,
+        InfrastructureError,
+        BadRequestError,
+        UnauthorizedError,
+        ForbiddenError,
+        NotFoundError,
+        ConflictError,
+        RateLimitExceededError,
+        ServerError,
+        ValidationError,
+    )
+except ImportError:
+    # Fallback to absolute import (for direct module import)
+    from errors import (
+        NetworkError,
+        TimeoutError,
+        InfrastructureError,
+        BadRequestError,
+        UnauthorizedError,
+        ForbiddenError,
+        NotFoundError,
+        ConflictError,
+        RateLimitExceededError,
+        ServerError,
+        ValidationError,
+    )
 
 T = TypeVar('T')
 
@@ -192,12 +210,14 @@ class HttpClient:
         if "User-Agent" not in self.headers:
             self.headers["User-Agent"] = "Maily-HttpClient/1.0"
 
-        self.sync_client = httpx.Client(
-            base_url=base_url,
-            timeout=timeout,
-            headers=self.headers,
-            follow_redirects=True,
-        )
+        # Initialize the sync client with proper arguments
+        client_args = {"headers": self.headers, "follow_redirects": True}
+        if base_url is not None:
+            client_args["base_url"] = base_url
+        if timeout is not None:
+            client_args["timeout"] = timeout
+            
+        self.sync_client = httpx.Client(**client_args)
 
         # The async client will be created when needed
         self._async_client = None
@@ -211,12 +231,14 @@ class HttpClient:
             Configured async HTTP client
         """
         if self._async_client is None:
-            self._async_client = httpx.AsyncClient(
-                base_url=self.base_url,
-                timeout=self.timeout,
-                headers=self.headers,
-                follow_redirects=True,
-            )
+            # Initialize the async client with proper arguments
+            client_args = {"headers": self.headers, "follow_redirects": True}
+            if self.base_url is not None:
+                client_args["base_url"] = self.base_url
+            if self.timeout is not None:
+                client_args["timeout"] = self.timeout
+                
+            self._async_client = httpx.AsyncClient(**client_args)
         return self._async_client
 
     async def close(self) -> None:
@@ -965,27 +987,47 @@ class HttpClient:
 
 
 # Create singleton instance for global use
-http_client = HttpClient()
+try:
+    http_client = HttpClient()
+except Exception as e:
+    import logging
+    logging.getLogger(__name__).warning(f"Failed to initialize HTTP client: {e}")
+    http_client = None
 
 # Convenience functions
 async def get(url: str, **kwargs) -> httpx.Response:
     """Convenience function for async GET request."""
+    if http_client is None:
+        client = HttpClient()
+        return await client.async_get(url, **kwargs)
     return await http_client.async_get(url, **kwargs)
 
 async def post(url: str, **kwargs) -> httpx.Response:
     """Convenience function for async POST request."""
+    if http_client is None:
+        client = HttpClient()
+        return await client.async_post(url, **kwargs)
     return await http_client.async_post(url, **kwargs)
 
 async def put(url: str, **kwargs) -> httpx.Response:
     """Convenience function for async PUT request."""
+    if http_client is None:
+        client = HttpClient()
+        return await client.async_put(url, **kwargs)
     return await http_client.async_put(url, **kwargs)
 
 async def delete(url: str, **kwargs) -> httpx.Response:
     """Convenience function for async DELETE request."""
+    if http_client is None:
+        client = HttpClient()
+        return await client.async_delete(url, **kwargs)
     return await http_client.async_delete(url, **kwargs)
 
 async def patch(url: str, **kwargs) -> httpx.Response:
     """Convenience function for async PATCH request."""
+    if http_client is None:
+        client = HttpClient()
+        return await client.async_patch(url, **kwargs)
     return await http_client.async_patch(url, **kwargs)
 
 def create_client(base_url: str, **kwargs) -> HttpClient:

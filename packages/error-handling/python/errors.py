@@ -43,6 +43,7 @@ class ErrorCode(str, enum.Enum):
     FEATURE_DISABLED = "feature_disabled"
     NETWORK_ERROR = "network_error"
     TIMEOUT_ERROR = "timeout_error"
+    INFRASTRUCTURE_ERROR = "infrastructure_error"
     CONTENT_FILTER_ERROR = "content_filter_error"
 
 class ErrorDetail:
@@ -826,3 +827,27 @@ class TimeoutError(NetworkError):
             status_code=504,
         )
         self.error_code = ErrorCode.TIMEOUT_ERROR
+
+
+class InfrastructureError(ApplicationError):
+    """Error raised for infrastructure-related issues."""
+    
+    def __init__(
+        self,
+        message: str = "An infrastructure error occurred",
+        details: Optional[Union[List[ErrorDetail], Dict[str, Any]]] = None,
+        trace_id: Optional[str] = None,
+        request_id: Optional[str] = None,
+        provider: Optional[str] = None,
+        status_code: int = 500,
+    ):
+        """Initialize Infrastructure error."""
+        super().__init__(
+            message=message,
+            error_code=ErrorCode.INFRASTRUCTURE_ERROR,
+            status_code=status_code,
+            details=details,
+            trace_id=trace_id,
+            request_id=request_id,
+            provider=provider,
+        )
