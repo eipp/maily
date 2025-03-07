@@ -6,10 +6,10 @@ campaigns, including content generation and scheduling.
 
 import json
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 
-import redis
 from fastapi import APIRouter, Depends, HTTPException, Request, status, BackgroundTasks
+from packages.database.src.redis import redis_client
 from loguru import logger
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -19,7 +19,6 @@ from ..models.user import User
 from ..services.database import get_db
 from ..services.user_service import get_current_user
 from ..services.octotools_service import OctoToolsService
-from ..cache.redis import redis_client
 from ..utils.response import BaseResponse
 from ..services.campaign_service import CampaignService
 from ..services.email_service import EmailService
@@ -32,8 +31,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Initialize Redis client
-redis_client = redis.Redis.from_url("redis://localhost:6379/0")
+# redis_client is now imported from packages.database.src.redis
 
 # Create router
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
@@ -112,18 +110,17 @@ async def generate_campaign_content(
     try:
         # Check cache first
         cache_key = f"campaign_content:{request.objective}:{request.audience}"
-        if redis_client:
-            try:
-                cached_result = redis_client.get(cache_key)
-                if cached_result:
-                    cached_data = json.loads(cached_result)
-                    return {
-                        "status": "success",
-                        "content": cached_data,
-                        "metadata": {"source": "cache"}
-                    }
-            except Exception as e:
-                logger.error(f"Cache error: {e}")
+        try:
+            cached_result = await redis_client.get(cache_key)
+            if cached_result:
+                cached_data = json.loads(cached_result)
+                return {
+                    "status": "success",
+                    "content": cached_data,
+                    "metadata": {"source": "cache"}
+                }
+        except Exception as e:
+            logger.error(f"Cache error: {e}")
 
         # Prepare campaign data
         campaign_data = {
@@ -140,10 +137,10 @@ async def generate_campaign_content(
         result = await octotools_service.create_email_campaign(campaign_data)
 
         # Cache successful results
-        if result["status"] == "success" and redis_client:
+        if result["status"] == "success":
             try:
-                redis_client.setex(
-                    cache_key, 3600, json.dumps(result["content"])
+                await redis_client.set(
+                    cache_key, json.dumps(result["content"]), ttl=3600
                 )
             except Exception as e:
                 logger.error(f"Failed to cache result: {e}")
@@ -435,7 +432,7 @@ async def get_campaign_analytics(
     try:
         # Check cache first
         cache_key = f"analytics:{campaign_id}"
-        cached_result = redis_client.get(cache_key)
+        cached_result = await redis_client.get(cache_key)
 
         if cached_result:
             return json.loads(cached_result)
@@ -462,7 +459,7 @@ async def get_campaign_analytics(
             analytics = campaign_service.get_campaign_analytics(campaign_id)
 
         # Cache result for 5 minutes
-        redis_client.setex(cache_key, 300, json.dumps(analytics))
+        await redis_client.set(cache_key, json.dumps(analytics), ttl=300)
 
         # Return analytics
         return analytics
