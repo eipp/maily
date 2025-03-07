@@ -15,7 +15,7 @@ from fastapi import Depends
 from ..models.campaign_optimized import Campaign, CampaignStatus
 from ..database.transaction import transaction, transactional
 from ..errors.maily_error import ResourceNotFoundError, ValidationError
-from ..cache.redis_service import CacheService, get_cache_service
+from packages.database.src.redis import redis_client
 from ..config.settings import get_settings
 from ..monitoring.metrics import record_metric
 
@@ -178,18 +178,40 @@ class CampaignService:
         campaigns = base_query.order_by(sort_column).limit(limit).offset(offset).all()
 
         # Get recommendations if requested
-        # Note: This now delegates to the predictive_analytics_service in main.py
-        # to utilize the standardized service from there
         recommendations = None
         if include_recommendations:
-            # Create a placeholder for recommendations that will be fetched by the dedicated service
-            campaign_ids = [c.id for c in campaigns]
-            logger.debug(
-                "Recommendations will be fetched by predictive_analytics_service", 
-                user_id=user_id,
-                campaign_ids=campaign_ids
-            )
-            recommendations = []  # Empty placeholder - client should call dedicated endpoint
+            try:
+                # Import here to avoid circular imports
+                from ..services.predictive_analytics_service import PredictiveAnalyticsService
+                
+                # Get instance of predictive analytics service
+                predictive_service = PredictiveAnalyticsService(self.db)
+                
+                # Get campaign IDs
+                campaign_ids = [c.id for c in campaigns]
+                
+                # Get recommendations using the standardized service
+                recommendations = predictive_service.get_campaign_recommendations(
+                    user_id=user_id,
+                    campaign_ids=campaign_ids
+                )
+                
+                logger.info(
+                    "Retrieved campaign recommendations", 
+                    user_id=user_id,
+                    campaign_count=len(campaigns),
+                    recommendation_count=len(recommendations) if recommendations else 0
+                )
+            except Exception as e:
+                # Log the error but don't fail the entire request
+                logger.error(
+                    "Failed to retrieve campaign recommendations",
+                    user_id=user_id,
+                    error=str(e),
+                    exc_info=True
+                )
+                # Return empty recommendations list
+                recommendations = []
 
         # Cache the result if it's a standard query
         if status is None and sort_by == "created_at" and sort_order == "desc" and not include_recommendations:
