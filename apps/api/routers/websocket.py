@@ -6,7 +6,7 @@ import logging
 from datetime import datetime
 from ..middleware.auth0 import Auth0JWTBearer
 from ..config.settings import get_settings
-from ..cache.redis_pubsub import RedisPubSub
+from packages.database.src.redis import RedisPubSub, get_redis_pubsub
 from pydantic import BaseModel
 from loguru import logger
 import httpx
@@ -24,11 +24,10 @@ active_users: Dict[str, Set[str]] = {}
 # Auth dependency for WebSockets
 auth_handler = Auth0JWTBearer(auto_error=True)
 
-# PubSub instance
-pubsub = RedisPubSub()
-
 # Canvas service for operation transformation and state management
 canvas_service = CanvasService()
+
+# PubSub instance will be initialized when needed
 
 class WebSocketMessage(BaseModel):
     type: str
@@ -91,7 +90,8 @@ async def websocket_endpoint(
         except Exception as e:
             logger.error(f"Error in message callback: {e}")
 
-    # Subscribe to room channel
+    # Get PubSub instance and subscribe to room channel
+    pubsub = await get_redis_pubsub()
     channel = f"canvas:{room}"
     await pubsub.subscribe(channel, message_callback)
 
@@ -247,7 +247,8 @@ async def websocket_endpoint(
         }
         await broadcast(room, disconnect_message)
 
-        # Unsubscribe from Redis
+        # Get PubSub instance and unsubscribe from Redis
+        pubsub = await get_redis_pubsub()
         await pubsub.unsubscribe(f"canvas:{room}", message_callback)
 
     except Exception as e:
@@ -337,6 +338,8 @@ async def broadcast(room: str, message: Dict[str, Any], exclude_user: Optional[s
         # Add metadata to indicate who to exclude
         message["_exclude_user"] = exclude_user
 
+    # Get PubSub instance
+    pubsub = await get_redis_pubsub()
     await pubsub.publish(channel, message)
 
 @router.on_event("startup")
@@ -350,6 +353,12 @@ async def startup_pubsub():
 async def shutdown_pubsub():
     """Close the PubSub system on shutdown"""
     logger.info("Closing WebSocket PubSub system")
-    await pubsub.close()
+    # Get PubSub instance and close it
+    try:
+        pubsub = await get_redis_pubsub()
+        await pubsub.close()
+    except Exception as e:
+        logger.error(f"Error closing Redis PubSub: {e}")
+        
     # Close canvas service
     await canvas_service.close()

@@ -9,7 +9,7 @@ from ..services.auth_service import get_current_user
 from ..models.user import User
 from ..db.database import get_db
 from sqlalchemy.orm import Session
-from ..cache.redis_pubsub import RedisPubSub
+from packages.database.src.redis import RedisPubSub, get_redis_pubsub
 from ..services.operational_transform import OperationalTransform
 from ..services.visualization_service import get_visualization_service
 from ..services.performance_insights_service import get_performance_insights_service
@@ -40,11 +40,11 @@ class CanvasOperationsRequest(BaseModel):
     operations: List[CanvasOperation]
     baseVersion: int
 
-# Get Redis PubSub instance
-pubsub = RedisPubSub()
-
 # Get Operational Transform service
 ot_service = OperationalTransform()
+
+# PubSub instance will be initialized in each function
+pubsub = None
 
 @router.post("/create")
 async def create_canvas(
@@ -62,6 +62,8 @@ async def create_canvas(
 
         # Notify about new canvas creation
         room_id = f"room_{canvas_id}"
+        # Get Redis PubSub instance
+        pubsub = await get_redis_pubsub()
         await pubsub.publish(f"canvas:{room_id}", {
             "type": "canvas_created",
             "canvasId": canvas_id,
@@ -98,6 +100,8 @@ async def update_canvas_state(
 
         # Notify about state update
         room_id = f"room_{canvas_id}"
+        # Get Redis PubSub instance
+        pubsub = await get_redis_pubsub()
         await pubsub.publish(f"canvas:{room_id}", {
             "type": "state_persistent_update",
             "canvasId": canvas_id,
@@ -133,6 +137,8 @@ async def get_canvas_state(
 
         # Notify about canvas access
         room_id = f"room_{canvas_id}"
+        # Get Redis PubSub instance
+        pubsub = await get_redis_pubsub()
         await pubsub.publish(f"canvas:{room_id}", {
             "type": "canvas_accessed",
             "canvasId": canvas_id,
@@ -185,6 +191,8 @@ async def apply_operations(
 
             # Notify about transformed operations
             room_id = f"room_{canvas_id}"
+            # Get Redis PubSub instance
+            pubsub = await get_redis_pubsub()
             await pubsub.publish(f"canvas:{room_id}", {
                 "type": "operations_applied",
                 "canvasId": canvas_id,
@@ -213,6 +221,8 @@ async def apply_operations(
             for op in client_ops:
                 op["timestamp"] = current_time
 
+            # Get Redis PubSub instance
+            pubsub = await get_redis_pubsub()
             await pubsub.publish(f"canvas:{room_id}", {
                 "type": "operations_applied",
                 "canvasId": canvas_id,
@@ -645,6 +655,8 @@ async def verify_and_visualize_canvas(
         
         # Notify about verification via websockets
         room_id = f"room_{canvas_id}"
+        # Get Redis PubSub instance
+        pubsub = await get_redis_pubsub()
         await pubsub.publish(f"canvas:{room_id}", {
             "type": "content_verified",
             "canvasId": canvas_id,
